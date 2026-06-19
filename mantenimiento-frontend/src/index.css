@@ -1,0 +1,489 @@
+@import "tailwindcss";
+
+:root {
+  /* Core scale */
+  --radius: 0.9rem;
+  --radius-sm: 0.625rem;
+  --padding-card: 1.5rem;
+  --padding-card-lg: 2rem;
+  --shadow-soft: 0 20px 45px rgba(15, 23, 42, 0.14);
+  --shadow-hover: 0 28px 65px rgba(15, 23, 42, 0.18);
+  --shadow-strong: 0 35px 90px rgba(15, 23, 42, 0.2);
+
+  --background: 0 0% 100%;
+  --foreground: 0 0% 9%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 9%;
+  --primary: 0 0% 13%;
+  --primary-foreground: 0 0% 97%;
+  --secondary: 0 0% 96%;
+  --secondary-foreground: 0 0% 13%;
+  --muted: 0 0% 96%;
+  --muted-foreground: 0 0% 35%;
+  --accent: 0 0% 96%;
+  --accent-foreground: 0 0% 13%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 90%;
+  --input: 0 0% 88%;
+  --ring: 0 0% 44%;
+
+  /* Continental Brand Colors */
+  --continental-yellow: #ffa500;
+  --continental-black: #000000;
+  --continental-white: #ffffff;
+  --continental-gray-1: #737373;
+  --continental-gray-2: #969696;
+  --continental-gray-3: #cdcdcd;
+  --continental-gray-4: #f0f0f0;
+  --continental-blue-light: #00a5dc;
+  --continental-blue-dark: #004eaf;
+  --continental-green: #2db928;
+  --continental-green-light: #2db928;
+  --continental-green-dark: #057855;
+  --continental-red: #ff2d37;
+  --continental-bg: #f4efe5;
+  --dashboard-bg: #f5f5f5;
+  --dashboard-card-bg: #ffffff;
+  --dashboard-card-shadow: var(--shadow-soft);
+  --dashboard-card-hover-shadow: var(--shadow-hover);
+  --continental-gradient-start: #ffa500;
+  --continental-gradient-end: #ff8c00;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  line-height: 1.7;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: radial-gradient(circle at 20% 20%, #fff7ec 0, #f9f5ee 30%, #f4f2ee 55%, #f2f2f2 100%);
+  color: hsl(var(--foreground));
+  min-height: 100vh;
+}
+
+p,
+li {
+  line-height: 1.7;
+  margin-bottom: 0.45rem;
+  color: var(--continental-gray-1);
+}
+
+/* Padding helpers for modales técnicos */
+.tecnico-modal-overlay {
+  padding: 3rem;
+}
+
+@media (max-width: 640px) {
+  .tecnico-modal-overlay {
+    padding: 1.5rem;
+  }
+}
+
+.tecnico-modal-card {
+  max-width: 960px;
+  margin: 0 auto;
+  background: white;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 1rem;
+  box-shadow: var(--shadow-soft);
+  padding: 2.5rem;
+}
+
+@media (max-width: 640px) {
+  .tecnico-modal-card {
+    padding: 1.5rem;
+  }
+}
+
+/* Login: aire amplio dentro de la tarjeta y entre campos */
+.login-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  padding: 3rem 3.25rem;
+}
+
+.login-card .login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+}
+
+@media (max-width: 640px) {
+  .login-card {
+    padding: 2rem 1.75rem;
+    gap: 1.5rem;
+  }
+  .login-card .login-form {
+    gap: 1.1rem;
+  }
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin-bottom: 0.35rem;
+  color: var(--continental-black);
+  letter-spacing: -0.01em;
+}
+
+/* Botones: refuerzo de padding para texto, excluyendo icon-only */
+button:not([data-icon="true"]) {
+  padding-left: 20px;
+  padding-right: 20px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+/* Cards: padding consistente */
+.card-shell {
+  padding: 1.4rem 1.5rem;
+}
+.card-header {
+  padding: 1.1rem 1.5rem 0.6rem 1.5rem;
+}
+.card-content {
+  padding: 0.8rem 1.5rem 1.5rem 1.5rem;
+}
+.card-footer {
+  padding: 0.8rem 1.5rem 1.5rem 1.5rem;
+}
+
+/* Campos de formulario: más aire lateral y vertical */
+input,
+textarea,
+select {
+  padding: 14px 16px;
+  min-height: 48px;
+  border-radius: 12px;
+  border: 1px solid var(--input);
+  background-color: #fff;
+}
+
+textarea {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+/* Spacing helpers for formularios */
+label {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-weight: 600;
+  color: var(--continental-black);
+}
+
+.form-group,
+form .form-group,
+form .form-row,
+form .field,
+form .form-item {
+  margin-bottom: 1.35rem;
+}
+
+form .form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+form .inline-group {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+/* Default stack for modals/forms */
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.modal-form .field-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.modal-form .field-block input,
+.modal-form .field-block select,
+.modal-form .field-block textarea {
+  width: 100%;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+.modal-form .field-block select {
+  min-height: 52px;
+}
+
+.modal-form .field-block textarea {
+  min-height: 130px;
+}
+
+/* Modal container padding */
+.modal-shell {
+  padding: 22px 26px 26px 26px;
+}
+
+/* Ajuste global de alerts para icono/texto */
+.alert {
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+
+/* Iconos lucide: tamaño base mas visible */
+svg.lucide {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+/* Tiles/list items: padding amplio y line-height mayor */
+.list-tile {
+  padding: 1.6rem 1.9rem;
+  line-height: 1.65;
+}
+.list-tile > * + * {
+  margin-top: 0.3rem;
+}
+
+/* Bloques de detalle en modales/listas */
+.list-detail-tile {
+  padding: 2.8rem 3rem;
+  line-height: 1.8;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.06);
+}
+.list-detail-tile .detail-line {
+  padding: 0.2rem 0.55rem;
+}
+.list-detail-tile .detail-text {
+  padding: 0.4rem 0.6rem;
+}
+
+.bg-dashboard {
+  background-color: var(--dashboard-bg);
+}
+
+.bg-continental-gradient {
+  background: linear-gradient(120deg, var(--continental-gradient-start), var(--continental-gradient-end));
+}
+
+.dashboard-card {
+  background-color: var(--dashboard-card-bg);
+  border-radius: 1rem;
+  box-shadow: var(--dashboard-card-shadow);
+  padding: 1.9rem 2rem;
+  outline: 1px solid rgba(15, 23, 42, 0.06);
+  outline-offset: 0;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.dashboard-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--dashboard-card-hover-shadow);
+}
+
+.dashboard-wrapper {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 3.75rem;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 3.25rem;
+}
+
+@media (min-width: 768px) {
+  .dashboard-wrapper {
+    padding: 3.5rem 3.1rem 4.5rem;
+    gap: 3.9rem;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1024px) {
+  .dashboard-wrapper {
+    font-size: 0.95rem;
+  }
+
+  .dashboard-wrapper .md\:grid-cols-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-card h2,
+  .dashboard-card h3,
+  .dashboard-card h4,
+  .card-shell h2,
+  .card-shell h3,
+  .card-shell h4 {
+    font-size: 1.05rem;
+  }
+
+  .dashboard-card .text-3xl,
+  .card-shell .text-3xl {
+    font-size: 1.65rem;
+    line-height: 1.2;
+  }
+
+  .dashboard-card .text-xl,
+  .card-shell .text-xl {
+    font-size: 1.15rem;
+    line-height: 1.25;
+  }
+
+  .dashboard-card .text-lg,
+  .card-shell .text-lg {
+    font-size: 1rem;
+  }
+
+  .dashboard-card .text-base,
+  .card-shell .text-base {
+    font-size: 0.95rem;
+  }
+
+  .dashboard-card .text-sm,
+  .card-shell .text-sm {
+    font-size: 0.82rem;
+  }
+
+  .dashboard-card .text-xs,
+  .card-shell .text-xs {
+    font-size: 0.72rem;
+  }
+}
+
+.dashboard-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.75rem;
+}
+
+.dashboard-main-grid {
+  display: grid;
+  gap: 2rem;
+}
+
+@media (min-width: 1024px) {
+  .dashboard-main-grid {
+    grid-template-columns: 2fr 1fr;
+  }
+}
+
+.dashboard-full-card {
+  grid-column: 1 / -1;
+}
+
+/* Continental Background Colors */
+.bg-continental-yellow { background-color: var(--continental-yellow); }
+.bg-continental-black { background-color: var(--continental-black); }
+.bg-continental-white { background-color: var(--continental-white); }
+.bg-continental-gray-1 { background-color: var(--continental-gray-1); }
+.bg-continental-gray-2 { background-color: var(--continental-gray-2); }
+.bg-continental-gray-3 { background-color: var(--continental-gray-3); }
+.bg-continental-gray-4 { background-color: var(--continental-gray-4); }
+.bg-continental-blue-light { background-color: var(--continental-blue-light); }
+.bg-continental-blue-dark { background-color: var(--continental-blue-dark); }
+.bg-continental-green { background-color: var(--continental-green); }
+.bg-continental-green-light { background-color: var(--continental-green-light); }
+.bg-continental-green-dark { background-color: var(--continental-green-dark); }
+.bg-continental-red { background-color: var(--continental-red); }
+.bg-continental-bg { background-color: var(--continental-bg); }
+
+/* Continental Text Colors */
+.text-continental-yellow { color: var(--continental-yellow); }
+.text-continental-black { color: var(--continental-black); }
+.text-continental-white { color: var(--continental-white); }
+.text-continental-gray-1 { color: var(--continental-gray-1); }
+.text-continental-gray-2 { color: var(--continental-gray-2); }
+.text-continental-gray-3 { color: var(--continental-gray-3); }
+.text-continental-gray-4 { color: var(--continental-gray-4); }
+.text-continental-blue-light { color: var(--continental-blue-light); }
+.text-continental-blue-dark { color: var(--continental-blue-dark); }
+.text-continental-green { color: var(--continental-green); }
+.text-continental-green-light { color: var(--continental-green-light); }
+.text-continental-green-dark { color: var(--continental-green-dark); }
+.text-continental-red { color: var(--continental-red); }
+
+/* Continental Border Colors */
+.border-continental-yellow { border-color: var(--continental-yellow); }
+.border-continental-black { border-color: var(--continental-black); }
+.border-continental-gray-1 { border-color: var(--continental-gray-1); }
+.border-continental-gray-2 { border-color: var(--continental-gray-2); }
+.border-continental-gray-3 { border-color: var(--continental-gray-3); }
+.border-continental-gray-4 { border-color: var(--continental-gray-4); }
+
+/* Hover variants */
+.hover\:bg-continental-yellow\/90:hover { background-color: color-mix(in srgb, var(--continental-yellow) 90%, transparent); }
+.hover\:bg-continental-yellow:hover { background-color: var(--continental-yellow); }
+
+/* HSL based utilities */
+.bg-background { background-color: hsl(var(--background)); }
+.text-foreground { color: hsl(var(--foreground)); }
+.bg-card { background-color: hsl(var(--card)); }
+.text-card-foreground { color: hsl(var(--card-foreground)); }
+.bg-primary { background-color: hsl(var(--primary)); }
+.text-primary { color: hsl(var(--primary)); }
+.text-primary-foreground { color: hsl(var(--primary-foreground)); }
+.bg-secondary { background-color: hsl(var(--secondary)); }
+.text-secondary-foreground { color: hsl(var(--secondary-foreground)); }
+.bg-muted { background-color: hsl(var(--muted)); }
+.text-muted-foreground { color: hsl(var(--muted-foreground)); }
+.bg-accent { background-color: hsl(var(--accent)); }
+.text-accent-foreground { color: hsl(var(--accent-foreground)); }
+.bg-destructive { background-color: hsl(var(--destructive)); }
+.text-destructive-foreground { color: hsl(var(--destructive-foreground)); }
+.border-input { border-color: hsl(var(--input)); }
+.ring-ring { --tw-ring-color: hsl(var(--ring)); }
+
+/* Scrollbar personalizada */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}
+
+/* Animaciones */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(-10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-fadeIn { animation: fadeIn 0.2s ease-in-out; }
+.animate-slideIn { animation: slideIn 0.2s ease-in-out; }

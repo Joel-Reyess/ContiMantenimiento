@@ -1,0 +1,6 @@
+@MantenimientoEquipos_HostAddress = http://localhost:5110
+
+GET {{MantenimientoEquipos_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
