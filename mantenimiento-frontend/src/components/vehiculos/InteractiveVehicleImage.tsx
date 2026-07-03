@@ -16,6 +16,8 @@ interface InteractiveVehicleImageProps {
   };
   draftPointLabel?: string;
   pointVisualMode?: 'default' | 'compact';
+  /** Numero a mostrar dentro de cada marcador (pointId -> numero), estilo cajitas de la presentacion. */
+  pointNumbers?: Record<number, number>;
   showPointLabels?: boolean;
   readonly?: boolean;
   className?: string;
@@ -66,6 +68,7 @@ export function InteractiveVehicleImage({
   draftPoint,
   draftPointLabel = 'Punto temporal',
   pointVisualMode = 'default',
+  pointNumbers,
   showPointLabels = true,
   readonly = false,
   className,
@@ -221,27 +224,37 @@ export function InteractiveVehicleImage({
           const compactMode = pointVisualMode === 'compact';
           const center = pctToPixel(point.xPct, point.yPct);
 
+          const displayNumber = pointNumbers?.[point.id];
+          const numbered = typeof displayNumber === 'number';
+
           const compactMarkerPx = selected ? 14 : 11;
           const defaultMarkerPx = radiusToDiameterPx(radius, 8);
-          const markerPx = compactMode ? compactMarkerPx : defaultMarkerPx;
+          // Marcadores numerados: mas grandes y con forma de cajita (estilo presentacion), tap-friendly para tablet
+          const numberedMarkerPx = selected ? 30 : 26;
+          const markerPx = numbered ? numberedMarkerPx : compactMode ? compactMarkerPx : defaultMarkerPx;
 
           return (
             <div key={point.id} className="absolute" style={{ left: center.x, top: center.y }}>
               <div
                 role={readonly ? undefined : 'button'}
                 tabIndex={readonly ? -1 : 0}
-                title={pointLabel}
+                title={numbered ? `${displayNumber}. ${pointLabel}` : pointLabel}
                 className={cn(
-                  'relative -translate-x-1/2 -translate-y-1/2 rounded-full border-2 shadow-md box-border p-0 leading-none appearance-none flex items-center justify-center transition-all duration-150',
+                  'relative -translate-x-1/2 -translate-y-1/2 border-2 shadow-md box-border p-0 leading-none appearance-none flex items-center justify-center transition-all duration-150',
+                  numbered ? 'rounded-md font-bold' : 'rounded-full',
                   readonly
                     ? 'cursor-default border-red-500/70 bg-red-500/50'
                     : selected
-                      ? compactMode
-                        ? 'border-continental-yellow bg-continental-yellow shadow-sm z-10 ring-1 ring-white scale-100'
-                        : 'border-continental-yellow bg-continental-yellow shadow-md scale-110 z-10 ring-1 ring-white'
-                      : compactMode
-                        ? 'border-red-500 bg-red-500/85 hover:scale-105'
-                        : 'border-red-500 bg-red-500/80 hover:scale-110'
+                      ? numbered
+                        ? 'border-continental-yellow bg-continental-yellow text-continental-blue-dark shadow-md scale-110 z-10 ring-2 ring-white'
+                        : compactMode
+                          ? 'border-continental-yellow bg-continental-yellow shadow-sm z-10 ring-1 ring-white scale-100'
+                          : 'border-continental-yellow bg-continental-yellow shadow-md scale-110 z-10 ring-1 ring-white'
+                      : numbered
+                        ? 'border-white bg-red-600 text-white hover:scale-110 hover:bg-red-500'
+                        : compactMode
+                          ? 'border-red-500 bg-red-500/85 hover:scale-105'
+                          : 'border-red-500 bg-red-500/80 hover:scale-110'
                 )}
                 style={{
                   width: markerPx,
@@ -262,11 +275,15 @@ export function InteractiveVehicleImage({
                   }
                 }}
               >
-                {selected && (
-                  <Check
-                    className={compactMode ? 'h-2 w-2 text-continental-blue-dark' : 'h-3 w-3 text-continental-blue-dark'}
-                    strokeWidth={3}
-                  />
+                {numbered ? (
+                  <span className={cn('tabular-nums', selected ? 'text-[13px]' : 'text-[12px]')}>{displayNumber}</span>
+                ) : (
+                  selected && (
+                    <Check
+                      className={compactMode ? 'h-2 w-2 text-continental-blue-dark' : 'h-3 w-3 text-continental-blue-dark'}
+                      strokeWidth={3}
+                    />
+                  )
                 )}
               </div>
               {showPointLabels && (

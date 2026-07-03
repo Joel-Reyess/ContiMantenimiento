@@ -92,6 +92,14 @@ export function ReportFailureModal({
   const [loadingImagePoints, setLoadingImagePoints] = useState(false);
   const [showImageSelectorModal, setShowImageSelectorModal] = useState(false);
 
+  // Numeracion estable de los componentes: se ordena por id (orden de carga) y se enumera 1..N.
+  // Ese numero es el que se pinta sobre la foto y en la lista lateral (estilo cajitas de la presentacion).
+  const orderedImagePoints = [...vehicleImagePoints].sort((a, b) => a.id - b.id);
+  const imagePointNumbers: Record<number, number> = {};
+  orderedImagePoints.forEach((point, index) => {
+    imagePointNumbers[point.id] = index + 1;
+  });
+
   const isDuplicateError = (res: any) => {
     const code = res?.errorCode || (res?.errors && res.errors.length > 0 ? res.errors[0] : null);
     const msg = res?.message || '';
@@ -1023,51 +1031,63 @@ if (reqSeq !== checklistReqSeqRef.current) return;
         )}
         {showImageSelectorModal && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden border border-gray-200">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden border border-gray-200 flex flex-col">
               <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Selección visual de fallas</h3>
+                  <h3 className="text-lg font-semibold text-gray-900">Selección de componentes</h3>
                   <p className="text-sm text-gray-600">
                     {tipoVehiculoNombreSeleccionado
                       ? `Tipo de vehículo: ${tipoVehiculoNombreSeleccionado}`
-                      : 'Selecciona puntos en la imagen para reportar fallas.'}
+                      : 'Toca un número sobre la foto o en la lista para reportar el componente con falla.'}
                   </p>
                 </div>
                 <button
                   className="p-2 rounded-full hover:bg-gray-100"
                   onClick={() => setShowImageSelectorModal(false)}
-                  aria-label="Cerrar selección visual"
+                  aria-label="Cerrar selección de componentes"
                 >
                   <X className="h-5 w-5" />
                 </button>
               </div>
 
-              <div className="p-6 space-y-4 overflow-y-auto max-h-[calc(90vh-76px)]">
+              <div className="p-4 sm:p-6 overflow-y-auto flex-1">
                 {loadingImagePoints ? (
                   <div className="flex items-center justify-center py-10">
                     <Spinner size="sm" />
-                    <span className="ml-2 text-sm text-gray-600">Cargando puntos de falla...</span>
+                    <span className="ml-2 text-sm text-gray-600">Cargando componentes...</span>
                   </div>
                 ) : (
-                  <>
-                    <InteractiveVehicleImage
-                      imageUrl={vehicleImageUrl}
-                      points={vehicleImagePoints}
-                      selectedPointIds={selectedImageFaults
-                        .map((f) => f.vehicleImagePointId)
-                        .filter((id): id is number => typeof id === 'number' && Number.isFinite(id))}
-                      onTogglePoint={handleToggleImagePoint}
-                      pointVisualMode="compact"
-                      showPointLabels={false}
-                      className="space-y-2 mx-auto max-w-[620px]"
-                      emptyMessage="No hay puntos configurados para este tipo de vehículo."
-                    />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6 items-start">
+                    {/* Columna izquierda: foto del carro con los números encima */}
+                    <div className="md:sticky md:top-0">
+                      <InteractiveVehicleImage
+                        imageUrl={vehicleImageUrl}
+                        points={orderedImagePoints}
+                        selectedPointIds={selectedImageFaults
+                          .map((f) => f.vehicleImagePointId)
+                          .filter((id): id is number => typeof id === 'number' && Number.isFinite(id))}
+                        onTogglePoint={handleToggleImagePoint}
+                        pointNumbers={imagePointNumbers}
+                        showPointLabels={false}
+                        className="space-y-2"
+                        emptyMessage="No hay componentes configurados para este tipo de vehículo."
+                      />
+                    </div>
 
-                    {vehicleImagePoints.length > 0 && (
-                      <div className="rounded-lg border border-gray-200 bg-gray-50/70 p-3">
-                        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Fallas disponibles</p>
-                        <div className="grid gap-2 sm:grid-cols-2 max-h-40 overflow-y-auto pr-1">
-                          {vehicleImagePoints.map((point) => {
+                    {/* Columna derecha: lista numerada de componentes */}
+                    <div className="rounded-lg border border-gray-200 bg-gray-50/70 p-3">
+                      <p className="mb-2 flex items-center justify-between text-xs font-medium uppercase tracking-wide text-gray-500">
+                        <span>Componentes</span>
+                        <span className="text-continental-blue-dark">{selectedImageFaults.length} seleccionado(s)</span>
+                      </p>
+                      {orderedImagePoints.length === 0 ? (
+                        <p className="py-6 text-center text-sm italic text-gray-500">
+                          No hay componentes configurados para este tipo de vehículo.
+                        </p>
+                      ) : (
+                        <div className="flex flex-col gap-2 max-h-[52vh] overflow-y-auto pr-1">
+                          {orderedImagePoints.map((point) => {
+                            const numero = imagePointNumbers[point.id];
                             const checked = selectedImageFaults.some(
                               (f) =>
                                 f.imageFaultId === point.imageFaultId &&
@@ -1078,41 +1098,50 @@ if (reqSeq !== checklistReqSeqRef.current) return;
                                 key={point.id}
                                 type="button"
                                 onClick={() => handleToggleImagePoint(point)}
-                                className={`w-full flex items-center gap-2 rounded-md border px-2.5 py-2 text-sm text-left transition-colors ${
-                                  checked ? 'border-yellow-400 bg-yellow-50 text-yellow-900' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                                className={`w-full flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors min-h-[48px] ${
+                                  checked
+                                    ? 'border-continental-yellow bg-yellow-50 text-yellow-900'
+                                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
                                 }`}
                               >
                                 <span
-                                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                                    checked ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-400 bg-white'
+                                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sm font-bold tabular-nums ${
+                                    checked
+                                      ? 'bg-continental-yellow text-continental-blue-dark ring-2 ring-white'
+                                      : 'bg-red-600 text-white'
                                   }`}
                                 >
-                                  {checked && <Check className="h-3 w-3" strokeWidth={3} />}
+                                  {numero}
                                 </span>
-                                <span className="truncate leading-5">{point.imageFaultName || `Falla #${point.imageFaultId}`}</span>
+                                <span className="flex-1 text-sm leading-5">
+                                  {point.imageFaultName || `Componente #${point.imageFaultId}`}
+                                </span>
+                                {checked && (
+                                  <Check className="h-5 w-5 shrink-0 text-continental-blue-dark" strokeWidth={3} />
+                                )}
                               </button>
                             );
                           })}
                         </div>
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-end gap-2 pt-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setSelectedImageFaults([])}
-                        disabled={selectedImageFaults.length === 0}
-                        className="!min-h-9 !px-4 !py-1.5 !text-sm rounded-lg"
-                      >
-                        Limpiar selección
-                      </Button>
-                      <Button size="sm" onClick={() => setShowImageSelectorModal(false)} className="!min-h-9 !px-4 !py-1.5 !text-sm rounded-lg">
-                        Aceptar
-                      </Button>
+                      )}
                     </div>
-                  </>
+                  </div>
                 )}
+              </div>
+
+              <div className="sticky bottom-0 bg-white border-t px-4 sm:px-6 py-3 flex items-center justify-end gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSelectedImageFaults([])}
+                  disabled={selectedImageFaults.length === 0}
+                  className="!min-h-10 !px-4 !py-2 !text-sm rounded-lg"
+                >
+                  Limpiar selección
+                </Button>
+                <Button size="sm" onClick={() => setShowImageSelectorModal(false)} className="!min-h-10 !px-5 !py-2 !text-sm rounded-lg">
+                  Aceptar
+                </Button>
               </div>
             </div>
           </div>
@@ -1271,14 +1300,14 @@ if (reqSeq !== checklistReqSeqRef.current) return;
 
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">
-                    Fallas reportadas (imagen)
+                    Componentes con falla
                   </label>
                   <div className="rounded-xl border border-gray-300 bg-white p-4 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-sm text-gray-600">
                         {tipoVehiculoIdSeleccionado
                           ? `Tipo detectado: ${tipoVehiculoNombreSeleccionado || `Tipo ${tipoVehiculoIdSeleccionado}`}`
-                          : 'Selecciona un vehiculo para habilitar el selector visual.'}
+                          : 'Selecciona un vehiculo para habilitar el selector de componentes.'}
                       </p>
                       <Button
                         type="button"
@@ -1291,7 +1320,7 @@ if (reqSeq !== checklistReqSeqRef.current) return;
                           }
                         }}
                       >
-                        Seleccionar en imagen
+                        Seleccionar componentes
                       </Button>
                     </div>
 
