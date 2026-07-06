@@ -14,7 +14,12 @@
 --
 -- Base: MantenimientoEquiposDB   ·   Idempotente (puedes correrlo varias veces).
 -- ⚠️ Haz respaldo antes. Este script NO toca datos existentes.
--- El orden respeta las llaves foráneas entre las tablas.
+--
+-- IMPORTANTE (robusto): la tabla ReportImageFaults se crea SIN llaves foráneas
+-- y luego cada FK se agrega SOLO si la tabla referida existe y la FK aún no está.
+-- Así el script NO truena aunque a tu base le falte 'ReportesFalla'. Si esa
+-- tabla aparece después (con su nombre correcto), vuelve a correr este script y
+-- se agregará la FK que faltaba. Al final imprime un aviso de lo que quedó.
 -- =============================================================================
 
 -- ---------- 1) ImageFaults · catálogo de componentes ----------
@@ -76,6 +81,7 @@ END
 GO
 
 -- ---------- 3) ReportImageFaults · componentes elegidos por cada reporte ----------
+-- 3a) La tabla (sin FKs; las agregamos después de forma segura).
 IF NOT EXISTS (
     SELECT 1 FROM sys.objects
     WHERE object_id = OBJECT_ID(N'[dbo].[ReportImageFaults]') AND type = N'U'
@@ -88,13 +94,7 @@ BEGIN
         [ImageFaultId]        INT           NOT NULL,
         [VehicleImagePointId] INT           NULL,
         [CreatedAt]           DATETIME2 (7) NOT NULL,
-        CONSTRAINT [PK_ReportImageFaults] PRIMARY KEY CLUSTERED ([Id] ASC),
-        CONSTRAINT [FK_ReportImageFaults_ReportesFalla_ReporteFallaId]
-            FOREIGN KEY ([ReporteFallaId]) REFERENCES [dbo].[ReportesFalla] ([Id]) ON DELETE CASCADE,
-        CONSTRAINT [FK_ReportImageFaults_ImageFaults_ImageFaultId]
-            FOREIGN KEY ([ImageFaultId]) REFERENCES [dbo].[ImageFaults] ([Id]) ON DELETE NO ACTION,
-        CONSTRAINT [FK_ReportImageFaults_VehicleImagePoints_VehicleImagePointId]
-            FOREIGN KEY ([VehicleImagePointId]) REFERENCES [dbo].[VehicleImagePoints] ([Id]) ON DELETE SET NULL
+        CONSTRAINT [PK_ReportImageFaults] PRIMARY KEY CLUSTERED ([Id] ASC)
     );
 
     CREATE NONCLUSTERED INDEX [IX_ReportImageFaults_ReporteFallaId]
@@ -104,11 +104,65 @@ BEGIN
     CREATE NONCLUSTERED INDEX [IX_ReportImageFaults_VehicleImagePointId]
         ON [dbo].[ReportImageFaults] ([VehicleImagePointId] ASC);
 
-    PRINT 'Tabla ReportImageFaults creada.';
+    PRINT 'Tabla ReportImageFaults creada (sin FKs todavia).';
 END
 ELSE
 BEGIN
     PRINT 'La tabla ReportImageFaults ya existe.';
+END
+GO
+
+-- 3b) FK -> ImageFaults (esta tabla ya la creamos arriba, siempre existe).
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'FK_ReportImageFaults_ImageFaults_ImageFaultId')
+   AND EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[ImageFaults]') AND type = N'U')
+BEGIN
+    ALTER TABLE [dbo].[ReportImageFaults]
+        ADD CONSTRAINT [FK_ReportImageFaults_ImageFaults_ImageFaultId]
+        FOREIGN KEY ([ImageFaultId]) REFERENCES [dbo].[ImageFaults] ([Id]) ON DELETE NO ACTION;
+    PRINT 'FK ReportImageFaults -> ImageFaults agregada.';
+END
+ELSE
+BEGIN
+    PRINT 'FK ReportImageFaults -> ImageFaults: ya existe o falta ImageFaults (omitida).';
+END
+GO
+
+-- 3c) FK -> VehicleImagePoints (idem, ya existe).
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'FK_ReportImageFaults_VehicleImagePoints_VehicleImagePointId')
+   AND EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[VehicleImagePoints]') AND type = N'U')
+BEGIN
+    ALTER TABLE [dbo].[ReportImageFaults]
+        ADD CONSTRAINT [FK_ReportImageFaults_VehicleImagePoints_VehicleImagePointId]
+        FOREIGN KEY ([VehicleImagePointId]) REFERENCES [dbo].[VehicleImagePoints] ([Id]) ON DELETE SET NULL;
+    PRINT 'FK ReportImageFaults -> VehicleImagePoints agregada.';
+END
+ELSE
+BEGIN
+    PRINT 'FK ReportImageFaults -> VehicleImagePoints: ya existe o falta VehicleImagePoints (omitida).';
+END
+GO
+
+-- 3d) FK -> ReportesFalla (la que fallaba). Solo se agrega si la tabla existe.
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'FK_ReportImageFaults_ReportesFalla_ReporteFallaId')
+   AND EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[ReportesFalla]') AND type = N'U')
+BEGIN
+    ALTER TABLE [dbo].[ReportImageFaults]
+        ADD CONSTRAINT [FK_ReportImageFaults_ReportesFalla_ReporteFallaId]
+        FOREIGN KEY ([ReporteFallaId]) REFERENCES [dbo].[ReportesFalla] ([Id]) ON DELETE CASCADE;
+    PRINT 'FK ReportImageFaults -> ReportesFalla agregada.';
+END
+ELSE IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'FK_ReportImageFaults_ReportesFalla_ReporteFallaId')
+BEGIN
+    PRINT 'FK ReportImageFaults -> ReportesFalla: ya existe (omitida).';
+END
+ELSE
+BEGIN
+    PRINT '*** AVISO: no se encontro la tabla dbo.ReportesFalla, por lo que la FK';
+    PRINT '    ReportImageFaults -> ReportesFalla NO se creo. La tabla ReportImageFaults';
+    PRINT '    quedo funcional y el feature de tablet ya sirve; solo falta esa integridad';
+    PRINT '    referencial. Verifica el nombre real de tu tabla de reportes con:';
+    PRINT '        SELECT name FROM sys.tables WHERE name LIKE ''%eporte%'' OR name LIKE ''%alla%'';';
+    PRINT '    y vuelve a correr este script cuando exista dbo.ReportesFalla.';
 END
 GO
 
