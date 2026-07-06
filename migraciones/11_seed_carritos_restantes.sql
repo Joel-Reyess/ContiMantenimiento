@@ -50,7 +50,9 @@ BEGIN
     FROM @comp c JOIN dbo.ImageFaults f ON f.Name = c.Nombre
     WHERE NOT EXISTS (SELECT 1 FROM dbo.VehicleImagePoints p WHERE p.ImageKey = @key AND p.ImageFaultId = f.Id)
     ORDER BY c.Num;
-    PRINT 'CARRO COJIN (tipo_6): ' + CAST((SELECT COUNT(*) FROM @comp) AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST((SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey=@key) AS NVARCHAR(10));
+    DECLARE @cnt INT = (SELECT COUNT(*) FROM @comp);
+    DECLARE @pts INT = (SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey = @key);
+    PRINT 'CARRO COJIN (tipo_6): ' + CAST(@cnt AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST(@pts AS NVARCHAR(10));
 END
 GO
 
@@ -84,7 +86,9 @@ BEGIN
     FROM @comp c JOIN dbo.ImageFaults f ON f.Name = c.Nombre
     WHERE NOT EXISTS (SELECT 1 FROM dbo.VehicleImagePoints p WHERE p.ImageKey = @key AND p.ImageFaultId = f.Id)
     ORDER BY c.Num;
-    PRINT 'CARRO COSTADO (tipo_7): ' + CAST((SELECT COUNT(*) FROM @comp) AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST((SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey=@key) AS NVARCHAR(10));
+    DECLARE @cnt INT = (SELECT COUNT(*) FROM @comp);
+    DECLARE @pts INT = (SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey = @key);
+    PRINT 'CARRO COSTADO (tipo_7): ' + CAST(@cnt AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST(@pts AS NVARCHAR(10));
 END
 GO
 
@@ -119,7 +123,9 @@ BEGIN
     FROM @comp c JOIN dbo.ImageFaults f ON f.Name = c.Nombre
     WHERE NOT EXISTS (SELECT 1 FROM dbo.VehicleImagePoints p WHERE p.ImageKey = @key AND p.ImageFaultId = f.Id)
     ORDER BY c.Num;
-    PRINT 'CARRO BRACKER (tipo_8): ' + CAST((SELECT COUNT(*) FROM @comp) AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST((SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey=@key) AS NVARCHAR(10));
+    DECLARE @cnt INT = (SELECT COUNT(*) FROM @comp);
+    DECLARE @pts INT = (SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey = @key);
+    PRINT 'CARRO BRACKER (tipo_8): ' + CAST(@cnt AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST(@pts AS NVARCHAR(10));
 END
 GO
 
@@ -154,7 +160,9 @@ BEGIN
     FROM @comp c JOIN dbo.ImageFaults f ON f.Name = c.Nombre
     WHERE NOT EXISTS (SELECT 1 FROM dbo.VehicleImagePoints p WHERE p.ImageKey = @key AND p.ImageFaultId = f.Id)
     ORDER BY c.Num;
-    PRINT 'CARRO DE CAPA (tipo_9): ' + CAST((SELECT COUNT(*) FROM @comp) AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST((SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey=@key) AS NVARCHAR(10));
+    DECLARE @cnt INT = (SELECT COUNT(*) FROM @comp);
+    DECLARE @pts INT = (SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey = @key);
+    PRINT 'CARRO DE CAPA (tipo_9): ' + CAST(@cnt AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST(@pts AS NVARCHAR(10));
 END
 GO
 
@@ -184,7 +192,9 @@ BEGIN
     FROM @comp c JOIN dbo.ImageFaults f ON f.Name = c.Nombre
     WHERE NOT EXISTS (SELECT 1 FROM dbo.VehicleImagePoints p WHERE p.ImageKey = @key AND p.ImageFaultId = f.Id)
     ORDER BY c.Num;
-    PRINT 'CARRO FLAT STORAGE (tipo_14): ' + CAST((SELECT COUNT(*) FROM @comp) AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST((SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey=@key) AS NVARCHAR(10));
+    DECLARE @cnt INT = (SELECT COUNT(*) FROM @comp);
+    DECLARE @pts INT = (SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey = @key);
+    PRINT 'CARRO FLAT STORAGE (tipo_14): ' + CAST(@cnt AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST(@pts AS NVARCHAR(10));
 END
 GO
 
@@ -209,7 +219,9 @@ BEGIN
     FROM @comp c JOIN dbo.ImageFaults f ON f.Name = c.Nombre
     WHERE NOT EXISTS (SELECT 1 FROM dbo.VehicleImagePoints p WHERE p.ImageKey = @key AND p.ImageFaultId = f.Id)
     ORDER BY c.Num;
-    PRINT 'TAMBO APEX (tipo_10): ' + CAST((SELECT COUNT(*) FROM @comp) AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST((SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey=@key) AS NVARCHAR(10));
+    DECLARE @cnt INT = (SELECT COUNT(*) FROM @comp);
+    DECLARE @pts INT = (SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey = @key);
+    PRINT 'TAMBO APEX (tipo_10): ' + CAST(@cnt AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST(@pts AS NVARCHAR(10));
 END
 GO
 
@@ -235,7 +247,9 @@ BEGIN
     FROM @comp c JOIN dbo.ImageFaults f ON f.Name = c.Nombre
     WHERE NOT EXISTS (SELECT 1 FROM dbo.VehicleImagePoints p WHERE p.ImageKey = @key AND p.ImageFaultId = f.Id)
     ORDER BY c.Num;
-    PRINT 'PIN RACK (tipo_11): ' + CAST((SELECT COUNT(*) FROM @comp) AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST((SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey=@key) AS NVARCHAR(10));
+    DECLARE @cnt INT = (SELECT COUNT(*) FROM @comp);
+    DECLARE @pts INT = (SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey = @key);
+    PRINT 'PIN RACK (tipo_11): ' + CAST(@cnt AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST(@pts AS NVARCHAR(10));
 END
 GO
 
@@ -259,7 +273,9 @@ BEGIN
     FROM @comp c JOIN dbo.ImageFaults f ON f.Name = c.Nombre
     WHERE NOT EXISTS (SELECT 1 FROM dbo.VehicleImagePoints p WHERE p.ImageKey = @key AND p.ImageFaultId = f.Id)
     ORDER BY c.Num;
-    PRINT 'CIRCULO (tipo_15): ' + CAST((SELECT COUNT(*) FROM @comp) AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST((SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey=@key) AS NVARCHAR(10));
+    DECLARE @cnt INT = (SELECT COUNT(*) FROM @comp);
+    DECLARE @pts INT = (SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey = @key);
+    PRINT 'CIRCULO (tipo_15): ' + CAST(@cnt AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST(@pts AS NVARCHAR(10));
 END
 GO
 
@@ -283,7 +299,9 @@ BEGIN
     FROM @comp c JOIN dbo.ImageFaults f ON f.Name = c.Nombre
     WHERE NOT EXISTS (SELECT 1 FROM dbo.VehicleImagePoints p WHERE p.ImageKey = @key AND p.ImageFaultId = f.Id)
     ORDER BY c.Num;
-    PRINT 'CONTI (tipo_12): ' + CAST((SELECT COUNT(*) FROM @comp) AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST((SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey=@key) AS NVARCHAR(10));
+    DECLARE @cnt INT = (SELECT COUNT(*) FROM @comp);
+    DECLARE @pts INT = (SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey = @key);
+    PRINT 'CONTI (tipo_12): ' + CAST(@cnt AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST(@pts AS NVARCHAR(10));
 END
 GO
 
@@ -308,7 +326,9 @@ BEGIN
     FROM @comp c JOIN dbo.ImageFaults f ON f.Name = c.Nombre
     WHERE NOT EXISTS (SELECT 1 FROM dbo.VehicleImagePoints p WHERE p.ImageKey = @key AND p.ImageFaultId = f.Id)
     ORDER BY c.Num;
-    PRINT 'JAULA CUARENTENA (tipo_13): ' + CAST((SELECT COUNT(*) FROM @comp) AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST((SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey=@key) AS NVARCHAR(10));
+    DECLARE @cnt INT = (SELECT COUNT(*) FROM @comp);
+    DECLARE @pts INT = (SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey = @key);
+    PRINT 'JAULA CUARENTENA (tipo_13): ' + CAST(@cnt AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST(@pts AS NVARCHAR(10));
 END
 GO
 
@@ -332,7 +352,9 @@ BEGIN
     FROM @comp c JOIN dbo.ImageFaults f ON f.Name = c.Nombre
     WHERE NOT EXISTS (SELECT 1 FROM dbo.VehicleImagePoints p WHERE p.ImageKey = @key AND p.ImageFaultId = f.Id)
     ORDER BY c.Num;
-    PRINT 'CARRO DE POLVOS (tipo_4): ' + CAST((SELECT COUNT(*) FROM @comp) AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST((SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey=@key) AS NVARCHAR(10));
+    DECLARE @cnt INT = (SELECT COUNT(*) FROM @comp);
+    DECLARE @pts INT = (SELECT COUNT(*) FROM dbo.VehicleImagePoints WHERE ImageKey = @key);
+    PRINT 'CARRO DE POLVOS (tipo_4): ' + CAST(@cnt AS NVARCHAR(10)) + ' componentes; puntos ahora: ' + CAST(@pts AS NVARCHAR(10));
 END
 GO
 
