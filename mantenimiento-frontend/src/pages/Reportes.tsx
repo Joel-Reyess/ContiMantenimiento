@@ -14,9 +14,12 @@ import {
 } from '@/components/ui';
 import { reportesService } from '@/services/reportesService';
 import { ordenesService } from '@/services/ordenesService';
+import { catalogosService } from '@/services';
 import { ReportFailureModal } from '@/components/tecnico';
-import type { CategoriaFalla, ReporteFalla, ReporteFallaList } from '@/interfaces';
+import { InteractiveVehicleImage } from '@/components/vehiculos/InteractiveVehicleImage';
+import type { CategoriaFalla, ReporteFalla, ReporteFallaList, VehicleImagePoint } from '@/interfaces';
 import { Prioridad, PrioridadNombres } from '@/interfaces/Api.interface';
+import { getFullImageUrl } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface FiltersState {
@@ -39,6 +42,7 @@ export function ReportesPage() {
   const [error, setError] = useState('');
   const [crearOpen, setCrearOpen] = useState(false);
   const [creatingOrder, setCreatingOrder] = useState(false);
+  const [vehicleImageUrl, setVehicleImageUrl] = useState<string | undefined>(undefined);
 
   // We keep priority options for filtering, but ReportFailureModal handles its own dropdowns
   const prioridadOptions = [
@@ -114,6 +118,39 @@ export function ReportesPage() {
   useEffect(() => {
     loadReportes();
   }, [reporteId]);
+
+  // Carga la foto del tipo de vehiculo para dibujar las fallas visuales sobre ella.
+  useEffect(() => {
+    const tipoNombre = (detalle?.vehiculoTipo || '').trim().toLowerCase();
+    const tieneFallas = Boolean(detalle?.imageFaults && detalle.imageFaults.length > 0);
+    if (!tipoNombre || !tieneFallas) {
+      setVehicleImageUrl(undefined);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await catalogosService.getTiposVehiculo();
+        if (cancelled) return;
+        if (res.success && Array.isArray(res.data)) {
+          const tipo = res.data.find(
+            (t) => (t.nombre || '').trim().toLowerCase() === tipoNombre
+          );
+          const preferida = tipo?.imagenFallasUrl || tipo?.imagenUrl;
+          setVehicleImageUrl(preferida ? getFullImageUrl(preferida) : undefined);
+        } else {
+          setVehicleImageUrl(undefined);
+        }
+      } catch {
+        if (!cancelled) setVehicleImageUrl(undefined);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [detalle?.id, detalle?.vehiculoTipo]);
 
   const applyFilters = () => {
     if (!reporteId) {
@@ -201,6 +238,23 @@ export function ReportesPage() {
       if (url.startsWith('http')) return url;
       return evidenceBase ? `${evidenceBase}${url}` : url;
     };
+
+    // Fallas visuales -> puntos sobre la foto del carro (solo las que traen coordenadas).
+    const imageFaultPoints: VehicleImagePoint[] = (detalle.imageFaults || [])
+      .filter((f) => typeof f.xPct === 'number' && typeof f.yPct === 'number')
+      .map((f) => ({
+        id: f.vehicleImagePointId ?? f.id,
+        imageKey: '',
+        xPct: f.xPct as number,
+        yPct: f.yPct as number,
+        imageFaultId: f.imageFaultId,
+        imageFaultName: f.imageFaultName,
+        active: true,
+      }));
+    const imageFaultNumbers: Record<number, number> = {};
+    imageFaultPoints.forEach((p, i) => {
+      imageFaultNumbers[p.id] = i + 1;
+    });
 
     return (
       <div className="space-y-4">
@@ -298,19 +352,38 @@ export function ReportesPage() {
           <div className="space-y-3">
             <p className="font-semibold text-continental-black">Fallas reportadas (imagen)</p>
             {detalle.imageFaults && detalle.imageFaults.length > 0 ? (
-              <div className="rounded-lg border p-4 bg-continental-gray-5">
+              <div className="rounded-lg border p-4 bg-continental-gray-5 space-y-4">
+                {imageFaultPoints.length > 0 && (
+                  <InteractiveVehicleImage
+                    imageUrl={vehicleImageUrl}
+                    points={imageFaultPoints}
+                    pointNumbers={imageFaultNumbers}
+                    showPointLabels={false}
+                    readonly
+                    emptyMessage="No hay fallas visuales con posicion para dibujar."
+                  />
+                )}
                 <ul className="space-y-2">
-                  {detalle.imageFaults.map((fault) => (
-                    <li key={fault.id} className="flex flex-wrap items-center gap-2 text-sm text-continental-gray-1">
-                      <span className="text-continental-yellow font-bold">•</span>
-                      <span className="font-medium text-continental-black">{fault.imageFaultName || `Falla #${fault.imageFaultId}`}</span>
-                      {fault.xPct !== undefined && fault.yPct !== undefined && (
-                        <span className="text-xs text-continental-gray-2">
-                          ({fault.xPct.toFixed(2)}%, {fault.yPct.toFixed(2)}%)
-                        </span>
-                      )}
-                    </li>
-                  ))}
+                  {detalle.imageFaults.map((fault) => {
+                    const numero = imageFaultNumbers[fault.vehicleImagePointId ?? fault.id];
+                    return (
+                      <li key={fault.id} className="flex flex-wrap items-center gap-2 text-sm text-continental-gray-1">
+                        {numero ? (
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-red-600 text-[11px] font-bold tabular-nums text-white">
+                            {numero}
+                          </span>
+                        ) : (
+                          <span className="text-continental-yellow font-bold">•</span>
+                        )}
+                        <span className="font-medium text-continental-black">{fault.imageFaultName || `Falla #${fault.imageFaultId}`}</span>
+                        {fault.xPct !== undefined && fault.yPct !== undefined && (
+                          <span className="text-xs text-continental-gray-2">
+                            ({fault.xPct.toFixed(2)}%, {fault.yPct.toFixed(2)}%)
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             ) : (
