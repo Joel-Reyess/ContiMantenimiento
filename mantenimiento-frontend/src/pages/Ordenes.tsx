@@ -36,7 +36,7 @@ import {
   AlertTriangle,
   Camera
 } from 'lucide-react';
-import { catalogosService, solicitudCambioService } from '@/services';
+import { catalogosService, solicitudCambioService, vehiculosService } from '@/services';
 import { UbicacionBadge } from '@/components/vehiculos/UbicacionLegend';
 import { ordenesService } from '@/services/ordenesService';
 import { usuariosService } from '@/services/usuariosService';
@@ -588,9 +588,11 @@ export function OrdenesPage() {
   }, [detalle, buildDummyChecklist, loadChecklist, loadSolicitudesCambio]);
 
   // Foto del tipo de vehiculo, para dibujar encima los componentes con falla del reporte.
+  // Resolvemos el tipo por ID (leyendo el vehiculo), que es lo unico confiable; el
+  // nombre que viene en la orden es el nombre del enum y no siempre casa con el catalogo.
   useEffect(() => {
-    const tipoNombre = (detalle?.vehiculoTipo || '').trim().toLowerCase();
-    if (!tipoNombre) {
+    const vehiculoId = detalle?.vehiculoId;
+    if (!vehiculoId) {
       setVehicleImageUrl(undefined);
       return;
     }
@@ -598,15 +600,35 @@ export function OrdenesPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await catalogosService.getTiposVehiculo();
+        const [vehRes, catRes] = await Promise.all([
+          vehiculosService.getById(vehiculoId),
+          catalogosService.getTiposVehiculo(),
+        ]);
         if (cancelled) return;
-        if (res.success && Array.isArray(res.data)) {
-          const tipo = res.data.find((t) => (t.nombre || '').trim().toLowerCase() === tipoNombre);
-          const preferida = tipo?.imagenFallasUrl || tipo?.imagenUrl;
-          setVehicleImageUrl(preferida ? getFullImageUrl(preferida) : undefined);
-        } else {
+
+        const tipos = catRes.success && Array.isArray(catRes.data) ? catRes.data : [];
+        if (!tipos.length) {
           setVehicleImageUrl(undefined);
+          return;
         }
+
+        const tipoId = vehRes.success && vehRes.data ? Number(vehRes.data.tipo) : NaN;
+        let tipo = Number.isFinite(tipoId) ? tipos.find((t) => t.id === tipoId) : undefined;
+
+        // Respaldo: casar por nombre normalizado (sin acentos, espacios ni mayusculas).
+        if (!tipo) {
+          const norm = (s?: string) =>
+            (s || '')
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/\s+/g, '')
+              .toLowerCase();
+          const objetivo = norm(detalle?.vehiculoTipo);
+          if (objetivo) tipo = tipos.find((t) => norm(t.nombre) === objetivo);
+        }
+
+        const preferida = tipo?.imagenFallasUrl || tipo?.imagenUrl;
+        setVehicleImageUrl(preferida ? getFullImageUrl(preferida) : undefined);
       } catch {
         if (!cancelled) setVehicleImageUrl(undefined);
       }
@@ -615,7 +637,7 @@ export function OrdenesPage() {
     return () => {
       cancelled = true;
     };
-  }, [detalle?.id, detalle?.vehiculoTipo]);
+  }, [detalle?.id, detalle?.vehiculoId, detalle?.vehiculoTipo]);
 
   const updateChecklistRespuesta = (id: number, changes: { valor?: string; notas?: string; cantidad?: number; fotoUrl?: string }) => {
     setChecklistRespuestas((prev) => ({ ...prev, [id]: { ...prev[id], ...changes } }));
