@@ -48,7 +48,9 @@ import { solicitudActividadAdicionalService } from '@/services/solicitudActivida
 import { ordenTrabajoChecklistItemService } from '@/services/ordenTrabajoChecklistItemService';
 import { ReportFailureModal, RequestActivityModal } from '@/components/tecnico';
 import { OrdenFlowStatus } from '@/components/ordenes/OrdenFlowStatus';
-import type { OrdenTrabajo, OrdenTrabajoList, ReporteFalla, Evidencia } from '@/interfaces';
+import { InteractiveVehicleImage } from '@/components/vehiculos/InteractiveVehicleImage';
+import { getFullImageUrl } from '@/lib/utils';
+import type { OrdenTrabajo, OrdenTrabajoList, ReporteFalla, Evidencia, VehicleImagePoint } from '@/interfaces';
 import { EstadoOrdenNombres, EstadoOrdenTrabajo, Prioridad, PrioridadNombres } from '@/interfaces/Api.interface';
 import type { ChecklistItem as ChecklistTemplateItem } from '@/services/checklistService';
 import { useAuth } from '@/contexts/AuthContext';
@@ -128,6 +130,7 @@ export function OrdenesPage() {
   const [filters, setFilters] = useState<FiltersState>({ busqueda: '' });
   const [ordenes, setOrdenes] = useState<OrdenTrabajoList[]>([]);
   const [detalle, setDetalle] = useState<OrdenTrabajo | null>(null);
+  const [vehicleImageUrl, setVehicleImageUrl] = useState<string | undefined>(undefined);
   const [tecnicos, setTecnicos] = useState<{ id: number; nombre: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -583,6 +586,36 @@ export function OrdenesPage() {
     setDummyChecklist(buildDummyChecklist(key));
     setDummyChecklistReporte(null);
   }, [detalle, buildDummyChecklist, loadChecklist, loadSolicitudesCambio]);
+
+  // Foto del tipo de vehiculo, para dibujar encima los componentes con falla del reporte.
+  useEffect(() => {
+    const tipoNombre = (detalle?.vehiculoTipo || '').trim().toLowerCase();
+    if (!tipoNombre) {
+      setVehicleImageUrl(undefined);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await catalogosService.getTiposVehiculo();
+        if (cancelled) return;
+        if (res.success && Array.isArray(res.data)) {
+          const tipo = res.data.find((t) => (t.nombre || '').trim().toLowerCase() === tipoNombre);
+          const preferida = tipo?.imagenFallasUrl || tipo?.imagenUrl;
+          setVehicleImageUrl(preferida ? getFullImageUrl(preferida) : undefined);
+        } else {
+          setVehicleImageUrl(undefined);
+        }
+      } catch {
+        if (!cancelled) setVehicleImageUrl(undefined);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [detalle?.id, detalle?.vehiculoTipo]);
 
   const updateChecklistRespuesta = (id: number, changes: { valor?: string; notas?: string; cantidad?: number; fotoUrl?: string }) => {
     setChecklistRespuestas((prev) => ({ ...prev, [id]: { ...prev[id], ...changes } }));
@@ -1673,6 +1706,66 @@ export function OrdenesPage() {
               </div>
             )}
           </div>
+
+          {(() => {
+            // Componentes con falla marcados sobre la foto del carro al crear el reporte.
+            // Vienen en la orden (detalle.imageFaults) y, si no, en el reporte ligado.
+            const faults = (detalle.imageFaults?.length ? detalle.imageFaults : reporteDetalle?.imageFaults) || [];
+            if (!faults.length) return null;
+
+            const puntos: VehicleImagePoint[] = faults
+              .filter((f) => typeof f.xPct === 'number' && typeof f.yPct === 'number')
+              .map((f) => ({
+                id: f.vehicleImagePointId ?? f.id,
+                imageKey: '',
+                xPct: f.xPct as number,
+                yPct: f.yPct as number,
+                imageFaultId: f.imageFaultId,
+                imageFaultName: f.imageFaultName,
+                active: true,
+              }));
+            const numeros: Record<number, number> = {};
+            puntos.forEach((p, i) => {
+              numeros[p.id] = i + 1;
+            });
+
+            return (
+              <div className="mt-4">
+                <p className="font-semibold text-continental-black mb-2">Componentes con falla (imagen)</p>
+                <div className="rounded-lg border p-4 bg-continental-gray-5 space-y-4">
+                  {puntos.length > 0 && (
+                    <InteractiveVehicleImage
+                      imageUrl={vehicleImageUrl}
+                      points={puntos}
+                      pointNumbers={numeros}
+                      showPointLabels={false}
+                      readonly
+                      emptyMessage="No hay componentes con posicion para dibujar."
+                    />
+                  )}
+                  <ul className="space-y-2">
+                    {faults.map((f) => {
+                      const numero = numeros[f.vehicleImagePointId ?? f.id];
+                      return (
+                        <li key={f.id} className="flex flex-wrap items-center gap-2 text-sm text-continental-gray-1">
+                          {numero ? (
+                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-red-600 text-[11px] font-bold tabular-nums text-white">
+                              {numero}
+                            </span>
+                          ) : (
+                            <span className="font-bold text-continental-yellow">•</span>
+                          )}
+                          <span className="font-medium text-continental-black">
+                            {f.imageFaultName || `Falla #${f.imageFaultId}`}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              </div>
+            );
+          })()}
 
           {reporteDetalle?.evidencias?.length ? (
             <div className="mt-4">

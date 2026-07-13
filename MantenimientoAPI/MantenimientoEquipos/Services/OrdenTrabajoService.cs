@@ -95,6 +95,12 @@ public class OrdenTrabajoService
             .Include(o => o.ReporteFalla)
                 .ThenInclude(r => r.ItemsChecklist)
                     .ThenInclude(ic => ic.ChecklistItem)
+            .Include(o => o.ReporteFalla)
+                .ThenInclude(r => r.ImageFaults)
+                    .ThenInclude(rif => rif.ImageFault)
+            .Include(o => o.ReporteFalla)
+                .ThenInclude(r => r.ImageFaults)
+                    .ThenInclude(rif => rif.VehicleImagePoint)
             .Include(o => o.Evidencias)
             .Include(o => o.RespuestasChecklist)
                 .ThenInclude(r => r.ChecklistItem)
@@ -228,6 +234,20 @@ public class OrdenTrabajoService
                         FechaAsignacion = ic.FechaAsignacion
                     }).ToList()
                     : new List<ReporteFallaChecklistItemDto>(),
+                ImageFaults = o.ReporteFalla != null
+                    ? o.ReporteFalla.ImageFaults
+                        .OrderBy(rif => rif.Id)
+                        .Select(rif => new ReportImageFaultDto
+                        {
+                            Id = rif.Id,
+                            ReporteFallaId = rif.ReporteFallaId,
+                            ImageFaultId = rif.ImageFaultId,
+                            ImageFaultName = rif.ImageFault.Name,
+                            VehicleImagePointId = rif.VehicleImagePointId,
+                            XPct = rif.VehicleImagePoint != null ? rif.VehicleImagePoint.XPct : null,
+                            YPct = rif.VehicleImagePoint != null ? rif.VehicleImagePoint.YPct : null
+                        }).ToList()
+                    : new List<ReportImageFaultDto>(),
                 ItemsChecklist = o.ItemsChecklist.Select(ic => new OrdenTrabajoChecklistItemDto
                 {
                     Id = ic.Id,

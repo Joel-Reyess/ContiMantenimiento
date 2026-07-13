@@ -64,6 +64,12 @@ public class OrdenTrabajoDto
     public List<SolicitudActividadAdicionalDto> SolicitudesActividadAdicional { get; set; } = new();
     public List<ReporteFallaChecklistItemDto> ItemsChecklistReporte { get; set; } = new();
     public List<OrdenTrabajoChecklistItemDto> ItemsChecklist { get; set; } = new();
+
+    /// <summary>
+    /// Componentes con falla que el tecnico selecciono sobre la foto del carro al
+    /// crear el reporte. Vienen del ReporteFalla ligado a esta orden.
+    /// </summary>
+    public List<ReportImageFaultDto> ImageFaults { get; set; } = new();
 }
 
 public class OrdenTrabajoCreateRequest

@@ -1,5 +1,6 @@
 import type { EstadoOrdenTrabajo, Prioridad } from './Api.interface';
 import type { Evidencia, ReporteFalla } from './Reporte.interface';
+import type { ReportImageFault } from './ImageFault.interface';
 
 export interface OrdenTrabajo {
   id: number;
@@ -70,6 +71,8 @@ export interface OrdenTrabajo {
   solicitudesActividadAdicional: SolicitudActividadAdicional[];
   itemsChecklistReporte?: ReporteChecklistItem[];
   itemsChecklist?: OrdenTrabajoChecklistItem[];
+  /** Componentes con falla marcados sobre la foto del carro al crear el reporte. */
+  imageFaults?: ReportImageFault[];
 }
 
 export interface SolicitudActividadAdicional {
