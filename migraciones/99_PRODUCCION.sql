@@ -17,13 +17,18 @@
 --     al servidor a mano:
 --         de:  migraciones/imagenes_carritos/tipo_*.png   (12 archivos)
 --         a:   <carpeta de la API>/wwwroot/uploads/tiposvehiculo/
---     Si no los copias, la app muestra "No hay imagen disponible" y los puntos
---     numerados salen sin foto abajo.
+--     Si no los copias, la app muestra "No hay imagen disponible".
+--
+--  NO DEBE SALIR NINGUN ERROR EN ROJO
+--  ---------------------------------
+--  Si sale algo, mandalo. Al final hay un SELECT de verificacion (pestana
+--  RESULTS de SSMS, no Messages): cada renglon debe decir OK.
 --
 --  ES SEGURO CORRERLO VARIAS VECES
 --  -------------------------------
---  Todo esta protegido con IF NOT EXISTS / COL_LENGTH / OBJECT_ID. Si una tabla
---  o columna ya existe, la salta. No duplica datos. NO hay DROP/DELETE/TRUNCATE.
+--  Todo esta protegido con IF NOT EXISTS / COL_LENGTH / OBJECT_ID. Si una tabla,
+--  columna, llave o indice ya existe, la salta. No duplica nada.
+--  NO hay DROP / DELETE / TRUNCATE: el script no borra nada, nunca.
 --
 --  QUE NO TRAE
 --  -----------
@@ -76,7 +81,13 @@ GO
 --   Models/VehiculoPrefijoConfig.cs
 -- y de la config de EF en Models/MantenimientoDbContext.cs (lineas 329-365).
 --
--- Idempotente: cada tabla/FK/indice se crea SOLO si no existe.
+-- Las FK van con ON DELETE NO ACTION a proposito: con CASCADE, SQL Server las
+-- rechaza (Msg 1785 'multiple cascade paths') porque ya hay otros caminos de
+-- borrado hacia esas tablas. EF de todos modos borra los hijos del lado de la app.
+--
+-- Idempotente: la tabla se crea si no existe; la FK se agrega solo si NO existe ya
+-- una FK de esa MISMA COLUMNA hacia esa MISMA TABLA (no basta con el nombre: la
+-- base ya trae FKs con otros nombres y se crearian duplicadas).
 -- Corre ANTES de 07 y 08 (esos le agregan columnas a estas mismas tablas).
 -- =============================================================================
 SET NOCOUNT ON;
@@ -106,11 +117,16 @@ GO
 -- FK a OrdenesTrabajo (Cascade: si borras la orden, se van sus items)
 IF OBJECT_ID('dbo.OrdenesTrabajoChecklistItems','U') IS NOT NULL
    AND OBJECT_ID('dbo.OrdenesTrabajo','U') IS NOT NULL
-   AND OBJECT_ID('dbo.FK_OTCI_OrdenesTrabajo','F') IS NULL
+   AND NOT EXISTS (
+           SELECT 1 FROM sys.foreign_keys fk
+           JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+           WHERE fk.parent_object_id     = OBJECT_ID('dbo.OrdenesTrabajoChecklistItems')
+             AND fk.referenced_object_id = OBJECT_ID('dbo.OrdenesTrabajo')
+             AND COL_NAME(fkc.parent_object_id, fkc.parent_column_id) = 'OrdenTrabajoId')
 BEGIN
     ALTER TABLE dbo.OrdenesTrabajoChecklistItems
         ADD CONSTRAINT FK_OTCI_OrdenesTrabajo
-        FOREIGN KEY (OrdenTrabajoId) REFERENCES dbo.OrdenesTrabajo(Id) ON DELETE CASCADE;
+        FOREIGN KEY (OrdenTrabajoId) REFERENCES dbo.OrdenesTrabajo(Id) ON DELETE NO ACTION;
     PRINT 'FK_OTCI_OrdenesTrabajo agregada.';
 END
 GO
@@ -118,7 +134,12 @@ GO
 -- FK a ChecklistItems (Restrict: no dejes borrar un item usado por una orden)
 IF OBJECT_ID('dbo.OrdenesTrabajoChecklistItems','U') IS NOT NULL
    AND OBJECT_ID('dbo.ChecklistItems','U') IS NOT NULL
-   AND OBJECT_ID('dbo.FK_OTCI_ChecklistItems','F') IS NULL
+   AND NOT EXISTS (
+           SELECT 1 FROM sys.foreign_keys fk
+           JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+           WHERE fk.parent_object_id     = OBJECT_ID('dbo.OrdenesTrabajoChecklistItems')
+             AND fk.referenced_object_id = OBJECT_ID('dbo.ChecklistItems')
+             AND COL_NAME(fkc.parent_object_id, fkc.parent_column_id) = 'ChecklistItemId')
 BEGIN
     ALTER TABLE dbo.OrdenesTrabajoChecklistItems
         ADD CONSTRAINT FK_OTCI_ChecklistItems
@@ -167,18 +188,28 @@ GO
 
 IF OBJECT_ID('dbo.ReportesFallaChecklistItems','U') IS NOT NULL
    AND OBJECT_ID('dbo.ReportesFalla','U') IS NOT NULL
-   AND OBJECT_ID('dbo.FK_RFCI_ReportesFalla','F') IS NULL
+   AND NOT EXISTS (
+           SELECT 1 FROM sys.foreign_keys fk
+           JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+           WHERE fk.parent_object_id     = OBJECT_ID('dbo.ReportesFallaChecklistItems')
+             AND fk.referenced_object_id = OBJECT_ID('dbo.ReportesFalla')
+             AND COL_NAME(fkc.parent_object_id, fkc.parent_column_id) = 'ReporteFallaId')
 BEGIN
     ALTER TABLE dbo.ReportesFallaChecklistItems
         ADD CONSTRAINT FK_RFCI_ReportesFalla
-        FOREIGN KEY (ReporteFallaId) REFERENCES dbo.ReportesFalla(Id) ON DELETE CASCADE;
+        FOREIGN KEY (ReporteFallaId) REFERENCES dbo.ReportesFalla(Id) ON DELETE NO ACTION;
     PRINT 'FK_RFCI_ReportesFalla agregada.';
 END
 GO
 
 IF OBJECT_ID('dbo.ReportesFallaChecklistItems','U') IS NOT NULL
    AND OBJECT_ID('dbo.ChecklistItems','U') IS NOT NULL
-   AND OBJECT_ID('dbo.FK_RFCI_ChecklistItems','F') IS NULL
+   AND NOT EXISTS (
+           SELECT 1 FROM sys.foreign_keys fk
+           JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+           WHERE fk.parent_object_id     = OBJECT_ID('dbo.ReportesFallaChecklistItems')
+             AND fk.referenced_object_id = OBJECT_ID('dbo.ChecklistItems')
+             AND COL_NAME(fkc.parent_object_id, fkc.parent_column_id) = 'ChecklistItemId')
 BEGIN
     ALTER TABLE dbo.ReportesFallaChecklistItems
         ADD CONSTRAINT FK_RFCI_ChecklistItems
@@ -230,7 +261,12 @@ GO
 
 IF OBJECT_ID('dbo.VehiculoPrefijoConfigs','U') IS NOT NULL
    AND OBJECT_ID('dbo.TiposVehiculo','U') IS NOT NULL
-   AND OBJECT_ID('dbo.FK_VPC_TiposVehiculo','F') IS NULL
+   AND NOT EXISTS (
+           SELECT 1 FROM sys.foreign_keys fk
+           JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+           WHERE fk.parent_object_id     = OBJECT_ID('dbo.VehiculoPrefijoConfigs')
+             AND fk.referenced_object_id = OBJECT_ID('dbo.TiposVehiculo')
+             AND COL_NAME(fkc.parent_object_id, fkc.parent_column_id) = 'TipoVehiculoId')
 BEGIN
     ALTER TABLE dbo.VehiculoPrefijoConfigs
         ADD CONSTRAINT FK_VPC_TiposVehiculo
@@ -1492,11 +1528,11 @@ GO
 GO
 
 -- #############################################################################
--- ##  VERIFICACION FINAL - todo debe decir OK
+-- ##  VERIFICACION FINAL - mira la pestana RESULTS, todo debe decir OK
 -- #############################################################################
 GO
 PRINT '';
-PRINT '>>> VERIFICACION';
+PRINT '>>> VERIFICACION (ver pestana RESULTS)';
 GO
 
 SELECT 'Tabla ' + t.n AS Objeto,
@@ -1523,13 +1559,21 @@ SELECT 'Datos: puntos (VehicleImagePoints)',
 UNION ALL
 SELECT 'Datos: tipos con foto asignada',
        CASE WHEN (SELECT COUNT(*) FROM dbo.TiposVehiculo WHERE ImagenFallasUrl IS NOT NULL) = 0 THEN '*** VACIO ***'
-            ELSE CONCAT('OK (', (SELECT COUNT(*) FROM dbo.TiposVehiculo WHERE ImagenFallasUrl IS NOT NULL), ' tipos)') END;
+            ELSE CONCAT('OK (', (SELECT COUNT(*) FROM dbo.TiposVehiculo WHERE ImagenFallasUrl IS NOT NULL), ' tipos)') END
+UNION ALL
+SELECT 'Llaves foraneas duplicadas',
+       CASE WHEN EXISTS (
+              SELECT 1 FROM sys.foreign_keys fk
+              JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+              GROUP BY fk.parent_object_id, fk.referenced_object_id, fkc.parent_column_id
+              HAVING COUNT(*) > 1)
+            THEN '*** HAY DUPLICADAS ***' ELSE 'OK (ninguna)' END;
 GO
 
 PRINT '';
 PRINT '#################################################################';
-PRINT '##  LISTO. Si algo dice FALTA o VACIO, mandame la captura.      ##';
+PRINT '##  LISTO. Revisa la pestana RESULTS: todo debe decir OK.       ##';
 PRINT '##  FALTA COPIAR los 12 PNG a wwwroot/uploads/tiposvehiculo/    ##';
-PRINT '##  y reiniciar la API.                                          ##';
+PRINT '##  y desplegar el codigo (API recompilada + frontend build).   ##';
 PRINT '#################################################################';
 GO
