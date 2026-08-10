@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, CheckCircle, Loader2, Plus, RefreshCcw, Search, Printer } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle, Loader2, Plus, RefreshCcw, Search, Printer, Calculator } from 'lucide-react';
 import {
   Alert,
   AlertDescription,
@@ -525,6 +525,13 @@ export function ReportesPage() {
               <Search className="h-4 w-4" />
               Buscar
             </Button>
+            <Link
+              to="/reportar-reparacion"
+              className="inline-flex items-center gap-2 rounded-md border border-continental-gray-3 px-4 py-2 text-sm font-medium text-continental-black hover:bg-continental-gray-4"
+            >
+              <Calculator className="h-4 w-4" />
+              Falla / Reparación con costos
+            </Link>
             <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => setCrearOpen(true)}>
               <Plus className="h-4 w-4" />
               Nuevo reporte
