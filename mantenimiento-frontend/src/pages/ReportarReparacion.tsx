@@ -1,23 +1,41 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Trash2, Save, Eraser, ClipboardList, AlertCircle } from 'lucide-react';
+import {
+  Search,
+  Trash2,
+  Save,
+  Eraser,
+  ClipboardList,
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
+} from 'lucide-react';
 import { InteractiveVehicleImage } from '@/components/vehiculos/InteractiveVehicleImage';
-import { catalogosService, vehicleImagePointsService } from '@/services';
+import { catalogosService, vehicleImagePointsService, reportesService } from '@/services';
 import type { TipoVehiculoItem } from '@/services/catalogosService';
-import type { VehicleImagePoint } from '@/interfaces';
+import type { VehicleImagePoint, ReporteFallaCreateRequest, ReportImageFaultCreateRequest } from '@/interfaces';
+import { Prioridad } from '@/interfaces/Api.interface';
 import { cn, formatCurrency, getFullImageUrl } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
-// FASE 1 - Solo frontend. Los precios son FICTICIOS y viven en el navegador
-// (localStorage). En la Fase 2 se conectan al backend (columna CostoUnitario
-// en ImageFaults + CostoAplicado en ReportImageFaults) y el IVA a
-// ConfiguracionSistema. Nada de esta pantalla toca la base de datos todavia.
+// Reportar Falla / Reparacion con costos.
+//
+// El flujo YA persiste igual que "Reportes de Falla": arma un
+// ReporteFallaCreateRequest y lo manda a POST /reportes/crear-con-checklist-
+// automatico con imageFaults[] (cada actividad = ImageFault + VehicleImagePoint).
+//
+// Los PRECIOS por actividad todavia son configurables en este navegador
+// (localStorage) porque el backend aun no tiene columnas de costo. Para que el
+// costo NO se pierda, el desglose se guarda dentro de la descripcion del
+// reporte. En la Fase 2 se agregan las columnas CostoUnitario / CostoAplicado
+// y el IVA se lee de ConfiguracionSistema.
 // ---------------------------------------------------------------------------
 
 const IVA_RATE = 0.16;
 const PRICE_STORAGE_KEY = 'reparacion_precios_ficticios';
 const DEFAULT_PRICE = 500;
+const DESC_MAX = 1000;
 
-/** Precios ficticios guardados por actividad (imageFaultId -> precio). */
+/** Precios configurables guardados por actividad (imageFaultId -> precio). */
 function loadStoredPrices(): Record<number, number> {
   try {
     const raw = localStorage.getItem(PRICE_STORAGE_KEY);
@@ -36,6 +54,13 @@ interface ActivityRow {
   nombre: string;
 }
 
+/** Mismo criterio que el modal original para detectar orden activa duplicada. */
+function isDuplicateError(res: any): boolean {
+  const code = res?.errorCode || (res?.errors && res.errors.length > 0 ? res.errors[0] : null);
+  const msg = res?.message || '';
+  return code === 'DuplicateActiveOrder' || msg.toLowerCase().includes('ya tiene una orden de trabajo activa');
+}
+
 export function ReportarReparacionPage() {
   const [tipos, setTipos] = useState<TipoVehiculoItem[]>([]);
   const [selectedTipoId, setSelectedTipoId] = useState<number | null>(null);
@@ -46,6 +71,13 @@ export function ReportarReparacionPage() {
   const [loadingTipos, setLoadingTipos] = useState(true);
   const [loadingPoints, setLoadingPoints] = useState(false);
   const [error, setError] = useState('');
+
+  // Datos del reporte
+  const [codigoVehiculo, setCodigoVehiculo] = useState('');
+  const [prioridad, setPrioridad] = useState<number>(Prioridad.Media);
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState('');
+  const [duplicateWarning, setDuplicateWarning] = useState(false);
 
   // Cargar los 12 modelos al entrar
   useEffect(() => {
@@ -136,6 +168,8 @@ export function ReportarReparacionPage() {
   };
 
   const togglePoint = (point: VehicleImagePoint) => {
+    setSuccess('');
+    setDuplicateWarning(false);
     setSelectedPointIds((prev) =>
       prev.includes(point.id) ? prev.filter((id) => id !== point.id) : [...prev, point.id]
     );
@@ -161,30 +195,77 @@ export function ReportarReparacionPage() {
   const iva = subtotal * IVA_RATE;
   const total = subtotal + iva;
 
-  const handleGuardar = () => {
-    // FASE 1: aun no persiste. Mostramos el resumen que se enviaria en Fase 2.
-    const payload = {
-      tipoVehiculoId: selectedTipoId,
-      modelo: selectedTipo?.nombre,
-      actividades: selectedActivities.map((a) => ({
-        imageFaultId: a.faultId,
-        vehicleImagePointId: a.point.id,
-        numero: a.numero,
-        nombre: a.nombre,
-        costoAplicado: priceFor(a.faultId),
-      })),
-      subtotal,
-      iva,
-      total,
+  /** Descripcion que se guarda con el reporte (incluye el desglose de costos). */
+  const buildDescripcion = (): string => {
+    const modelo = selectedTipo?.nombre ?? 'Contenedor';
+    const lista = selectedActivities
+      .map((a) => `#${a.numero} ${a.nombre}=${formatCurrency(priceFor(a.faultId))}`)
+      .join('; ');
+    const resumen =
+      `Subtotal ${formatCurrency(subtotal)}, IVA 16% ${formatCurrency(iva)}, ` +
+      `Total ${formatCurrency(total)} MXN`;
+    let desc = `Falla/Reparacion ${modelo}. Actividades (${selectedActivities.length}): ${lista}. ${resumen}.`;
+    if (desc.length > DESC_MAX) desc = desc.slice(0, DESC_MAX - 1).trimEnd() + '…';
+    return desc;
+  };
+
+  const handleGuardar = async (force = false) => {
+    setError('');
+    setSuccess('');
+    if (!force) setDuplicateWarning(false);
+
+    const code = codigoVehiculo.trim();
+    if (!code) {
+      setError('Captura el código del contenedor para poder guardar el reporte.');
+      return;
+    }
+    if (selectedActivities.length === 0) {
+      setError('Selecciona al menos una actividad en la imagen o en la lista.');
+      return;
+    }
+
+    const imageFaults: ReportImageFaultCreateRequest[] = selectedActivities.map((a) => ({
+      imageFaultId: a.faultId,
+      vehicleImagePointId: a.point.id,
+    }));
+
+    const reporteData: ReporteFallaCreateRequest = {
+      codigoVehiculo: code,
+      descripcion: buildDescripcion(),
+      prioridad: prioridad as ReporteFallaCreateRequest['prioridad'],
+      puedeOperar: prioridad !== Prioridad.Alta && prioridad !== Prioridad.Urgente,
+      tipoMantenimiento: 'Correctivo',
+      checklistItemIds: [],
+      checklistItems: [],
+      imageFaults,
     };
-    console.log('[Reparacion] Payload Fase 2 (pendiente conectar backend):', payload);
-    alert(
-      `Reporte listo (demo Fase 1)\n\n` +
-        `Modelo: ${selectedTipo?.nombre ?? '-'}\n` +
-        `Actividades: ${selectedActivities.length}\n` +
-        `Total: ${formatCurrency(total)}\n\n` +
-        `Aun no se guarda en la base. En la Fase 2 se conecta el backend.`
-    );
+
+    setSaving(true);
+    try {
+      const res = await reportesService.createWithAutoChecklist(reporteData, force);
+      if (res.success && res.data?.id) {
+        setSuccess(
+          `Reporte creado (folio interno #${res.data.id}) para ${code}. ` +
+            `Total estimado: ${formatCurrency(total)} MXN.`
+        );
+        setSelectedPointIds([]);
+        setDuplicateWarning(false);
+        window.dispatchEvent(new CustomEvent('notifications:refresh'));
+      } else if (isDuplicateError(res)) {
+        setDuplicateWarning(true);
+      } else {
+        setError(res.message || 'No se pudo crear el reporte.');
+      }
+    } catch (err: any) {
+      const resData = err?.response?.data || err;
+      if (isDuplicateError(resData)) {
+        setDuplicateWarning(true);
+      } else {
+        setError(resData?.message || err?.message || 'No se pudo crear el reporte. Revisa tu conexión.');
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -193,36 +274,105 @@ export function ReportarReparacionPage() {
       <div className="mb-4">
         <h1 className="text-2xl font-bold text-continental-black">Reportar Falla / Reparación</h1>
         <p className="text-sm text-continental-gray-1">
-          Selecciona en el contenedor las actividades que se van a realizar para calcular el costo
-          total de la reparación.
+          Captura el contenedor, selecciona en la imagen las actividades a realizar y guarda el
+          reporte con su costo estimado.
         </p>
       </div>
 
-      {/* Selector de modelo */}
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <label className="text-sm font-semibold text-continental-black">Modelo de contenedor:</label>
-        <select
-          className="min-w-[240px] rounded-lg border border-continental-gray-3 bg-white px-3 py-2 text-sm outline-none focus:border-continental-blue-dark"
-          value={selectedTipoId ?? ''}
-          onChange={(e) => setSelectedTipoId(Number(e.target.value))}
-          disabled={loadingTipos}
-        >
-          {loadingTipos && <option>Cargando modelos…</option>}
-          {!loadingTipos &&
-            tipos.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.nombre}
-              </option>
-            ))}
-        </select>
-        <span className="rounded-full bg-continental-gray-4 px-3 py-1 text-xs font-medium text-continental-gray-1">
-          Precios ficticios (Fase 1) — editables y se guardan en este navegador
-        </span>
+      {/* Datos del reporte + selector de modelo */}
+      <div className="mb-4 grid grid-cols-1 gap-3 rounded-xl border border-continental-gray-3/70 bg-white p-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-semibold uppercase tracking-wide text-continental-gray-1">
+            Código de contenedor <span className="text-continental-red">*</span>
+          </label>
+          <input
+            value={codigoVehiculo}
+            onChange={(e) => {
+              setCodigoVehiculo(e.target.value.toUpperCase());
+              setSuccess('');
+              setDuplicateWarning(false);
+            }}
+            placeholder="Ej. LIB-001"
+            className="rounded-lg border border-continental-gray-3 px-3 py-2 text-sm outline-none focus:border-continental-blue-dark"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-semibold uppercase tracking-wide text-continental-gray-1">
+            Modelo de contenedor
+          </label>
+          <select
+            className="rounded-lg border border-continental-gray-3 bg-white px-3 py-2 text-sm outline-none focus:border-continental-blue-dark"
+            value={selectedTipoId ?? ''}
+            onChange={(e) => setSelectedTipoId(Number(e.target.value))}
+            disabled={loadingTipos}
+          >
+            {loadingTipos && <option>Cargando modelos…</option>}
+            {!loadingTipos &&
+              tipos.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.nombre}
+                </option>
+              ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-semibold uppercase tracking-wide text-continental-gray-1">
+            Prioridad
+          </label>
+          <select
+            className="rounded-lg border border-continental-gray-3 bg-white px-3 py-2 text-sm outline-none focus:border-continental-blue-dark"
+            value={prioridad}
+            onChange={(e) => setPrioridad(Number(e.target.value))}
+          >
+            <option value={Prioridad.Baja}>Baja</option>
+            <option value={Prioridad.Media}>Media</option>
+            <option value={Prioridad.Alta}>Alta</option>
+            <option value={Prioridad.Urgente}>Urgente</option>
+          </select>
+        </div>
+
+        <div className="flex items-end">
+          <span className="rounded-full bg-continental-gray-4 px-3 py-1 text-xs font-medium text-continental-gray-1">
+            Precios editables — se guardan en este navegador
+          </span>
+        </div>
       </div>
 
       {error && (
         <div className="mb-4 flex items-center gap-2 rounded-lg border border-continental-red/40 bg-continental-red/10 px-3 py-2 text-sm text-continental-red">
-          <AlertCircle className="h-4 w-4" /> {error}
+          <AlertCircle className="h-4 w-4 shrink-0" /> {error}
+        </div>
+      )}
+
+      {success && (
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-sm text-green-800">
+          <CheckCircle2 className="h-4 w-4 shrink-0" /> {success}
+        </div>
+      )}
+
+      {duplicateWarning && (
+        <div className="mb-4 flex flex-col gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between">
+          <span className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            Este contenedor ya tiene una orden de trabajo activa. ¿Guardar el reporte de todos modos?
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setDuplicateWarning(false)}
+              className="rounded-md border border-amber-300 px-3 py-1 text-xs font-medium hover:bg-amber-100"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => handleGuardar(true)}
+              disabled={saving}
+              className="rounded-md bg-amber-500 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-600 disabled:opacity-50"
+            >
+              Guardar de todos modos
+            </button>
+          </div>
         </div>
       )}
 
@@ -397,17 +547,26 @@ export function ReportarReparacionPage() {
           )}
 
           <button
-            onClick={handleGuardar}
-            disabled={selectedActivities.length === 0}
+            onClick={() => handleGuardar(false)}
+            disabled={saving || selectedActivities.length === 0 || !codigoVehiculo.trim()}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-continental-yellow py-3 font-semibold text-continental-blue-dark shadow transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <Save className="h-5 w-5" /> Guardar y Reportar
+            {saving ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" /> Guardando…
+              </>
+            ) : (
+              <>
+                <Save className="h-5 w-5" /> Guardar y Reportar
+              </>
+            )}
           </button>
 
           <p className="flex items-start gap-1.5 text-[11px] text-continental-gray-2">
             <ClipboardList className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            Los costos mostrados son estimados (ficticios en Fase 1). Se guardan solo en este
-            navegador hasta conectar el backend.
+            El reporte se guarda con sus actividades y el desglose de costos en la descripción. Los
+            precios son editables y se conservan en este navegador hasta conectar las columnas de
+            costo en el backend.
           </p>
         </section>
       </div>
