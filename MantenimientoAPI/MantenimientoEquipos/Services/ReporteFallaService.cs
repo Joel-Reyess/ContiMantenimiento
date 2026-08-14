@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.Models.Enums;
@@ -10,6 +11,12 @@ public class ReporteFallaService
 {
     private readonly MantenimientoDbContext _db;
     private readonly VehiculoPrefijoConfigService _prefijoConfigService;
+
+    // Formato válido para auto-crear un vehículo desde un reporte: PREFIJO-###
+    // (prefijo alfanumérico, guion, y sufijo numérico). Evita que un dedazo
+    // como "CIR01" o "CIRR-001 " genere basura en la tabla Vehiculos / zonas.
+    private static readonly Regex FormatoCodigoAutoCreacion =
+        new(@"^[A-Za-z0-9]+-\d+$", RegexOptions.Compiled);
 
     public ReporteFallaService(MantenimientoDbContext db, VehiculoPrefijoConfigService prefijoConfigService)
     {
@@ -26,8 +33,20 @@ public class ReporteFallaService
 
     private async Task<Vehiculo> ObtenerOCrearVehiculoAsync(string codigoVehiculo, int userId)
     {
+        // Normalizamos para que un espacio accidental no cree un vehículo distinto ("CIR-001 " != "CIR-001").
+        codigoVehiculo = (codigoVehiculo ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(codigoVehiculo))
+            throw new ArgumentException("El código del vehículo es obligatorio.");
+
         var vehiculo = await _db.Vehiculos.FirstOrDefaultAsync(v => v.Codigo == codigoVehiculo && v.Activo);
         if (vehiculo != null) return vehiculo;
+
+        // A partir de aquí vamos a auto-crear el vehículo. Antes de tocar la tabla
+        // compartida (Vehiculos / zonas de transición) exigimos el formato PREFIJO-###
+        // para no ensuciar logística con códigos mal escritos.
+        if (!FormatoCodigoAutoCreacion.IsMatch(codigoVehiculo))
+            throw new ArgumentException(
+                $"El código \"{codigoVehiculo}\" no existe y no tiene el formato requerido para darlo de alta automáticamente. Usa el formato PREFIJO-### (por ejemplo CIR-001).");
 
         var tipoPrefijoId = await _prefijoConfigService.GetTipoVehiculoIdByCodigoAsync(codigoVehiculo);
         if (!tipoPrefijoId.HasValue)

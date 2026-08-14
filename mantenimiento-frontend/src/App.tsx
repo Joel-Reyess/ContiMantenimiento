@@ -25,6 +25,7 @@ import { NotFound } from '@/pages/NotFound';
 import { GestionVehiculosPrefijosPage } from '@/pages/GestionVehiculosPrefijos';
 import { GestionAsignacionLideresPage } from '@/pages/GestionAsignacionLideres';
 import { FallasImagenPage } from '@/pages/FallasImagen';
+import { ReportarReparacionPage } from '@/pages/ReportarReparacion';
 
 function App() {
   return (
@@ -242,6 +243,16 @@ function App() {
               element={
                 <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador']}>
                   <FallasImagenPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Reportar Falla / Reparacion con costos (Fase 1) */}
+            <Route
+              path="reportar-reparacion"
+              element={
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider']}>
+                  <ReportarReparacionPage />
                 </ProtectedRoute>
               }
             />
