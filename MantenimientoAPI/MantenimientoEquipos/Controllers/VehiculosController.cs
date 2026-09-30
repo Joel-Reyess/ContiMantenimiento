@@ -112,6 +112,34 @@ public class VehiculosController : ControllerBase
     }
 
     /// <summary>
+    /// Elimina un vehículo y todo su historial
+    /// </summary>
+    [HttpDelete("{id}")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var result = await _vehiculoService.DeleteManyAsync(new List<int> { id });
+        if (result.VehiculosEliminados == 0)
+            return NotFound(ApiResponse<string>.Error("Vehículo no encontrado"));
+
+        return Ok(ApiResponse<EliminarVehiculosResultDto>.Ok(result, "Vehículo eliminado correctamente"));
+    }
+
+    /// <summary>
+    /// Elimina varios vehículos a la vez (selección múltiple) junto con su historial
+    /// </summary>
+    [HttpPost("eliminar")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
+    public async Task<IActionResult> DeleteMany([FromBody] EliminarVehiculosRequest request)
+    {
+        var result = await _vehiculoService.DeleteManyAsync(request.Ids);
+        if (result.VehiculosEliminados == 0)
+            return NotFound(ApiResponse<string>.Error("No se encontraron los vehículos seleccionados"));
+
+        return Ok(ApiResponse<EliminarVehiculosResultDto>.Ok(result, $"{result.VehiculosEliminados} vehículo(s) eliminado(s) correctamente"));
+    }
+
+    /// <summary>
     /// Cambia el estado de un vehículo
     /// </summary>
     [HttpPatch("{id}/estado")]

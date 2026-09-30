@@ -135,3 +135,17 @@ public class CambiarUbicacionRequest
 {
     public UbicacionVehiculoEnum Ubicacion { get; set; }
 }
+
+public class EliminarVehiculosRequest
+{
+    [Required]
+    [MinLength(1, ErrorMessage = "Selecciona al menos un vehículo")]
+    public List<int> Ids { get; set; } = new();
+}
+
+public class EliminarVehiculosResultDto
+{
+    public int VehiculosEliminados { get; set; }
+    public int ReportesEliminados { get; set; }
+    public int OrdenesEliminadas { get; set; }
+}

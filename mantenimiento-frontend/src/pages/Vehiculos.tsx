@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Truck, Search, Plus, Loader2, RefreshCw, Info, Package } from 'lucide-react';
+import { Truck, Search, Plus, Loader2, RefreshCw, Info, Package, Trash2 } from 'lucide-react';
 import { getFullImageUrl } from '@/lib/utils';
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, Input, Modal, ModalFooter, Select, Spinner, Textarea } from '@/components/ui';
 import { vehiculosService } from '@/services/vehiculosService';
@@ -55,6 +55,13 @@ export function VehiculosPage() {
   const [tiposVehiculo, setTiposVehiculo] = useState<{ value: string; label: string }[]>([]);
   const [loadingTipos, setLoadingTipos] = useState(true);
 
+  const canDelete = hasRole(['SuperUsuario', 'Administrador']);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [deleteTargets, setDeleteTargets] = useState<VehiculoList[] | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+
   useEffect(() => {
     const fetchTiposVehiculo = async () => {
       try {
@@ -90,6 +97,7 @@ export function VehiculosPage() {
   const loadVehiculos = async (page = 1) => {
     setLoading(true);
     setError('');
+    setSelectedIds(new Set());
     try {
       // Determine type filter based on tab
       // If 'tuggers' tab, force type Tugger.
@@ -244,6 +252,52 @@ export function VehiculosPage() {
     }
   };
 
+  const toggleSelected = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const allSelected = vehiculos.length > 0 && vehiculos.every((v) => selectedIds.has(v.id));
+
+  const toggleSelectAll = () => {
+    setSelectedIds(allSelected ? new Set() : new Set(vehiculos.map((v) => v.id)));
+  };
+
+  const openDeleteModal = (targets: VehiculoList[]) => {
+    if (targets.length === 0) return;
+    setDeleteError('');
+    setSuccessMessage('');
+    setDeleteTargets(targets);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTargets || deleteTargets.length === 0) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      const res = await vehiculosService.deleteMany(deleteTargets.map((v) => v.id));
+      if (res.success) {
+        setSuccessMessage(res.message || 'Vehiculos eliminados correctamente');
+        setDeleteTargets(null);
+        setEditOpen(false);
+        loadVehiculos();
+      } else {
+        setDeleteError(res.message || 'No se pudieron eliminar los vehiculos');
+      }
+    } catch (err) {
+      console.error(err);
+      setDeleteError('Error al eliminar los vehiculos');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const targetsConHistorial = (deleteTargets || []).filter((v) => (v.totalReportes ?? 0) > 0);
+
   return (
     <div className="dashboard-wrapper space-y-4">
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -333,6 +387,51 @@ export function VehiculosPage() {
         </Alert>
       )}
 
+      {successMessage && (
+        <Alert variant="success" onClose={() => setSuccessMessage('')}>
+          <AlertTitle>Listo</AlertTitle>
+          <AlertDescription>{successMessage}</AlertDescription>
+        </Alert>
+      )}
+
+      {canDelete && !loading && vehiculos.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-continental-gray-3 bg-white px-4 py-3">
+          {/* style inline: index.css define label { display: block } fuera de capa y le gana a las utilidades */}
+          <label
+            className="items-center gap-2 text-sm font-medium text-continental-black cursor-pointer select-none"
+            style={{ display: 'flex', marginBottom: 0 }}
+          >
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-orange-500 cursor-pointer"
+              checked={allSelected}
+              onChange={toggleSelectAll}
+            />
+            Seleccionar todos ({vehiculos.length})
+          </label>
+          <div className="flex items-center gap-2">
+            {selectedIds.size > 0 && (
+              <>
+                <span className="text-sm text-continental-gray-1">{selectedIds.size} seleccionado(s)</span>
+                <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
+                  Quitar seleccion
+                </Button>
+              </>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex items-center gap-2 border-red-300 text-red-700 hover:bg-red-50"
+              disabled={selectedIds.size === 0}
+              onClick={() => openDeleteModal(vehiculos.filter((v) => selectedIds.has(v.id)))}
+            >
+              <Trash2 className="h-4 w-4" />
+              Eliminar seleccionados
+            </Button>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <Spinner />
       ) : vehiculos.length === 0 ? (
@@ -355,7 +454,21 @@ export function VehiculosPage() {
           {vehiculos.map((v) => {
             const ubicacionActual = v.ubicacion ?? v.ubicacionNombre ?? null;
             return (
-            <Card key={v.id} className="px-10 py-8 border-l-4 border-continental-yellow shadow-sm space-y-4">
+            <Card
+              key={v.id}
+              className={`relative px-10 py-8 border-l-4 border-continental-yellow shadow-sm space-y-4 ${
+                selectedIds.has(v.id) ? 'ring-2 ring-orange-400 bg-orange-50' : ''
+              }`}
+            >
+              {canDelete && (
+                <input
+                  type="checkbox"
+                  aria-label={`Seleccionar ${v.codigo}`}
+                  className="absolute left-2 top-2 h-4 w-4 accent-orange-500 cursor-pointer"
+                  checked={selectedIds.has(v.id)}
+                  onChange={() => toggleSelected(v.id)}
+                />
+              )}
               <div className="relative flex items-start gap-6 pr-8">
                 <div className="flex gap-4 min-w-0">
                   {(v as any).tipoImagenUrl || (v as any).imagenUrl ? (
@@ -438,6 +551,17 @@ export function VehiculosPage() {
                   >
                     Editar
                   </Button>
+                  {canDelete && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex items-center gap-2 border-red-300 text-red-700 hover:bg-red-50"
+                      onClick={() => openDeleteModal([v])}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Eliminar
+                    </Button>
+                  )}
                 </div>
               )}
             </Card>
@@ -551,12 +675,74 @@ export function VehiculosPage() {
           />
         </div>
         <ModalFooter>
+          {canDelete && form.id && (
+            <Button
+              variant="outline"
+              className="flex items-center gap-2 border-red-300 text-red-700 hover:bg-red-50"
+              onClick={() => {
+                const actual = vehiculos.find((v) => v.id === form.id);
+                openDeleteModal([actual ?? ({ id: form.id, codigo: form.codigo } as VehiculoList)]);
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+              Eliminar
+            </Button>
+          )}
           <Button variant="outline" onClick={() => setEditOpen(false)}>
             Cancelar
           </Button>
           <Button onClick={handleEdit} disabled={creando} className="flex items-center gap-2">
             {creando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             Guardar cambios
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      <Modal
+        isOpen={deleteTargets !== null}
+        onClose={() => {
+          if (!deleting) setDeleteTargets(null);
+        }}
+        title={deleteTargets && deleteTargets.length > 1 ? `Eliminar ${deleteTargets.length} vehiculos` : 'Eliminar vehiculo'}
+        description="Esta accion no se puede deshacer."
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-continental-black">Se eliminaran definitivamente:</p>
+          <div className="max-h-48 overflow-y-auto rounded-lg border border-continental-gray-3 bg-continental-gray-4/40 px-3 py-2">
+            <ul className="space-y-1 text-sm text-continental-black">
+              {(deleteTargets || []).map((v) => (
+                <li key={v.id} className="flex justify-between gap-3">
+                  <span className="font-medium">{v.codigo}</span>
+                  {(v.totalReportes ?? 0) > 0 && (
+                    <span className="text-xs text-red-700">{v.totalReportes} reporte(s)</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+          {targetsConHistorial.length > 0 && (
+            <Alert variant="warning">
+              <AlertTitle>Tiene historial</AlertTitle>
+              <AlertDescription>
+                {targetsConHistorial.length === 1 ? '1 vehiculo tiene' : `${targetsConHistorial.length} vehiculos tienen`} reportes registrados.
+                Tambien se borraran sus reportes, ordenes de trabajo, evidencias, checklists y pagos asociados.
+              </AlertDescription>
+            </Alert>
+          )}
+          {deleteError && (
+            <Alert variant="destructive">
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>{deleteError}</AlertDescription>
+            </Alert>
+          )}
+        </div>
+        <ModalFooter>
+          <Button variant="outline" onClick={() => setDeleteTargets(null)} disabled={deleting}>
+            Cancelar
+          </Button>
+          <Button className="bg-red-600 hover:bg-red-700 text-white flex items-center gap-2" onClick={handleConfirmDelete} disabled={deleting}>
+            {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            {deleting ? 'Eliminando...' : 'Si, eliminar'}
           </Button>
         </ModalFooter>
       </Modal>
