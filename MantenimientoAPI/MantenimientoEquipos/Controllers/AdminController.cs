@@ -1,3 +1,6 @@
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -13,10 +16,19 @@ namespace MantenimientoEquipos.Controllers;
 public class AdminController : ControllerBase
 {
     private readonly MantenimientoDbContext _db;
+    private readonly IConfiguration _config;
+    private readonly ILogger<AdminController> _logger;
 
-    public AdminController(MantenimientoDbContext db)
+    public AdminController(MantenimientoDbContext db, IConfiguration config, ILogger<AdminController> logger)
     {
         _db = db;
+        _config = config;
+        _logger = logger;
+    }
+
+    public class ResetDatosRequest
+    {
+        public string? ClaveMaestra { get; set; }
     }
 
     /// <summary>
@@ -27,14 +39,24 @@ public class AdminController : ControllerBase
     /// </summary>
     [HttpPost("reset-datos")]
     [RolesAllowed("SuperUsuario", "Administrador")]
-    public async Task<IActionResult> ResetDatos()
+    public async Task<IActionResult> ResetDatos([FromBody] ResetDatosRequest? request)
     {
-        // Verificar si ya se ha ejecutado el hard reset
-        var configReset = await _db.ConfiguracionSistema.FirstOrDefaultAsync(c => c.Clave == "HardResetExecuted");
-        if (configReset != null && configReset.Valor == "true")
+        // El reinicio puede repetirse, pero siempre exige la clave maestra
+        // (appsettings "Seguridad:ClaveMaestraReinicio" o variable de entorno Seguridad__ClaveMaestraReinicio)
+        var claveConfigurada = _config["Seguridad:ClaveMaestraReinicio"];
+        if (string.IsNullOrWhiteSpace(claveConfigurada))
         {
-            return StatusCode(403, ApiResponse<string>.Error("El reinicio de datos ya ha sido ejecutado anteriormente y no puede repetirse."));
+            return StatusCode(500, ApiResponse<string>.Error("No hay una clave maestra configurada en el servidor (Seguridad:ClaveMaestraReinicio)."));
         }
+
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(request?.ClaveMaestra) || !ClaveCoincide(request.ClaveMaestra, claveConfigurada))
+        {
+            _logger.LogWarning("Intento de reinicio de datos con clave maestra incorrecta. UsuarioId={UserId}", userIdClaim);
+            return StatusCode(403, ApiResponse<string>.Error("Clave maestra incorrecta."));
+        }
+
+        _logger.LogWarning("Reinicio de datos autorizado con clave maestra. UsuarioId={UserId}", userIdClaim);
 
         using var tx = await _db.Database.BeginTransactionAsync();
         try
@@ -44,8 +66,10 @@ public class AdminController : ControllerBase
             await _db.ReportesFallaChecklistItems.ExecuteDeleteAsync();
             await _db.OrdenesTrabajoChecklistItems.ExecuteDeleteAsync();
             await _db.ChecklistRespuestas.ExecuteDeleteAsync();
+            await _db.ReportImageFaults.ExecuteDeleteAsync();
 
             await _db.SolicitudesRefaccion.ExecuteDeleteAsync();
+            await _db.SolicitudesActividadAdicional.ExecuteDeleteAsync();
             // Desvincular consumos de órdenes antes de borrar (evitar FK conflict en caso de race condition o lock)
             // Usamos Raw SQL para manejar posibles nombres de tabla (singular/plural) y asegurar eliminación
             // Intentamos limpiar ambas posibles tablas para ser robustos ante inconsistencias de nombres en diferentes entornos
@@ -63,6 +87,8 @@ public class AdminController : ControllerBase
             await _db.ReportesFalla.ExecuteDeleteAsync();
 
             await _db.Consumibles.ExecuteDeleteAsync();
+            // SolicitudCambios apunta a Vehiculos y Users sin cascada
+            await _db.SolicitudesCambio.ExecuteDeleteAsync();
             await _db.Vehiculos.ExecuteDeleteAsync();
             await _db.VehiculoPrefijoConfigs.ExecuteDeleteAsync();
 
@@ -108,23 +134,22 @@ public class AdminController : ControllerBase
             // Se conservan: Roles, Areas,
             // ChecklistTemplates e Items, ConfiguracionSistema.
 
-            // Marcar que el reset ya se ejecutó
-            if (configReset == null)
+            // Registrar cuándo y quién hizo el último reinicio (los logs de acciones se borran arriba)
+            int? userId = int.TryParse(userIdClaim, out var uid) && usuariosIdsConservar.Contains(uid) ? uid : null;
+            var ultimoReinicio = await _db.ConfiguracionSistema.FirstOrDefaultAsync(c => c.Clave == "UltimoReinicioDatos");
+            if (ultimoReinicio == null)
             {
-                _db.ConfiguracionSistema.Add(new ConfiguracionSistema
+                ultimoReinicio = new ConfiguracionSistema
                 {
-                    Clave = "HardResetExecuted",
-                    Valor = "true",
-                    Descripcion = "Indica si el reinicio maestro de datos ya fue ejecutado",
-                    TipoDato = "bool",
-                    UpdatedAt = DateTime.UtcNow
-                });
+                    Clave = "UltimoReinicioDatos",
+                    Descripcion = "Fecha (UTC) del último reinicio de datos autorizado con clave maestra",
+                    TipoDato = "string"
+                };
+                _db.ConfiguracionSistema.Add(ultimoReinicio);
             }
-            else
-            {
-                configReset.Valor = "true";
-                configReset.UpdatedAt = DateTime.UtcNow;
-            }
+            ultimoReinicio.Valor = DateTime.UtcNow.ToString("o");
+            ultimoReinicio.UpdatedAt = DateTime.UtcNow;
+            ultimoReinicio.UpdatedBy = userId;
             await _db.SaveChangesAsync();
 
             await tx.CommitAsync();
@@ -135,5 +160,12 @@ public class AdminController : ControllerBase
             await tx.RollbackAsync();
             return StatusCode(500, ApiResponse<string>.Error($"No se pudo reiniciar los datos: {ex.Message}"));
         }
+    }
+
+    private static bool ClaveCoincide(string recibida, string esperada)
+    {
+        var a = SHA256.HashData(Encoding.UTF8.GetBytes(recibida));
+        var b = SHA256.HashData(Encoding.UTF8.GetBytes(esperada));
+        return CryptographicOperations.FixedTimeEquals(a, b);
     }
 }

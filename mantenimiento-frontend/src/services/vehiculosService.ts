@@ -34,6 +34,12 @@ export interface PaginatedResponse<T> {
   totalPages: number;
 }
 
+export interface EliminarVehiculosResult {
+  vehiculosEliminados: number;
+  reportesEliminados: number;
+  ordenesEliminadas: number;
+}
+
 export const vehiculosService = {
   async getAll(filters?: VehiculoFilters): Promise<ApiResponse<PaginatedResponse<VehiculoList>>> {
     const params = new URLSearchParams();
@@ -71,8 +77,12 @@ export const vehiculosService = {
     return await httpClient.put<Vehiculo>(`/vehiculos/${id}`, vehiculo);
   },
 
-  async delete(id: number): Promise<ApiResponse<void>> {
-    return await httpClient.delete<void>(`/vehiculos/${id}`);
+  async delete(id: number): Promise<ApiResponse<EliminarVehiculosResult>> {
+    return await httpClient.delete<EliminarVehiculosResult>(`/vehiculos/${id}`);
+  },
+
+  async deleteMany(ids: number[]): Promise<ApiResponse<EliminarVehiculosResult>> {
+    return await httpClient.post<EliminarVehiculosResult>('/vehiculos/eliminar', { ids });
   },
 
   async cambiarEstado(id: number, estado: number): Promise<ApiResponse<Vehiculo>> {

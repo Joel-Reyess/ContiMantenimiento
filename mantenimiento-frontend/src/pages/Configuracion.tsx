@@ -106,6 +106,7 @@ export function ConfiguracionPage() {
   const [resetting, setResetting] = useState(false);
   const [resetMessage, setResetMessage] = useState('');
   const [resetError, setResetError] = useState('');
+  const [claveMaestra, setClaveMaestra] = useState('');
   const canReset = hasRole(['Administrador', 'SuperUsuario', 'Superusuario']);
 
   const navigate = useNavigate();
@@ -169,19 +170,21 @@ export function ConfiguracionPage() {
   }, [location.search]);
 
   const handleResetDatos = async () => {
-    if (!canReset) return;
+    if (!canReset || !claveMaestra.trim()) return;
     setResetError('');
     setResetMessage('');
     setResetting(true);
     try {
-      const res = await adminService.resetDatos();
+      const res = await adminService.resetDatos(claveMaestra);
       if (!res.success) throw new Error(res.message || 'No se pudo reiniciar los datos');
       setResetMessage(res.message || 'Datos reiniciados');
+      setResetModalOpen(false);
     } catch (err: any) {
+      // El modal sigue abierto para poder corregir la clave
       setResetError(err.message || 'Error al reiniciar los datos');
     } finally {
       setResetting(false);
-      setResetModalOpen(false);
+      setClaveMaestra('');
     }
   };
 
@@ -1213,12 +1216,6 @@ export function ConfiguracionPage() {
               </p>
             </div>
           </div>
-          {resetError && (
-            <Alert variant="destructive">
-              <AlertTitle>Error</AlertTitle>
-              <AlertDescription>{resetError}</AlertDescription>
-            </Alert>
-          )}
           {resetMessage && (
             <Alert variant="default">
               <AlertTitle>Listo</AlertTitle>
@@ -1232,6 +1229,7 @@ export function ConfiguracionPage() {
               onClick={() => {
                 setResetError('');
                 setResetMessage('');
+                setClaveMaestra('');
                 setResetModalOpen(true);
               }}
             >
@@ -1262,21 +1260,36 @@ export function ConfiguracionPage() {
               <li>Plantillas de checklist</li>
             </ul>
           </p>
-           <p className="text-sm text-red-700 font-bold mt-2">
-            IMPORTANTE: Esta operación solo se puede ejecutar UNA VEZ.
-          </p>
           <Alert variant="destructive">
             <AlertTitle>Operación irreversible</AlertTitle>
             <AlertDescription>Confirma solo si tienes respaldo y entiendes el impacto.</AlertDescription>
           </Alert>
+          <Input
+            label="Clave maestra"
+            type="password"
+            autoComplete="off"
+            placeholder="Ingresa la clave maestra para autorizar"
+            value={claveMaestra}
+            onChange={(e) => setClaveMaestra(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleResetDatos();
+            }}
+            disabled={resetting}
+          />
+          {resetError && (
+            <Alert variant="destructive">
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>{resetError}</AlertDescription>
+            </Alert>
+          )}
         </div>
         <ModalFooter>
           <Button variant="outline" onClick={() => setResetModalOpen(false)} disabled={resetting}>
             Cancelar
           </Button>
-          <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={handleResetDatos} disabled={resetting}>
+          <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={handleResetDatos} disabled={resetting || !claveMaestra.trim()}>
             {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-            {resetting ? 'Reiniciando...' : 'Sí, borrar todo (Única vez)'}
+            {resetting ? 'Reiniciando...' : 'Sí, borrar todo'}
           </Button>
         </ModalFooter>
       </Modal>

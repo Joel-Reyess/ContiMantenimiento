@@ -254,6 +254,81 @@ public class VehiculoService
         return true;
     }
 
+    /// <summary>
+    /// Elimina definitivamente los vehículos indicados junto con todo su historial
+    /// (reportes, órdenes, evidencias, checklist, refacciones, pagos, documentos).
+    /// Varias FKs en la BD son NO ACTION, por eso se borran los dependientes a mano
+    /// en el mismo orden que usa el reinicio de datos (AdminController).
+    /// </summary>
+    public async Task<EliminarVehiculosResultDto> DeleteManyAsync(List<int> ids)
+    {
+        ids = ids.Distinct().ToList();
+
+        var vehiculoIds = await _db.Vehiculos
+            .Where(v => ids.Contains(v.Id))
+            .Select(v => v.Id)
+            .ToListAsync();
+
+        if (!vehiculoIds.Any())
+            return new EliminarVehiculosResultDto();
+
+        var reporteIds = await _db.ReportesFalla
+            .Where(r => vehiculoIds.Contains(r.VehiculoId))
+            .Select(r => r.Id)
+            .ToListAsync();
+
+        var ordenIds = await _db.OrdenesTrabajo
+            .Where(o => vehiculoIds.Contains(o.VehiculoId) || (o.ReporteFallaId.HasValue && reporteIds.Contains(o.ReporteFallaId.Value)))
+            .Select(o => o.Id)
+            .ToListAsync();
+
+        using var tx = await _db.Database.BeginTransactionAsync();
+
+        // Dependientes de reportes y órdenes
+        await _db.EvidenciasFotograficas
+            .Where(e => (e.ReporteFallaId.HasValue && reporteIds.Contains(e.ReporteFallaId.Value))
+                     || (e.OrdenTrabajoId.HasValue && ordenIds.Contains(e.OrdenTrabajoId.Value)))
+            .ExecuteDeleteAsync();
+        await _db.ReportesFallaChecklistItems.Where(i => reporteIds.Contains(i.ReporteFallaId)).ExecuteDeleteAsync();
+        await _db.ReportImageFaults.Where(f => reporteIds.Contains(f.ReporteFallaId)).ExecuteDeleteAsync();
+        await _db.OrdenesTrabajoChecklistItems.Where(i => ordenIds.Contains(i.OrdenTrabajoId)).ExecuteDeleteAsync();
+        await _db.ChecklistRespuestas.Where(r => ordenIds.Contains(r.OrdenTrabajoId)).ExecuteDeleteAsync();
+        await _db.SolicitudesRefaccion.Where(s => ordenIds.Contains(s.OrdenTrabajoId)).ExecuteDeleteAsync();
+        await _db.SolicitudesActividadAdicional.Where(s => ordenIds.Contains(s.OrdenTrabajoId)).ExecuteDeleteAsync();
+        await _db.RegistrosPago.Where(p => ordenIds.Contains(p.OrdenTrabajoId)).ExecuteDeleteAsync();
+
+        // Los movimientos de inventario se conservan; solo se desvinculan de la orden/reporte
+        await _db.ConsumosConsumibles
+            .Where(c => c.OrdenTrabajoId.HasValue && ordenIds.Contains(c.OrdenTrabajoId.Value))
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.OrdenTrabajoId, (int?)null));
+        await _db.ConsumosConsumibles
+            .Where(c => c.ReporteId.HasValue && reporteIds.Contains(c.ReporteId.Value))
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.ReporteId, (int?)null));
+
+        await _db.HistorialMantenimiento
+            .Where(h => vehiculoIds.Contains(h.VehiculoId) || (h.OrdenTrabajoId.HasValue && ordenIds.Contains(h.OrdenTrabajoId.Value)))
+            .ExecuteDeleteAsync();
+
+        var ordenesEliminadas = await _db.OrdenesTrabajo.Where(o => ordenIds.Contains(o.Id)).ExecuteDeleteAsync();
+        var reportesEliminados = await _db.ReportesFalla.Where(r => reporteIds.Contains(r.Id)).ExecuteDeleteAsync();
+
+        // Dependientes directos del vehículo
+        await _db.VehiculoDocumentos.Where(d => vehiculoIds.Contains(d.VehiculoId)).ExecuteDeleteAsync();
+        await _db.VehiculoChecklistAsignaciones.Where(a => vehiculoIds.Contains(a.VehiculoId)).ExecuteDeleteAsync();
+        await _db.SolicitudesCambio.Where(s => vehiculoIds.Contains(s.VehiculoId)).ExecuteDeleteAsync();
+
+        var vehiculosEliminados = await _db.Vehiculos.Where(v => vehiculoIds.Contains(v.Id)).ExecuteDeleteAsync();
+
+        await tx.CommitAsync();
+
+        return new EliminarVehiculosResultDto
+        {
+            VehiculosEliminados = vehiculosEliminados,
+            ReportesEliminados = reportesEliminados,
+            OrdenesEliminadas = ordenesEliminadas
+        };
+    }
+
     public async Task<bool> ExisteCodigoAsync(string codigo, int? excludeId = null)
     {
         var query = _db.Vehiculos.Where(v => v.Codigo == codigo);
