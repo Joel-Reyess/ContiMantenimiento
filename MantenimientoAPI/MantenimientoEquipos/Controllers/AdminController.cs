@@ -134,25 +134,11 @@ public class AdminController : ControllerBase
             // Se conservan: Roles, Areas,
             // ChecklistTemplates e Items, ConfiguracionSistema.
 
-            // Registrar cuándo y quién hizo el último reinicio (los logs de acciones se borran arriba)
-            int? userId = int.TryParse(userIdClaim, out var uid) && usuariosIdsConservar.Contains(uid) ? uid : null;
-            var ultimoReinicio = await _db.ConfiguracionSistema.FirstOrDefaultAsync(c => c.Clave == "UltimoReinicioDatos");
-            if (ultimoReinicio == null)
-            {
-                ultimoReinicio = new ConfiguracionSistema
-                {
-                    Clave = "UltimoReinicioDatos",
-                    Descripcion = "Fecha (UTC) del último reinicio de datos autorizado con clave maestra",
-                    TipoDato = "string"
-                };
-                _db.ConfiguracionSistema.Add(ultimoReinicio);
-            }
-            ultimoReinicio.Valor = DateTime.UtcNow.ToString("o");
-            ultimoReinicio.UpdatedAt = DateTime.UtcNow;
-            ultimoReinicio.UpdatedBy = userId;
-            await _db.SaveChangesAsync();
-
             await tx.CommitAsync();
+
+            // Queda en el log de Serilog (Logs/mantenimiento-*.log), que no se borra con el reinicio.
+            // No se usa ConfiguracionSistema porque ningún script crea esa tabla y no existe en todas las BD.
+            _logger.LogWarning("Reinicio de datos completado. UsuarioId={UserId}", userIdClaim);
             return Ok(ApiResponse<string>.Ok("Datos operativos reiniciados. Se conservaron usuarios clave, áreas y plantillas de checklist."));
         }
         catch (Exception ex)
