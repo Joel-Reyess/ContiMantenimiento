@@ -76,6 +76,8 @@ builder.Services.AddScoped<VehiculoPrefijoConfigService>();
 builder.Services.AddScoped<LiderTipoVehiculoAsignacionService>();
 builder.Services.AddScoped<OrdenTrabajoChecklistItemService>();
 builder.Services.AddScoped<MantenimientoEquipos.Services.TecnicoKPIsService>();
+builder.Services.AddScoped<ExcelExportService>();
+builder.Services.AddScoped<ExcelImportService>();
 
 // Configuración CORS para permitir peticiones desde el frontend
 var allowedOrigins = new[] {
@@ -93,6 +95,8 @@ builder.Services.AddCors(options =>
         policy.WithOrigins(allowedOrigins)
             .AllowAnyHeader()
             .AllowAnyMethod()
+            // Para que el navegador pueda leer el nombre de los archivos Excel descargados
+            .WithExposedHeaders("Content-Disposition")
     );
 });
 

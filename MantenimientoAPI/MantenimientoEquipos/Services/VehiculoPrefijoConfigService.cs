@@ -142,57 +142,48 @@ public class VehiculoPrefijoConfigService
   public async Task<int?> GetTipoVehiculoIdByCodigoAsync(string codigoVehiculo)
   {
     if (string.IsNullOrWhiteSpace(codigoVehiculo)) return null;
+    return DetectarTipoVehiculoId(codigoVehiculo, await GetPrefijosActivosAsync());
+  }
 
-    // Buscar configuraciones activas que coincidan con el código del vehículo
-    // Probamos diferentes estrategias de coincidencia:
-    
-    // 1. Coincidencia exacta con el prefijo (ya sea alfabético o numérico)
-    var partes = codigoVehiculo.Split('-');
-    string prefijoPrincipal = "";
-    if (partes.Length > 0) {
-        prefijoPrincipal = partes[0]; // Por ejemplo, de "MTC-045" o "123-ABC" tomaría "MTC" o "123"
+  public async Task<List<(string Prefijo, int TipoVehiculoId)>> GetPrefijosActivosAsync()
+  {
+    var activos = await _context.VehiculoPrefijoConfigs
+        .Where(vp => vp.Activo)
+        .Select(vp => new { vp.PrefijoCodigo, vp.TipoVehiculoId })
+        .ToListAsync();
+    return activos.Select(a => (a.PrefijoCodigo, a.TipoVehiculoId)).ToList();
+  }
+
+  /// <summary>
+  /// Reglas de detección (en este orden), sin distinguir mayúsculas como la intercalación de SQL Server:
+  /// 1. El texto antes del primer guion coincide exacto con un prefijo ("MTC-045" -> "MTC").
+  /// 2. Los dígitos iniciales coinciden exacto con un prefijo numérico.
+  /// 3. El código empieza con algún prefijo; gana el más largo.
+  /// Se usa en memoria para validar muchas filas (importación de Excel) sin una consulta por fila.
+  /// </summary>
+  public static int? DetectarTipoVehiculoId(string codigoVehiculo, IReadOnlyCollection<(string Prefijo, int TipoVehiculoId)> prefijos)
+  {
+    if (string.IsNullOrWhiteSpace(codigoVehiculo) || prefijos.Count == 0) return null;
+    var cmp = StringComparison.OrdinalIgnoreCase;
+
+    var prefijoPrincipal = codigoVehiculo.Split('-')[0];
+    if (prefijoPrincipal.Length > 0)
+    {
+      var exacto = prefijos.FirstOrDefault(p => string.Equals(p.Prefijo, prefijoPrincipal, cmp));
+      if (exacto.Prefijo != null) return exacto.TipoVehiculoId;
     }
 
-    // Buscar configuraciones que coincidan con el prefijo principal (antes del guion)
-    if (!string.IsNullOrEmpty(prefijoPrincipal)) {
-        var configPorPrefijo = await _context.VehiculoPrefijoConfigs
-            .Where(vp => vp.Activo && vp.PrefijoCodigo == prefijoPrincipal)
-            .OrderByDescending(vp => vp.PrefijoCodigo.Length) // Más específico primero
-            .FirstOrDefaultAsync();
-            
-        if (configPorPrefijo != null) {
-            return configPorPrefijo.TipoVehiculoId;
-        }
+    var inicioNumerico = new string(codigoVehiculo.TakeWhile(char.IsDigit).ToArray());
+    if (inicioNumerico.Length > 0)
+    {
+      var numerico = prefijos.FirstOrDefault(p => string.Equals(p.Prefijo, inicioNumerico, cmp));
+      if (numerico.Prefijo != null) return numerico.TipoVehiculoId;
     }
 
-    // 2. Coincidencia con prefijos numéricos dentro del código (por si el formato es diferente)
-    // Extraer parte numérica al inicio del código si existe
-    var inicioNumerico = "";
-    for (int i = 0; i < codigoVehiculo.Length; i++) {
-        if (char.IsDigit(codigoVehiculo[i])) {
-            inicioNumerico += codigoVehiculo[i];
-        } else {
-            break;
-        }
-    }
-
-    if (!string.IsNullOrEmpty(inicioNumerico)) {
-        var configPorNumero = await _context.VehiculoPrefijoConfigs
-            .Where(vp => vp.Activo && vp.PrefijoCodigo == inicioNumerico)
-            .OrderByDescending(vp => vp.PrefijoCodigo.Length) // Más específico primero
-            .FirstOrDefaultAsync();
-            
-        if (configPorNumero != null) {
-            return configPorNumero.TipoVehiculoId;
-        }
-    }
-
-    // 3. Coincidencia de prefijo parcial (más amplia)
-    var configPorStartsWith = await _context.VehiculoPrefijoConfigs
-        .Where(vp => vp.Activo && codigoVehiculo.StartsWith(vp.PrefijoCodigo))
-        .OrderByDescending(vp => vp.PrefijoCodigo.Length) // El más largo primero para coincidencias más específicas
-        .FirstOrDefaultAsync();
-
-    return configPorStartsWith?.TipoVehiculoId;
+    var parcial = prefijos
+        .Where(p => !string.IsNullOrEmpty(p.Prefijo) && codigoVehiculo.StartsWith(p.Prefijo, cmp))
+        .OrderByDescending(p => p.Prefijo.Length)
+        .FirstOrDefault();
+    return parcial.Prefijo != null ? parcial.TipoVehiculoId : null;
   }
 }

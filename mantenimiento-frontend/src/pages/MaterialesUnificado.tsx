@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Package, Plus, CheckCircle, XCircle, Loader2, RefreshCcw, Search, AlertTriangle, Warehouse, Check } from 'lucide-react';
+import { Package, Plus, CheckCircle, XCircle, Loader2, RefreshCcw, Search, AlertTriangle, Warehouse, Check, Download, Upload } from 'lucide-react';
 import {
   Alert,
   AlertDescription,
@@ -22,6 +22,9 @@ import { consumiblesService } from '@/services';
 import type { SolicitudRefaccion } from '@/services/refaccionesService';
 import type { Consumible } from '@/services';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { ExcelImportModal } from '@/components/excel/ExcelImportModal';
+import { excelService } from '@/services/excelService';
 
 type TabType = 'stock' | 'solicitudes';
 type TipoFiltro = 'todos' | 'refacciones' | 'consumibles';
@@ -75,6 +78,11 @@ export function MaterialesUnificadoPage() {
   const [showAdjust, setShowAdjust] = useState<Consumible | null>(null);
   const [savingStock, setSavingStock] = useState(false);
   const [errorStock, setErrorStock] = useState('');
+  const { hasRole } = useAuth();
+  const canImport = hasRole(['SuperUsuario', 'Administrador']);
+  const [importOpen, setImportOpen] = useState(false);
+  const [exportando, setExportando] = useState(false);
+  const [mensajeExcel, setMensajeExcel] = useState<{ tipo: 'success' | 'destructive'; texto: string } | null>(null);
   const [form, setForm] = useState<FormState>({
     codigo: '',
     nombre: '',
@@ -423,7 +431,7 @@ export function MaterialesUnificadoPage() {
                 style={{ paddingLeft: '3.5rem' }}
               />
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
                 onClick={() => setSoloBajoStock((v) => !v)}
@@ -434,11 +442,45 @@ export function MaterialesUnificadoPage() {
               <Button variant="outline" onClick={loadStock}>
                 <RefreshCcw className="h-4 w-4 mr-1" /> Actualizar
               </Button>
+              <Button
+                variant="outline"
+                disabled={exportando}
+                onClick={async () => {
+                  setExportando(true);
+                  setMensajeExcel(null);
+                  try {
+                    await excelService.exportar('inventario');
+                  } catch (err) {
+                    setMensajeExcel({ tipo: 'destructive', texto: err instanceof Error ? err.message : 'No se pudo exportar' });
+                  } finally {
+                    setExportando(false);
+                  }
+                }}
+              >
+                {exportando ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Download className="h-4 w-4 mr-1" />} Exportar Excel
+              </Button>
+              {canImport && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setMensajeExcel(null);
+                    setImportOpen(true);
+                  }}
+                >
+                  <Upload className="h-4 w-4 mr-1" /> Importar Excel
+                </Button>
+              )}
               <Button onClick={() => setShowCreate(true)}>
                 <Plus className="h-4 w-4 mr-1" /> Nuevo
               </Button>
             </div>
           </div>
+
+          {mensajeExcel && (
+            <Alert variant={mensajeExcel.tipo} onClose={() => setMensajeExcel(null)}>
+              <AlertDescription>{mensajeExcel.texto}</AlertDescription>
+            </Alert>
+          )}
 
           {loadingStock ? (
             <Spinner />
@@ -735,6 +777,19 @@ export function MaterialesUnificadoPage() {
           </Button>
         </ModalFooter>
       </Modal>
+      <ExcelImportModal
+        isOpen={importOpen}
+        onClose={() => setImportOpen(false)}
+        entidad="inventario"
+        titulo="artículos de inventario"
+        onImportado={(r) => {
+          setMensajeExcel({
+            tipo: 'success',
+            texto: `Importación completada: ${r.nuevos} artículo(s) nuevo(s) y ${r.actualizados} actualizado(s)`
+          });
+          loadStock();
+        }}
+      />
     </div>
   );
 }

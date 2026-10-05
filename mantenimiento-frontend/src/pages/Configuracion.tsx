@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState } from 'react';
-import { Settings, Plus, Loader2, RefreshCcw, ToggleLeft, ToggleRight, ListChecks, ClipboardPlus, Trash2, Package, Users, AlertTriangle, Calendar, FileText } from 'lucide-react';
+import { Settings, Plus, Loader2, RefreshCcw, ToggleLeft, ToggleRight, ListChecks, ClipboardPlus, Trash2, Package, Users, AlertTriangle, Calendar, FileText, Download, FileSpreadsheet } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getFullImageUrl } from '@/lib/utils';
 import {
@@ -23,6 +23,7 @@ import type { TipoVehiculoItem } from '@/services/catalogosService';
 import type { ChecklistTemplate } from '@/services/checklistService';
 import { useAllowedTipoVehiculo } from '@/hooks/useAllowedTipoVehiculo';
 import { useAuth } from '@/contexts/AuthContext';
+import { excelService } from '@/services/excelService';
 
 interface CrearAreaForm {
   nombre: string;
@@ -107,6 +108,8 @@ export function ConfiguracionPage() {
   const [resetMessage, setResetMessage] = useState('');
   const [resetError, setResetError] = useState('');
   const [claveMaestra, setClaveMaestra] = useState('');
+  const [exportandoTodo, setExportandoTodo] = useState(false);
+  const [errorExportar, setErrorExportar] = useState('');
   const canReset = hasRole(['Administrador', 'SuperUsuario', 'Superusuario']);
 
   const navigate = useNavigate();
@@ -1198,6 +1201,50 @@ export function ConfiguracionPage() {
             </p>
           </div>
         </div>
+      )}
+
+      {canReset && (
+        <Card className="border border-continental-gray-3 p-5 space-y-3">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-green-100 text-green-700">
+                <FileSpreadsheet className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-sm uppercase tracking-[0.25em] text-continental-gray-1">Respaldo en Excel</p>
+                <h3 className="text-lg font-semibold text-continental-black">Exportar toda la información</h3>
+                <p className="text-sm text-continental-gray-1">
+                  Descarga un solo archivo de Excel con una hoja por módulo: vehículos, inventario y sus movimientos, reportes de falla,
+                  órdenes de trabajo, pagos, órdenes de compra, áreas, tipos de vehículo, prefijos y usuarios. Recomendado antes de reiniciar los datos.
+                </p>
+              </div>
+            </div>
+            <Button
+              className="flex flex-shrink-0 items-center gap-2"
+              disabled={exportandoTodo}
+              onClick={async () => {
+                setExportandoTodo(true);
+                setErrorExportar('');
+                try {
+                  await excelService.exportarTodo();
+                } catch (err) {
+                  setErrorExportar(err instanceof Error ? err.message : 'No se pudo exportar');
+                } finally {
+                  setExportandoTodo(false);
+                }
+              }}
+            >
+              {exportandoTodo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              {exportandoTodo ? 'Generando...' : 'Exportar todo'}
+            </Button>
+          </div>
+          {errorExportar && (
+            <Alert variant="destructive">
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>{errorExportar}</AlertDescription>
+            </Alert>
+          )}
+        </Card>
       )}
 
       {canReset && (
