@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Truck, Search, Plus, Loader2, RefreshCw, Info, Package, Trash2, CheckCircle2 } from 'lucide-react';
+import { Truck, Search, Plus, Loader2, RefreshCw, Info, Package, Trash2, CheckCircle2, Download, Upload } from 'lucide-react';
 import { formatDate, getFullImageUrl } from '@/lib/utils';
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, Input, Modal, ModalFooter, Select, Spinner, Textarea } from '@/components/ui';
 import { vehiculosService } from '@/services/vehiculosService';
@@ -9,6 +9,8 @@ import { EstadoVehiculoNombres, TipoVehiculoNombres, TipoVehiculo } from '@/inte
 import { useAuth } from '@/contexts/AuthContext';
 import { UbicacionLegend, UbicacionBadge } from '@/components/vehiculos/UbicacionLegend';
 import { VehiculoFotosInput } from '@/components/vehiculos/VehiculoFotosInput';
+import { ExcelImportModal } from '@/components/excel/ExcelImportModal';
+import { excelService } from '@/services/excelService';
 import { useAllowedTipoVehiculo } from '@/hooks/useAllowedTipoVehiculo';
 
 interface FiltersState {
@@ -75,6 +77,20 @@ export function VehiculosPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [importOpen, setImportOpen] = useState(false);
+  const [exportando, setExportando] = useState(false);
+
+  const handleExportar = async () => {
+    setExportando(true);
+    setError('');
+    try {
+      await excelService.exportar('vehiculos');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo exportar');
+    } finally {
+      setExportando(false);
+    }
+  };
 
   useEffect(() => {
     const fetchTiposVehiculo = async () => {
@@ -441,7 +457,24 @@ export function VehiculosPage() {
           </Card>
           <UbicacionLegend className="mt-3" />
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" className="flex items-center gap-2" onClick={handleExportar} disabled={exportando}>
+            {exportando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Exportar Excel
+          </Button>
+          {canDelete && (
+            <Button
+              variant="outline"
+              className="flex items-center gap-2"
+              onClick={() => {
+                setSuccessMessage('');
+                setImportOpen(true);
+              }}
+            >
+              <Upload className="h-4 w-4" />
+              Importar Excel
+            </Button>
+          )}
           {hasRole(['SuperUsuario', 'Administrador', 'Supervisor']) && (
             <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={openCreate}>
               <Plus className="h-4 w-4" />
@@ -920,6 +953,16 @@ export function VehiculosPage() {
           </Button>
         </ModalFooter>
       </Modal>
+      <ExcelImportModal
+        isOpen={importOpen}
+        onClose={() => setImportOpen(false)}
+        entidad="vehiculos"
+        titulo="vehículos"
+        onImportado={(r) => {
+          setSuccessMessage(`Importación completada: ${r.nuevos} vehículo(s) nuevo(s) y ${r.actualizados} actualizado(s)`);
+          loadVehiculos();
+        }}
+      />
     </div>
   );
 }
