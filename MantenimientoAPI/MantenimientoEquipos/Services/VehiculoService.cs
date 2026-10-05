@@ -10,11 +10,19 @@ public class VehiculoService
 {
     private readonly MantenimientoDbContext _db;
     private readonly ITipoVehiculoRepository _tipoVehiculoRepository;
+    private readonly VehiculoPrefijoConfigService _prefijoConfigService;
+    private readonly VehiculoDocumentoService _documentoService;
 
-    public VehiculoService(MantenimientoDbContext db, ITipoVehiculoRepository tipoVehiculoRepository)
+    public VehiculoService(
+        MantenimientoDbContext db,
+        ITipoVehiculoRepository tipoVehiculoRepository,
+        VehiculoPrefijoConfigService prefijoConfigService,
+        VehiculoDocumentoService documentoService)
     {
         _db = db;
         _tipoVehiculoRepository = tipoVehiculoRepository;
+        _prefijoConfigService = prefijoConfigService;
+        _documentoService = documentoService;
     }
 
     public async Task<PaginatedResponse<VehiculoListDto>> GetAllAsync(
@@ -80,6 +88,16 @@ public class VehiculoService
         var tiposMap = tiposList.ToDictionary(t => (TipoVehiculoEnum)t.Id, t => t.Nombre);
         var tiposImagenMap = tiposList.ToDictionary(t => (TipoVehiculoEnum)t.Id, t => t.ImagenUrl);
 
+        // Primera foto de cada vehículo de la página (la tarjeta la prefiere sobre la imagen del tipo)
+        var idsPagina = vehiculos.Select(v => v.Id).ToList();
+        var fotosPagina = await _db.VehiculoDocumentos
+            .Where(d => idsPagina.Contains(d.VehiculoId) && d.Tipo == VehiculoDocumentoService.TipoFoto)
+            .Select(d => new { d.VehiculoId, d.UrlArchivo, d.CreatedAt, d.Id })
+            .ToListAsync();
+        var fotoPrincipal = fotosPagina
+            .GroupBy(f => f.VehiculoId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(f => f.CreatedAt).ThenBy(f => f.Id).First().UrlArchivo);
+
         var items = vehiculos.Select(v => new VehiculoListDto
         {
             Id = v.Id,
@@ -95,7 +113,8 @@ public class VehiculoService
             UbicacionNombre = v.Ubicacion.ToString(),
             AreaNombre = v.Area != null ? v.Area.Nombre : null,
             UltimoMantenimiento = v.UltimoMantenimiento,
-            TotalReportes = v.Reportes.Count
+            TotalReportes = v.Reportes.Count,
+            FotoUrl = fotoPrincipal.GetValueOrDefault(v.Id)
         }).ToList();
 
         return new PaginatedResponse<VehiculoListDto>
@@ -147,8 +166,44 @@ public class VehiculoService
             DocumentacionEspecificaciones = vehiculo.DocumentacionEspecificaciones,
             ListaMateriales = vehiculo.ListaMateriales,
             RegistroModificaciones = vehiculo.RegistroModificaciones,
-            Activo = vehiculo.Activo
+            Activo = vehiculo.Activo,
+            CreatedAt = DateTime.SpecifyKind(vehiculo.CreatedAt, DateTimeKind.Utc),
+            Fotos = await _documentoService.GetFotosAsync(vehiculo.Id)
         };
+    }
+
+    /// <summary>
+    /// Antes de dar de alta: indica si el código ya existe (con tipo, área y fecha de registro
+    /// como referencia) y qué tipo de vehículo le corresponde según los prefijos configurados.
+    /// </summary>
+    public async Task<ValidarCodigoVehiculoDto> ValidarCodigoAsync(string codigo)
+    {
+        codigo = (codigo ?? string.Empty).Trim();
+        var resultado = new ValidarCodigoVehiculoDto { Codigo = codigo };
+        if (codigo.Length == 0) return resultado;
+
+        var tipos = (await _tipoVehiculoRepository.GetAllAsync()).ToDictionary(t => (TipoVehiculoEnum)t.Id, t => t.Nombre);
+
+        var existente = await _db.Vehiculos
+            .Include(v => v.Area)
+            .FirstOrDefaultAsync(v => v.Codigo == codigo);
+        if (existente != null)
+        {
+            resultado.Existe = true;
+            resultado.VehiculoId = existente.Id;
+            resultado.TipoNombre = tipos.GetValueOrDefault(existente.Tipo, existente.Tipo.ToString());
+            resultado.AreaNombre = existente.Area?.Nombre;
+            resultado.FechaRegistro = DateTime.SpecifyKind(existente.CreatedAt, DateTimeKind.Utc);
+        }
+
+        var tipoId = await _prefijoConfigService.GetTipoVehiculoIdByCodigoAsync(codigo);
+        if (tipoId.HasValue && Enum.IsDefined(typeof(TipoVehiculoEnum), tipoId.Value))
+        {
+            resultado.TipoDetectado = (TipoVehiculoEnum)tipoId.Value;
+            resultado.TipoDetectadoNombre = tipos.GetValueOrDefault(resultado.TipoDetectado.Value, resultado.TipoDetectado.Value.ToString());
+        }
+
+        return resultado;
     }
 
     public async Task<VehiculoDto?> GetByCodigoAsync(string codigo)
@@ -186,7 +241,7 @@ public class VehiculoService
         var vehiculo = new Vehiculo
         {
             Codigo = request.Codigo,
-            Tipo = request.Tipo,
+            Tipo = request.Tipo ?? throw new ArgumentException("El tipo de vehículo es requerido"),
             Marca = request.Marca,
             Modelo = request.Modelo,
             NumeroSerie = request.NumeroSerie,
@@ -283,6 +338,11 @@ public class VehiculoService
             .Select(o => o.Id)
             .ToListAsync();
 
+        var urlsFotos = await _db.VehiculoDocumentos
+            .Where(d => vehiculoIds.Contains(d.VehiculoId) && d.Tipo == VehiculoDocumentoService.TipoFoto)
+            .Select(d => d.UrlArchivo)
+            .ToListAsync();
+
         using var tx = await _db.Database.BeginTransactionAsync();
 
         // Dependientes de reportes y órdenes
@@ -321,6 +381,8 @@ public class VehiculoService
         var vehiculosEliminados = await _db.Vehiculos.Where(v => vehiculoIds.Contains(v.Id)).ExecuteDeleteAsync();
 
         await tx.CommitAsync();
+
+        foreach (var url in urlsFotos) _documentoService.EliminarArchivo(url);
 
         return new EliminarVehiculosResultDto
         {

@@ -129,7 +129,9 @@ public class VehiculoPrefijoConfigService
         var config = await _context.VehiculoPrefijoConfigs.FindAsync(id);
         if (config == null) return false;
 
-        config.Activo = false; // Soft delete
+        // Eliminación definitiva (requerimiento 14.1). Para dejar de usar un prefijo
+        // sin borrarlo existe Activar/Desactivar. Ninguna tabla referencia a esta.
+        _context.VehiculoPrefijoConfigs.Remove(config);
         await _context.SaveChangesAsync();
         return true;
     }

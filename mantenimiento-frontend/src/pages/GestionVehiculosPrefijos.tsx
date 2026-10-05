@@ -167,7 +167,13 @@ export function GestionVehiculosPrefijosPage() {
   };
 
   const handleEliminar = async (id: number) => {
-    if (!window.confirm('¿Estás seguro de eliminar este prefijo? Esta acción no se puede deshacer.')) return;
+    if (
+      !window.confirm(
+        '¿Eliminar definitivamente este prefijo? Se borrará del sistema y no se puede deshacer.\n\n' +
+          'Si solo quieres dejar de usarlo temporalmente, cancela y usa "Desactivar".'
+      )
+    )
+      return;
     setAccionando(true);
     setError('');
     try {

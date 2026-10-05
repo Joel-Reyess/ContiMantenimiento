@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Truck, Search, Plus, Loader2, RefreshCw, Info, Package, Trash2 } from 'lucide-react';
-import { getFullImageUrl } from '@/lib/utils';
+import { Truck, Search, Plus, Loader2, RefreshCw, Info, Package, Trash2, CheckCircle2 } from 'lucide-react';
+import { formatDate, getFullImageUrl } from '@/lib/utils';
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, Input, Modal, ModalFooter, Select, Spinner, Textarea } from '@/components/ui';
 import { vehiculosService } from '@/services/vehiculosService';
 import { catalogosService } from '@/services/catalogosService';
-import type { Area, VehiculoList } from '@/interfaces';
+import type { Area, ValidacionCodigoVehiculo, VehiculoFoto, VehiculoList } from '@/interfaces';
 import { EstadoVehiculoNombres, TipoVehiculoNombres, TipoVehiculo } from '@/interfaces/Api.interface';
 import { useAuth } from '@/contexts/AuthContext';
 import { UbicacionLegend, UbicacionBadge } from '@/components/vehiculos/UbicacionLegend';
+import { VehiculoFotosInput } from '@/components/vehiculos/VehiculoFotosInput';
 import { useAllowedTipoVehiculo } from '@/hooks/useAllowedTipoVehiculo';
 
 interface FiltersState {
@@ -30,6 +31,19 @@ interface CrearVehiculoForm {
   id?: number;
 }
 
+const FORM_VACIO: CrearVehiculoForm = {
+  codigo: '',
+  tipo: '',
+  marca: '',
+  modelo: '',
+  notas: '',
+  documentacionDibujos: '',
+  documentacionEspecificaciones: '',
+  listaMateriales: '',
+  registroModificaciones: '',
+  areaId: ''
+};
+
 export function VehiculosPage() {
   const { hasRole } = useAuth();
   const { allowedTipoIds } = useAllowedTipoVehiculo();
@@ -42,18 +56,15 @@ export function VehiculosPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [creando, setCreando] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [form, setForm] = useState<CrearVehiculoForm>({
-    codigo: '',
-    tipo: '',
-    marca: '',
-    modelo: '',
-    notas: '',
-    documentacionDibujos: '',
-    documentacionEspecificaciones: '',
-    listaMateriales: '',
-    registroModificaciones: '',
-    areaId: ''
-  });
+  const [form, setForm] = useState<CrearVehiculoForm>(FORM_VACIO);
+  const [formError, setFormError] = useState('');
+  // Fotos: las nuevas se suben y las quitadas se borran al guardar
+  const [fotosNuevas, setFotosNuevas] = useState<File[]>([]);
+  const [fotosExistentes, setFotosExistentes] = useState<VehiculoFoto[]>([]);
+  const [fotosQuitadas, setFotosQuitadas] = useState<number[]>([]);
+  // Alta: validación del código (duplicado + tipo detectado por prefijo)
+  const [validacion, setValidacion] = useState<ValidacionCodigoVehiculo | null>(null);
+  const [validando, setValidando] = useState(false);
 
   const [tiposVehiculo, setTiposVehiculo] = useState<{ value: string; label: string }[]>([]);
   const [loadingTipos, setLoadingTipos] = useState(true);
@@ -123,6 +134,39 @@ export function VehiculosPage() {
         : tiposVehiculo;
     return [{ value: '', label: 'Todos los tipos' }, ...filteredTipos];
   }, [tiposVehiculo, loadingTipos, allowedTipoIds]);
+
+  const tipoFormOptions = useMemo(
+    () => [{ value: '', label: 'Selecciona un tipo' }, ...tipoOptions.filter((t) => t.value !== '')],
+    [tipoOptions]
+  );
+
+  // Al escribir el código en el alta: ¿ya existe? ¿qué tipo le corresponde por prefijo?
+  useEffect(() => {
+    if (!createOpen) return;
+    const codigo = form.codigo.trim();
+    if (!codigo) {
+      setValidacion(null);
+      setValidando(false);
+      return;
+    }
+    setValidando(true);
+    let vigente = true;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await vehiculosService.validarCodigo(codigo);
+        if (!vigente) return;
+        const data = res.success ? res.data : null;
+        setValidacion(data);
+        setForm((prev) => ({ ...prev, tipo: data?.tipoDetectado ? String(data.tipoDetectado) : '' }));
+      } finally {
+        if (vigente) setValidando(false);
+      }
+    }, 400);
+    return () => {
+      vigente = false;
+      clearTimeout(timer);
+    };
+  }, [form.codigo, createOpen]);
 
   const loadVehiculos = async (page = 1, f: FiltersState = filters) => {
     setLoading(true);
@@ -208,40 +252,93 @@ export function VehiculosPage() {
     }
   };
 
-  const handleCreate = async () => {
-    setCreando(true);
-    setError('');
+  const resetFormState = () => {
+    setForm(FORM_VACIO);
+    setFormError('');
+    setFotosNuevas([]);
+    setFotosExistentes([]);
+    setFotosQuitadas([]);
+    setValidacion(null);
+    setValidando(false);
+  };
+
+  const openCreate = () => {
+    resetFormState();
+    setSuccessMessage('');
+    setCreateOpen(true);
+  };
+
+  const openEdit = async (id: number) => {
     try {
-      const payload = {
-        codigo: form.codigo.trim(),
-        tipo: Number(form.tipo) as any,
-        marca: form.marca.trim() || undefined,
-        modelo: form.modelo.trim() || undefined,
-        notas: form.notas.trim() || undefined,
-        areaId: form.areaId ? Number(form.areaId) : undefined
-      };
-      const res = await vehiculosService.create(payload);
-      if (res.success) {
-        setCreateOpen(false);
+      const res = await vehiculosService.getById(id);
+      if (res.success && res.data) {
+        const data = res.data;
+        resetFormState();
+        setSuccessMessage('');
         setForm({
-        codigo: '',
-        tipo: '',
-        marca: '',
-        modelo: '',
-        notas: '',
-        documentacionDibujos: '',
-        documentacionEspecificaciones: '',
-        listaMateriales: '',
-        registroModificaciones: '',
-        areaId: ''
-      });
-        loadVehiculos();
+          id: data.id,
+          codigo: data.codigo,
+          tipo: String(data.tipo),
+          marca: data.marca || '',
+          modelo: data.modelo || '',
+          notas: data.notas || '',
+          documentacionDibujos: data.documentacionDibujos || '',
+          documentacionEspecificaciones: data.documentacionEspecificaciones || '',
+          listaMateriales: data.listaMateriales || '',
+          registroModificaciones: data.registroModificaciones || '',
+          areaId: data.areaId ? String(data.areaId) : ''
+        });
+        setFotosExistentes(data.fotos || []);
+        setEditOpen(true);
       } else {
-        setError(res.message || 'No se pudo crear el vehiculo');
+        setError(res.message || 'No se pudo cargar el vehiculo');
       }
     } catch (err) {
       console.error(err);
-      setError('Error al crear el vehiculo');
+      setError('No se pudo cargar el vehiculo');
+    }
+  };
+
+  /** Sube las fotos una por una (cada petición queda bajo el límite de IIS) y regresa las que fallaron */
+  const subirFotos = async (vehiculoId: number, files: File[]) => {
+    const fallidas: string[] = [];
+    for (const file of files) {
+      const res = await vehiculosService.uploadFoto(vehiculoId, file);
+      if (!res.success) fallidas.push(`${file.name}${res.message ? ` (${res.message})` : ''}`);
+    }
+    return fallidas;
+  };
+
+  const terminarGuardado = (mensaje: string, fallidas: string[]) => {
+    resetFormState();
+    if (fallidas.length > 0) {
+      setError(`${mensaje}, pero no se pudieron subir estas fotos: ${fallidas.join(', ')}`);
+    } else {
+      setSuccessMessage(mensaje);
+    }
+    loadVehiculos();
+  };
+
+  const handleCreate = async () => {
+    setCreando(true);
+    setFormError('');
+    try {
+      const res = await vehiculosService.create({
+        codigo: form.codigo.trim(),
+        // Si no se eligió, el backend lo detecta por prefijo
+        tipo: form.tipo ? (Number(form.tipo) as TipoVehiculo) : undefined,
+        areaId: form.areaId ? Number(form.areaId) : undefined
+      });
+      if (!res.success || !res.data) {
+        setFormError(res.message || 'No se pudo crear el vehiculo');
+        return;
+      }
+      const fallidas = await subirFotos(res.data.id, fotosNuevas);
+      setCreateOpen(false);
+      terminarGuardado(`Vehículo ${form.codigo.trim()} registrado correctamente`, fallidas);
+    } catch (err) {
+      console.error(err);
+      setFormError('Error al crear el vehiculo');
     } finally {
       setCreando(false);
     }
@@ -250,10 +347,9 @@ export function VehiculosPage() {
   const handleEdit = async () => {
     if (!form.id) return;
     setCreando(true);
-    setError('');
+    setFormError('');
     try {
       const payload = {
-        codigo: form.codigo.trim(),
         tipo: Number(form.tipo),
         marca: form.marca.trim() || undefined,
         modelo: form.modelo.trim() || undefined,
@@ -262,28 +358,21 @@ export function VehiculosPage() {
         areaId: form.areaId ? Number(form.areaId) : 0
       };
       const res = await vehiculosService.update(form.id, payload as any);
-      if (res.success) {
-        setEditOpen(false);
-        setForm({
-        codigo: '',
-        tipo: '',
-        marca: '',
-        modelo: '',
-        notas: '',
-        documentacionDibujos: '',
-        documentacionEspecificaciones: '',
-        listaMateriales: '',
-        registroModificaciones: '',
-        areaId: '',
-        id: undefined
-      });
-        loadVehiculos();
-      } else {
-        setError(res.message || 'No se pudo actualizar el vehiculo');
+      if (!res.success) {
+        setFormError(res.message || 'No se pudo actualizar el vehiculo');
+        return;
       }
+      const fallidas: string[] = [];
+      for (const fotoId of fotosQuitadas) {
+        const r = await vehiculosService.deleteFoto(form.id, fotoId);
+        if (!r.success) fallidas.push(`foto #${fotoId} (no se pudo quitar)`);
+      }
+      fallidas.push(...(await subirFotos(form.id, fotosNuevas)));
+      setEditOpen(false);
+      terminarGuardado('Vehículo actualizado correctamente', fallidas);
     } catch (err) {
       console.error(err);
-      setError('Error al actualizar el vehiculo');
+      setFormError('Error al actualizar el vehiculo');
     } finally {
       setCreando(false);
     }
@@ -354,7 +443,7 @@ export function VehiculosPage() {
         </div>
         <div className="flex gap-2">
           {hasRole(['SuperUsuario', 'Administrador', 'Supervisor']) && (
-            <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => setCreateOpen(true)}>
+            <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={openCreate}>
               <Plus className="h-4 w-4" />
               Nuevo vehiculo
             </Button>
@@ -481,7 +570,7 @@ export function VehiculosPage() {
           <p className="text-lg font-semibold text-continental-black">No hay contenedores</p>
           <p className="text-continental-gray-1">Aún no se han registrado contenedores en el sistema.</p>
           <div className="flex justify-center gap-2">
-            <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => setCreateOpen(true)}>
+            <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={openCreate}>
               <Plus className="h-4 w-4" />
               Crear vehiculo
             </Button>
@@ -513,9 +602,13 @@ export function VehiculosPage() {
               )}
               <div className="relative flex items-start gap-6 pr-8">
                 <div className="flex gap-4 min-w-0">
-                  {(v as any).tipoImagenUrl || (v as any).imagenUrl ? (
+                  {v.fotoUrl || (v as any).tipoImagenUrl || (v as any).imagenUrl ? (
                     <div className="h-16 w-16 rounded-lg overflow-hidden border border-continental-gray-3/30 bg-white flex-shrink-0">
-                      <img src={getFullImageUrl((v as any).tipoImagenUrl || (v as any).imagenUrl)} alt={v.codigo} className="h-full w-full object-contain" />
+                      <img
+                        src={getFullImageUrl(v.fotoUrl || (v as any).tipoImagenUrl || (v as any).imagenUrl)}
+                        alt={v.codigo}
+                        className={`h-full w-full ${v.fotoUrl ? 'object-cover' : 'object-contain'}`}
+                      />
                     </div>
                   ) : (
                     <div className="h-16 w-16 rounded-lg bg-continental-bg flex items-center justify-center border border-dashed border-continental-gray-3 flex-shrink-0">
@@ -562,36 +655,7 @@ export function VehiculosPage() {
               </div>
               {hasRole(['SuperUsuario', 'Administrador', 'Supervisor']) && (
                 <div className="pt-3 flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={async () => {
-                      try {
-                        const res = await vehiculosService.getById(v.id);
-                        if (res.success && res.data) {
-                          const data = res.data as any;
-                          setForm({
-                            id: data.id,
-                            codigo: data.codigo,
-                            tipo: String(data.tipo),
-                            marca: data.marca || '',
-                            modelo: data.modelo || '',
-                            notas: data.notas || '',
-                            documentacionDibujos: data.documentacionDibujos || '',
-                            documentacionEspecificaciones: data.documentacionEspecificaciones || '',
-                            listaMateriales: data.listaMateriales || '',
-                            registroModificaciones: data.registroModificaciones || '',
-                            areaId: data.areaId ? String(data.areaId) : ''
-                          });
-                          setEditOpen(true);
-                        } else {
-                          setError(res.message || 'No se pudo cargar el vehiculo');
-                        }
-                      } catch (err) {
-                        setError('No se pudo cargar el vehiculo');
-                      }
-                    }}
-                  >
+                  <Button size="sm" variant="outline" onClick={() => openEdit(v.id)}>
                     Editar
                   </Button>
                   {canDelete && (
@@ -640,69 +704,110 @@ export function VehiculosPage() {
         </div>
       )}
 
-      <Modal isOpen={createOpen} onClose={() => setCreateOpen(false)} title="Nuevo vehiculo" description="Registrar un equipo con los datos minimos.">
+      <Modal
+        isOpen={createOpen}
+        onClose={() => {
+          if (!creando) setCreateOpen(false);
+        }}
+        title="Nuevo vehiculo"
+        description="Captura el código y el área; el tipo se detecta por el prefijo."
+      >
         <div className="space-y-3">
           <Input
             label="Codigo"
             placeholder="Ej. MTC-045"
             value={form.codigo}
             onChange={(e) => setForm((prev) => ({ ...prev, codigo: e.target.value }))}
+            autoFocus
           />
-          <Select
-            label="Tipo"
-            value={form.tipo}
-            onChange={(value) => setForm((prev) => ({ ...prev, tipo: value }))}
-            options={tipoOptions}
-          />
+          {form.codigo.trim() && validando && (
+            <p className="flex items-center gap-2 text-xs text-continental-gray-1">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Verificando código...
+            </p>
+          )}
+          {!validando && validacion?.existe && (
+            <Alert variant="warning">
+              <AlertTitle>Este vehículo ya está dado de alta</AlertTitle>
+              <AlertDescription>
+                Tipo: <strong>{validacion.tipoNombre || 'N/D'}</strong> · Área: <strong>{validacion.areaNombre || 'Sin área'}</strong> ·
+                Registrado: <strong>{validacion.fechaRegistro ? formatDate(validacion.fechaRegistro) : 'N/D'}</strong>
+              </AlertDescription>
+            </Alert>
+          )}
+          {!validando && validacion && !validacion.existe && validacion.tipoDetectado && (
+            <div>
+              <p className="mb-1 text-sm font-semibold text-continental-black">Tipo</p>
+              <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                <CheckCircle2 className="h-4 w-4" />
+                <span className="font-semibold">{validacion.tipoDetectadoNombre}</span>
+                <span className="text-xs">(detectado por el prefijo)</span>
+              </div>
+            </div>
+          )}
+          {!validando && validacion && !validacion.existe && !validacion.tipoDetectado && (
+            <>
+              <Alert variant="info">
+                <AlertDescription>No hay un prefijo configurado para este código. Selecciona el tipo manualmente.</AlertDescription>
+              </Alert>
+              <Select
+                label="Tipo"
+                value={form.tipo}
+                onChange={(value) => setForm((prev) => ({ ...prev, tipo: value }))}
+                options={tipoFormOptions}
+              />
+            </>
+          )}
           <Select
             label="Área"
             value={form.areaId}
             onChange={(value) => setForm((prev) => ({ ...prev, areaId: value }))}
             options={areaFormOptions}
           />
-          <Input
-            label="Marca"
-            placeholder="Marca"
-            value={form.marca}
-            onChange={(e) => setForm((prev) => ({ ...prev, marca: e.target.value }))}
+          <VehiculoFotosInput
+            nuevas={fotosNuevas}
+            onAgregar={(files) => setFotosNuevas((prev) => [...prev, ...files])}
+            onQuitarNueva={(i) => setFotosNuevas((prev) => prev.filter((_, idx) => idx !== i))}
+            disabled={creando}
           />
-          <Input
-            label="Modelo"
-            placeholder="Modelo"
-            value={form.modelo}
-            onChange={(e) => setForm((prev) => ({ ...prev, modelo: e.target.value }))}
-          />
-          <Textarea
-            label="Notas"
-            placeholder="Notas adicionales"
-            value={form.notas}
-            onChange={(e) => setForm((prev) => ({ ...prev, notas: e.target.value }))}
-          />
+          {formError && (
+            <Alert variant="destructive">
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>{formError}</AlertDescription>
+            </Alert>
+          )}
         </div>
         <ModalFooter>
-          <Button variant="outline" onClick={() => setCreateOpen(false)}>
+          <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creando}>
             Cancelar
           </Button>
-          <Button onClick={handleCreate} disabled={creando} className="flex items-center gap-2">
+          <Button
+            onClick={handleCreate}
+            disabled={creando || validando || !form.codigo.trim() || !form.tipo || !!validacion?.existe}
+            className="flex items-center gap-2"
+          >
             {creando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            Guardar
+            {creando ? 'Guardando...' : 'Guardar'}
           </Button>
         </ModalFooter>
       </Modal>
 
-      <Modal isOpen={editOpen} onClose={() => setEditOpen(false)} title="Editar vehiculo" description="Actualiza los datos del equipo.">
+      <Modal
+        isOpen={editOpen}
+        onClose={() => {
+          if (!creando) setEditOpen(false);
+        }}
+        title="Editar vehiculo"
+        description="Actualiza los datos del equipo."
+      >
         <div className="space-y-3">
-          <Input
-            label="Codigo"
-            placeholder="Ej. MTC-045"
-            value={form.codigo}
-            onChange={(e) => setForm((prev) => ({ ...prev, codigo: e.target.value }))}
-          />
+          {/* El backend no permite cambiar el código; para corregirlo se elimina y se registra de nuevo */}
+          <Input label="Codigo" value={form.codigo} disabled readOnly />
           <Select
             label="Tipo"
             value={form.tipo}
             onChange={(value) => setForm((prev) => ({ ...prev, tipo: value }))}
-            options={tipoOptions}
+            options={tipoFormOptions}
           />
           <Select
             label="Área"
@@ -728,6 +833,20 @@ export function VehiculosPage() {
             value={form.notas}
             onChange={(e) => setForm((prev) => ({ ...prev, notas: e.target.value }))}
           />
+          <VehiculoFotosInput
+            existentes={fotosExistentes.filter((f) => !fotosQuitadas.includes(f.id))}
+            onQuitarExistente={(id) => setFotosQuitadas((prev) => [...prev, id])}
+            nuevas={fotosNuevas}
+            onAgregar={(files) => setFotosNuevas((prev) => [...prev, ...files])}
+            onQuitarNueva={(i) => setFotosNuevas((prev) => prev.filter((_, idx) => idx !== i))}
+            disabled={creando}
+          />
+          {formError && (
+            <Alert variant="destructive">
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>{formError}</AlertDescription>
+            </Alert>
+          )}
         </div>
         <ModalFooter>
           {canDelete && form.id && (
@@ -743,12 +862,12 @@ export function VehiculosPage() {
               Eliminar
             </Button>
           )}
-          <Button variant="outline" onClick={() => setEditOpen(false)}>
+          <Button variant="outline" onClick={() => setEditOpen(false)} disabled={creando}>
             Cancelar
           </Button>
-          <Button onClick={handleEdit} disabled={creando} className="flex items-center gap-2">
+          <Button onClick={handleEdit} disabled={creando || !form.tipo} className="flex items-center gap-2">
             {creando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            Guardar cambios
+            {creando ? 'Guardando...' : 'Guardar cambios'}
           </Button>
         </ModalFooter>
       </Modal>
