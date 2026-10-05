@@ -32,6 +32,8 @@ public class VehiculoDto
     public string? ListaMateriales { get; set; }
     public string? RegistroModificaciones { get; set; }
     public bool Activo { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public List<VehiculoFotoDto> Fotos { get; set; } = new();
 }
 
 public class VehiculoCreateRequest
@@ -40,8 +42,10 @@ public class VehiculoCreateRequest
     [MaxLength(50)]
     public required string Codigo { get; set; }
 
-    [Required(ErrorMessage = "El tipo de vehículo es requerido")]
-    public TipoVehiculoEnum Tipo { get; set; }
+    /// <summary>
+    /// Opcional: si no se envía se detecta por el prefijo del código
+    /// </summary>
+    public TipoVehiculoEnum? Tipo { get; set; }
 
     [MaxLength(100)]
     public string? Marca { get; set; }
@@ -129,11 +133,36 @@ public class VehiculoListDto
     public string? TipoImagenUrl { get; set; }
     public DateTime? UltimoMantenimiento { get; set; }
     public int TotalReportes { get; set; }
+    public string? FotoUrl { get; set; }
 }
 
 public class CambiarUbicacionRequest
 {
     public UbicacionVehiculoEnum Ubicacion { get; set; }
+}
+
+public class VehiculoFotoDto
+{
+    public int Id { get; set; }
+    public required string Url { get; set; }
+    public string? Nombre { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>
+/// Resultado de validar un código antes de dar de alta un vehículo:
+/// si ya existe (con sus datos de referencia) y qué tipo se detecta por prefijo.
+/// </summary>
+public class ValidarCodigoVehiculoDto
+{
+    public required string Codigo { get; set; }
+    public bool Existe { get; set; }
+    public int? VehiculoId { get; set; }
+    public string? TipoNombre { get; set; }
+    public string? AreaNombre { get; set; }
+    public DateTime? FechaRegistro { get; set; }
+    public TipoVehiculoEnum? TipoDetectado { get; set; }
+    public string? TipoDetectadoNombre { get; set; }
 }
 
 public class EliminarVehiculosRequest

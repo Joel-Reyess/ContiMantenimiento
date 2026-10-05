@@ -1,6 +1,8 @@
 import httpClient from './httpClient';
 import type {
   Vehiculo,
+  VehiculoFoto,
+  ValidacionCodigoVehiculo,
   VehiculoList,
   VehiculoCreateRequest,
   VehiculoUpdateRequest,
@@ -69,6 +71,10 @@ export const vehiculosService = {
     return await httpClient.get<Vehiculo>(`/vehiculos/codigo/${encodeURIComponent(codigo)}`);
   },
 
+  async validarCodigo(codigo: string): Promise<ApiResponse<ValidacionCodigoVehiculo>> {
+    return await httpClient.get<ValidacionCodigoVehiculo>(`/vehiculos/validar-codigo?codigo=${encodeURIComponent(codigo)}`);
+  },
+
   async create(vehiculo: VehiculoCreateRequest): Promise<ApiResponse<Vehiculo>> {
     return await httpClient.post<Vehiculo>('/vehiculos', vehiculo);
   },
@@ -95,6 +101,16 @@ export const vehiculosService = {
 
   async getHistorial(id: number): Promise<ApiResponse<unknown[]>> {
     return await httpClient.get<unknown[]>(`/vehiculos/${id}/historial`);
+  },
+
+  async uploadFoto(id: number, file: File): Promise<ApiResponse<VehiculoFoto>> {
+    const formData = new FormData();
+    formData.append('archivo', file);
+    return await httpClient.uploadFile<VehiculoFoto>(`/vehiculos/${id}/fotos`, formData);
+  },
+
+  async deleteFoto(id: number, fotoId: number): Promise<ApiResponse<string>> {
+    return await httpClient.delete<string>(`/vehiculos/${id}/fotos/${fotoId}`);
   },
 
   async uploadImagen(id: number, file: File): Promise<ApiResponse<{ url: string }>> {

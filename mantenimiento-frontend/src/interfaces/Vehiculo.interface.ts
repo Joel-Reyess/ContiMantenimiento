@@ -28,6 +28,26 @@ export interface Vehiculo {
   listaMateriales?: string;
   registroModificaciones?: string;
   activo: boolean;
+  createdAt?: string;
+  fotos?: VehiculoFoto[];
+}
+
+export interface VehiculoFoto {
+  id: number;
+  url: string;
+  nombre?: string;
+  createdAt: string;
+}
+
+export interface ValidacionCodigoVehiculo {
+  codigo: string;
+  existe: boolean;
+  vehiculoId?: number;
+  tipoNombre?: string;
+  areaNombre?: string;
+  fechaRegistro?: string;
+  tipoDetectado?: TipoVehiculo;
+  tipoDetectadoNombre?: string;
 }
 
 export interface VehiculoList {
@@ -45,11 +65,13 @@ export interface VehiculoList {
   ultimoMantenimiento?: string;
   totalReportes: number;
   notas?: string;
+  fotoUrl?: string;
 }
 
 export interface VehiculoCreateRequest {
   codigo: string;
-  tipo: TipoVehiculo;
+  /** Si se omite, el backend lo detecta por el prefijo del código */
+  tipo?: TipoVehiculo;
   marca?: string;
   modelo?: string;
   numeroSerie?: string;

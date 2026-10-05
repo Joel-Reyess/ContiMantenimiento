@@ -79,14 +79,37 @@ public class VehiculosController : ControllerBase
     }
 
     /// <summary>
-    /// Crea un nuevo vehículo
+    /// Valida un código antes del alta: si ya está registrado y qué tipo le asigna su prefijo
+    /// </summary>
+    [HttpGet("validar-codigo")]
+    public async Task<IActionResult> ValidarCodigo([FromQuery] string codigo)
+    {
+        var resultado = await _vehiculoService.ValidarCodigoAsync(codigo);
+        return Ok(ApiResponse<ValidarCodigoVehiculoDto>.Ok(resultado));
+    }
+
+    /// <summary>
+    /// Crea un nuevo vehículo. Si no se indica el tipo, se detecta por el prefijo del código.
     /// </summary>
     [HttpPost]
     [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
     public async Task<IActionResult> Create([FromBody] VehiculoCreateRequest request)
     {
-        if (await _vehiculoService.ExisteCodigoAsync(request.Codigo))
-            return BadRequest(ApiResponse<string>.Error("Ya existe un vehículo con ese código"));
+        request.Codigo = request.Codigo.Trim();
+        var validacion = await _vehiculoService.ValidarCodigoAsync(request.Codigo);
+
+        if (validacion.Existe)
+        {
+            var fecha = validacion.FechaRegistro?.ToLocalTime().ToString("dd/MM/yyyy") ?? "N/D";
+            return BadRequest(ApiResponse<string>.Error(
+                $"El vehículo {request.Codigo} ya está dado de alta en el sistema " +
+                $"(Tipo: {validacion.TipoNombre}, Área: {validacion.AreaNombre ?? "Sin área"}, Registrado: {fecha})."));
+        }
+
+        request.Tipo ??= validacion.TipoDetectado;
+        if (request.Tipo == null)
+            return BadRequest(ApiResponse<string>.Error(
+                $"No hay un prefijo configurado para el código {request.Codigo}. Selecciona el tipo de vehículo manualmente."));
 
         var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
         var vehiculo = await _vehiculoService.CreateAsync(request, userId);
