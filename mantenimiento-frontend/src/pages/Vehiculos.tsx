@@ -4,7 +4,7 @@ import { getFullImageUrl } from '@/lib/utils';
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, Input, Modal, ModalFooter, Select, Spinner, Textarea } from '@/components/ui';
 import { vehiculosService } from '@/services/vehiculosService';
 import { catalogosService } from '@/services/catalogosService';
-import type { VehiculoList } from '@/interfaces';
+import type { Area, VehiculoList } from '@/interfaces';
 import { EstadoVehiculoNombres, TipoVehiculoNombres, TipoVehiculo } from '@/interfaces/Api.interface';
 import { useAuth } from '@/contexts/AuthContext';
 import { UbicacionLegend, UbicacionBadge } from '@/components/vehiculos/UbicacionLegend';
@@ -13,6 +13,7 @@ import { useAllowedTipoVehiculo } from '@/hooks/useAllowedTipoVehiculo';
 interface FiltersState {
   busqueda: string;
   tipo?: string;
+  areaId?: string;
 }
 
 interface CrearVehiculoForm {
@@ -25,6 +26,7 @@ interface CrearVehiculoForm {
   documentacionEspecificaciones: string;
   listaMateriales: string;
   registroModificaciones: string;
+  areaId: string;
   id?: number;
 }
 
@@ -49,7 +51,8 @@ export function VehiculosPage() {
     documentacionDibujos: '',
     documentacionEspecificaciones: '',
     listaMateriales: '',
-    registroModificaciones: ''
+    registroModificaciones: '',
+    areaId: ''
   });
 
   const [tiposVehiculo, setTiposVehiculo] = useState<{ value: string; label: string }[]>([]);
@@ -83,6 +86,33 @@ export function VehiculosPage() {
     fetchTiposVehiculo();
   }, []);
 
+  const [areas, setAreas] = useState<Area[]>([]);
+
+  useEffect(() => {
+    catalogosService
+      .getAreas()
+      .then((res) => {
+        if (res.success && res.data) setAreas(res.data);
+      })
+      .catch((err) => console.error('Error al cargar áreas:', err));
+  }, []);
+
+  // Solo áreas activas, pero conservando la que ya tenga asignada el vehículo en edición
+  const areaFormOptions = useMemo(
+    () => [
+      { value: '', label: 'Sin área asignada' },
+      ...areas
+        .filter((a) => a.activa || String(a.id) === form.areaId)
+        .map((a) => ({ value: String(a.id), label: a.nombre }))
+    ],
+    [areas, form.areaId]
+  );
+
+  const areaFilterOptions = useMemo(
+    () => [{ value: '', label: 'Todas las áreas' }, ...areas.map((a) => ({ value: String(a.id), label: a.nombre }))],
+    [areas]
+  );
+
   const tipoOptions = useMemo(() => {
     if (loadingTipos) {
       return [{ value: '', label: 'Cargando...' }];
@@ -94,7 +124,7 @@ export function VehiculosPage() {
     return [{ value: '', label: 'Todos los tipos' }, ...filteredTipos];
   }, [tiposVehiculo, loadingTipos, allowedTipoIds]);
 
-  const loadVehiculos = async (page = 1) => {
+  const loadVehiculos = async (page = 1, f: FiltersState = filters) => {
     setLoading(true);
     setError('');
     setSelectedIds(new Set());
@@ -103,14 +133,15 @@ export function VehiculosPage() {
       // If 'tuggers' tab, force type Tugger.
       // If 'general' tab, use selected filter OR undefined (which returns all).
       // Note: If 'general', we will filter OUT tuggers client-side to separate them.
-      let typeFilter = filters.tipo ? Number(filters.tipo) : undefined;
+      let typeFilter = f.tipo ? Number(f.tipo) : undefined;
       if (activeTab === 'tuggers') {
         typeFilter = TipoVehiculo.Tugger;
       }
 
       const res = await vehiculosService.getAll({
-        busqueda: filters.busqueda || undefined,
+        busqueda: f.busqueda || undefined,
         tipo: typeFilter,
+        areaId: f.areaId ? Number(f.areaId) : undefined,
         page: page,
         pageSize: 100 // Request more items to handle client-side filtering if needed
       });
@@ -166,8 +197,9 @@ export function VehiculosPage() {
   const applyFilters = () => loadVehiculos(1);
 
   const resetFilters = () => {
-    setFilters({ busqueda: '' });
-    loadVehiculos(1);
+    const vacios = { busqueda: '' };
+    setFilters(vacios);
+    loadVehiculos(1, vacios);
   };
 
   const handlePageChange = (newPage: number) => {
@@ -185,7 +217,8 @@ export function VehiculosPage() {
         tipo: Number(form.tipo) as any,
         marca: form.marca.trim() || undefined,
         modelo: form.modelo.trim() || undefined,
-        notas: form.notas.trim() || undefined
+        notas: form.notas.trim() || undefined,
+        areaId: form.areaId ? Number(form.areaId) : undefined
       };
       const res = await vehiculosService.create(payload);
       if (res.success) {
@@ -199,7 +232,8 @@ export function VehiculosPage() {
         documentacionDibujos: '',
         documentacionEspecificaciones: '',
         listaMateriales: '',
-        registroModificaciones: ''
+        registroModificaciones: '',
+        areaId: ''
       });
         loadVehiculos();
       } else {
@@ -223,7 +257,9 @@ export function VehiculosPage() {
         tipo: Number(form.tipo),
         marca: form.marca.trim() || undefined,
         modelo: form.modelo.trim() || undefined,
-        notas: form.notas.trim() || undefined
+        notas: form.notas.trim() || undefined,
+        // 0 = quitar el área asignada
+        areaId: form.areaId ? Number(form.areaId) : 0
       };
       const res = await vehiculosService.update(form.id, payload as any);
       if (res.success) {
@@ -238,6 +274,7 @@ export function VehiculosPage() {
         documentacionEspecificaciones: '',
         listaMateriales: '',
         registroModificaciones: '',
+        areaId: '',
         id: undefined
       });
         loadVehiculos();
@@ -355,7 +392,7 @@ export function VehiculosPage() {
         </button>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-5">
         <Button variant="outline" className="flex items-center gap-2 w-full md:w-auto" onClick={applyFilters}>
             <Search className="h-4 w-4" />
             Buscar
@@ -369,6 +406,11 @@ export function VehiculosPage() {
           options={tipoOptions}
           value={filters.tipo || ''}
           onChange={(value) => setFilters((prev) => ({ ...prev, tipo: value }))}
+        />
+        <Select
+          options={areaFilterOptions}
+          value={filters.areaId || ''}
+          onChange={(value) => setFilters((prev) => ({ ...prev, areaId: value }))}
         />
         <div className="flex gap-2 md:col-span-2 lg:col-span-1">
           <Button variant="secondary" className="w-full" onClick={resetFilters}>
@@ -538,7 +580,8 @@ export function VehiculosPage() {
                             documentacionDibujos: data.documentacionDibujos || '',
                             documentacionEspecificaciones: data.documentacionEspecificaciones || '',
                             listaMateriales: data.listaMateriales || '',
-                            registroModificaciones: data.registroModificaciones || ''
+                            registroModificaciones: data.registroModificaciones || '',
+                            areaId: data.areaId ? String(data.areaId) : ''
                           });
                           setEditOpen(true);
                         } else {
@@ -611,6 +654,12 @@ export function VehiculosPage() {
             onChange={(value) => setForm((prev) => ({ ...prev, tipo: value }))}
             options={tipoOptions}
           />
+          <Select
+            label="Área"
+            value={form.areaId}
+            onChange={(value) => setForm((prev) => ({ ...prev, areaId: value }))}
+            options={areaFormOptions}
+          />
           <Input
             label="Marca"
             placeholder="Marca"
@@ -654,6 +703,12 @@ export function VehiculosPage() {
             value={form.tipo}
             onChange={(value) => setForm((prev) => ({ ...prev, tipo: value }))}
             options={tipoOptions}
+          />
+          <Select
+            label="Área"
+            value={form.areaId}
+            onChange={(value) => setForm((prev) => ({ ...prev, areaId: value }))}
+            options={areaFormOptions}
           />
           <Input
             label="Marca"
