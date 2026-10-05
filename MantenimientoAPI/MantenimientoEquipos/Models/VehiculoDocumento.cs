@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace MantenimientoEquipos.Models;
 
@@ -23,11 +24,16 @@ public class VehiculoDocumento
     [Required, MaxLength(500)]
     public string UrlArchivo { get; set; } = string.Empty;
 
+    // Version, IsActive y Comentarios no existen en la tabla: la migración que crea
+    // VehiculoDocumentos (AddUbicacionToVehiculo) nunca las incluyó. Si se mapean, cualquier
+    // consulta o alta de documentos/fotos falla con "Invalid column name".
+    [NotMapped]
     public int Version { get; set; } = 1;
 
+    [NotMapped]
     public bool IsActive { get; set; } = true;
 
-    [MaxLength(500)]
+    [NotMapped, MaxLength(500)]
     public string? Comentarios { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
