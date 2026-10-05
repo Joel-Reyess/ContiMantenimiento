@@ -219,7 +219,8 @@ public class VehiculoService
         if (request.NumeroSerie != null) vehiculo.NumeroSerie = request.NumeroSerie;
         if (request.Anio.HasValue) vehiculo.Anio = request.Anio.Value;
         if (request.Estado.HasValue) vehiculo.Estado = request.Estado.Value;
-        if (request.AreaId.HasValue) vehiculo.AreaId = request.AreaId.Value;
+        // AreaId = 0 quita el área asignada
+        if (request.AreaId.HasValue) vehiculo.AreaId = request.AreaId.Value > 0 ? request.AreaId.Value : null;
         if (request.ProximoMantenimiento.HasValue) vehiculo.ProximoMantenimiento = request.ProximoMantenimiento.Value;
         if (request.CapacidadCarga.HasValue) vehiculo.CapacidadCarga = request.CapacidadCarga.Value;
         if (request.HorasOperacion.HasValue) vehiculo.HorasOperacion = request.HorasOperacion.Value;
