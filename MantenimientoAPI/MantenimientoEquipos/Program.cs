@@ -147,6 +147,24 @@ if (app.Environment.IsDevelopment())
 // Habilitar CORS antes de autenticación
 app.UseCors("FrontendPolicy" );
 
+// Errores no controlados: se responden aquí, después de CORS, como JSON con el mensaje.
+// Si se dejan escapar, el servidor devuelve un 500 vacío SIN encabezados CORS y el navegador
+// solo muestra "Failed to fetch" (p. ej. cuando faltan DLLs de ClosedXML en el servidor).
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (Exception ex) when (!context.Response.HasStarted)
+    {
+        context.RequestServices.GetRequiredService<ILogger<Program>>()
+            .LogError(ex, "Error no controlado en {Method} {Path}", context.Request.Method, context.Request.Path);
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        await context.Response.WriteAsJsonAsync(ApiResponse<string>.Error($"Error interno del servidor: {ex.Message}"));
+    }
+});
+
 // Servir archivos estaticos (wwwroot/uploads)
 app.UseStaticFiles(); // Para archivos en wwwroot por defecto
 
