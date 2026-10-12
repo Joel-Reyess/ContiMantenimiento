@@ -63,8 +63,10 @@ public class ExcelImportService
                 "",
                 "• Una fila por vehículo, a partir de la fila 2. No cambies los encabezados.",
                 "• Código (obligatorio): identificador del equipo, por ejemplo MTC-045 o 916100000100.",
-                "• Tipo (opcional): si lo dejas vacío se detecta con los prefijos configurados. Si ningún prefijo coincide, la fila marcará error.",
-                "• Área (opcional): debe ser un área activa del sistema (usa la lista desplegable).",
+                "• Tipo (opcional): el nombre del tipo; también se acepta una parte que lo identifique sin duda (p. ej. \"Costado\" = CassetteDeCostado).",
+                "  Si lo dejas vacío se detecta con los prefijos configurados. Si ningún prefijo coincide, la fila marcará error.",
+                "• Área (opcional): debe ser un área activa del sistema (usa la lista desplegable). No importan mayúsculas, acentos ni espacios.",
+                "• Las columnas que no reconozca el sistema (por ejemplo \"Prefijo\") se ignoran.",
                 "• Marca, Modelo y Notas son opcionales.",
                 "",
                 "Si el Código YA EXISTE, el vehículo se ACTUALIZA con los datos que escribas; las celdas vacías no cambian nada.",
@@ -170,11 +172,11 @@ public class ExcelImportService
 
         var tipos = (await _db.TiposVehiculo.AsNoTracking().Select(t => new { t.Id, t.Nombre }).ToListAsync())
             .Where(t => Enum.IsDefined(typeof(TipoVehiculoEnum), t.Id))
-            .GroupBy(t => Normalizar(t.Nombre))
-            .ToDictionary(g => g.Key, g => (TipoVehiculoEnum)g.First().Id);
+            .Select(t => (t.Nombre, (TipoVehiculoEnum)t.Id))
+            .ToList();
         var areas = (await _db.Areas.AsNoTracking().Where(a => a.Activa).Select(a => new { a.Id, a.Nombre }).ToListAsync())
-            .GroupBy(a => Normalizar(a.Nombre))
-            .ToDictionary(g => g.Key, g => g.First().Id);
+            .Select(a => (a.Nombre, a.Id))
+            .ToList();
         var prefijos = await _prefijoService.GetPrefijosActivosAsync();
         var existentes = (await _db.Vehiculos.ToListAsync())
             .GroupBy(v => v.Codigo.Trim(), StringComparer.OrdinalIgnoreCase)
@@ -205,8 +207,9 @@ public class ExcelImportService
             TipoVehiculoEnum? tipo = null;
             if (!string.IsNullOrEmpty(tipoTexto))
             {
-                if (tipos.TryGetValue(Normalizar(tipoTexto), out var t)) tipo = t;
-                else errores.Add(fila.Numero, "Tipo", $"El tipo '{tipoTexto}' no existe en el sistema");
+                var (t, error) = BuscarPorNombre(tipoTexto, tipos, "tipos", $"El tipo '{tipoTexto}' no existe en el sistema");
+                if (error != null) errores.Add(fila.Numero, "Tipo", error);
+                else tipo = t;
             }
             else if (existente == null)
             {
@@ -220,8 +223,9 @@ public class ExcelImportService
             int? areaId = null;
             if (!string.IsNullOrEmpty(areaTexto))
             {
-                if (areas.TryGetValue(Normalizar(areaTexto), out var a)) areaId = a;
-                else errores.Add(fila.Numero, "Área", $"El área '{areaTexto}' no existe o está inactiva");
+                var (a, error) = BuscarPorNombre(areaTexto, areas, "áreas", $"El área '{areaTexto}' no existe o está inactiva");
+                if (error != null) errores.Add(fila.Numero, "Área", error);
+                else areaId = a;
             }
 
             if (marca?.Length > 100) errores.Add(fila.Numero, "Marca", "Máximo 100 caracteres");
@@ -465,6 +469,30 @@ public class ExcelImportService
                 _resultado.Errores.Add(new ExcelImportErrorDto { Fila = fila, Columna = columna, Mensaje = mensaje });
         }
     }
+
+    /// <summary>
+    /// Busca un catálogo por nombre como lo escribe la gente: sin importar mayúsculas, acentos, espacios
+    /// ni signos ("cassette de costado" = "CassetteDeCostado"). Si no hay coincidencia exacta acepta una
+    /// parcial siempre que sea única ("Costado" → "CassetteDeCostado"); si hay varias, es error.
+    /// </summary>
+    private static (T? Valor, string? Error) BuscarPorNombre<T>(
+        string texto, IReadOnlyList<(string Nombre, T Valor)> opciones, string plural, string mensajeNoExiste) where T : struct
+    {
+        var buscado = Compacto(texto);
+        var exacta = opciones.Where(o => Compacto(o.Nombre) == buscado).ToList();
+        if (exacta.Count > 0) return (exacta[0].Valor, null);
+
+        var parciales = buscado.Length < 3
+            ? new List<(string Nombre, T Valor)>()
+            : opciones.Where(o => Compacto(o.Nombre).Contains(buscado)).ToList();
+        if (parciales.Count == 1) return (parciales[0].Valor, null);
+        if (parciales.Count > 1)
+            return (null, $"'{texto}' coincide con varios {plural} ({string.Join(", ", parciales.Select(p => p.Nombre))}); escribe el nombre completo");
+        return (null, mensajeNoExiste);
+    }
+
+    /// <summary>Solo letras y números, sin acentos y en minúsculas: "Cassette de Costado" → "cassettedecostado"</summary>
+    private static string Compacto(string texto) => new(Normalizar(texto).Where(char.IsLetterOrDigit).ToArray());
 
     /// <summary>Minúsculas, sin acentos, sin "*" y con espacios simples: "Código *" → "codigo"</summary>
     internal static string Normalizar(string? texto)
