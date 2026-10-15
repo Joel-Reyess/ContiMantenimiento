@@ -78,6 +78,7 @@ builder.Services.AddScoped<OrdenTrabajoChecklistItemService>();
 builder.Services.AddScoped<MantenimientoEquipos.Services.TecnicoKPIsService>();
 builder.Services.AddScoped<ExcelExportService>();
 builder.Services.AddScoped<ExcelImportService>();
+builder.Services.AddScoped<EliminacionService>();
 
 // Configuración CORS para permitir peticiones desde el frontend
 var allowedOrigins = new[] {

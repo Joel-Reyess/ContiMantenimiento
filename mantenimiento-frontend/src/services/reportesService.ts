@@ -121,6 +121,15 @@ export const reportesService = {
   },
 
   // Categorías de Fallas
+  /** Elimina el reporte (y su orden de trabajo, si tiene). Solo administradores. */
+  async delete(id: number): Promise<ApiResponse<{ reportes: number; ordenes: number; folios: string[] }>> {
+    return await httpClient.delete<{ reportes: number; ordenes: number; folios: string[] }>(`/reportes/${id}`);
+  },
+
+  async deleteMany(ids: number[]): Promise<ApiResponse<{ reportes: number; ordenes: number; folios: string[] }>> {
+    return await httpClient.post<{ reportes: number; ordenes: number; folios: string[] }>('/reportes/eliminar', { ids });
+  },
+
   async getCategorias(): Promise<ApiResponse<CategoriaFalla[]>> {
     return await httpClient.get<CategoriaFalla[]>('/catalogos/categorias-falla');
   }

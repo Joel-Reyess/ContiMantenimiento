@@ -119,6 +119,11 @@ export const catalogosService = {
     return await httpClient.post<Area>('/catalogos/areas', area);
   },
 
+  /** Elimina el área; sus vehículos y usuarios quedan sin área */
+  async deleteArea(id: number): Promise<ApiResponse<string>> {
+    return await httpClient.delete<string>(`/catalogos/areas/${id}`);
+  },
+
   async updateArea(id: number, area: { nombre?: string; codigo?: string; descripcion?: string; supervisorId?: number; activa?: boolean }): Promise<ApiResponse<Area>> {
     return await httpClient.put<Area>(`/catalogos/areas/${id}`, area);
   },

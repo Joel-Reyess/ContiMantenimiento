@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Bell, CheckCircle, Trash2, RefreshCcw } from 'lucide-react';
-import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, Spinner } from '@/components/ui';
+import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, Spinner, useConfirm } from '@/components/ui';
 import { notificacionesService } from '@/services/notificacionesService';
 import type { Notificacion } from '@/interfaces';
 
 export function NotificacionesPage() {
+  const { confirmar } = useConfirm();
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([]);
   const [soloNoLeidas, setSoloNoLeidas] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -63,6 +64,13 @@ export function NotificacionesPage() {
   };
 
   const borrar = async (id: number) => {
+    const ok = await confirmar({
+      titulo: 'Borrar notificación',
+      mensaje: '¿Borrar esta notificación?',
+      textoConfirmar: 'Borrar',
+      tono: 'peligro'
+    });
+    if (!ok) return;
     const resp = await notificacionesService.eliminar(id);
     if (!resp.success) setError(resp.message || 'No se pudo borrar la notificación');
     avisarCambio();

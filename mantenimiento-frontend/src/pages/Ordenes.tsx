@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
-import { Link, useLocation, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   Alert,
   AlertDescription,
@@ -15,6 +15,8 @@ import {
   Select,
   Spinner,
   Textarea,
+  useConfirm,
+  useToast
 } from '@/components/ui';
 import {
   ArrowLeft,
@@ -120,12 +122,50 @@ const resolveChecklistKey = (tipo?: string) => {
 };
 
 export function OrdenesPage() {
+  const { confirmar } = useConfirm();
+  const toast = useToast();
   const location = useLocation();
   const { id: ordenIdParam } = useParams();
   const ordenId = ordenIdParam ? Number(ordenIdParam) : undefined;
   const isMisOrdenes = location.pathname.includes('mis-ordenes');
   const { hasRole, user } = useAuth();
   const canCreate = hasRole(['Administrador', 'Superusuario', 'Supervisor']);
+  const canEliminar = hasRole(['Administrador', 'SuperUsuario']);
+  const navigate = useNavigate();
+  const [eliminandoOrden, setEliminandoOrden] = useState(false);
+
+  /** Eliminar orden (solo administradores): confirmación del sistema, aviso y regreso al listado */
+  const handleEliminarOrden = async () => {
+    if (!detalle || eliminandoOrden) return;
+    const ok = await confirmar({
+      titulo: `Eliminar orden ${detalle.folio}`,
+      mensaje: (
+        <div className="space-y-2">
+          <p>Se eliminará la orden con su checklist, evidencias, refacciones, actividades adicionales y pagos.</p>
+          <p>Si viene de un reporte, el reporte se conserva y vuelve a quedar "sin orden".</p>
+          <p>Esta acción no se puede deshacer. Quedará registrado quién la realizó y cuándo.</p>
+        </div>
+      ),
+      textoConfirmar: 'Eliminar',
+      tono: 'peligro'
+    });
+    if (!ok) return;
+    setEliminandoOrden(true);
+    try {
+      const res = await ordenesService.delete(detalle.id);
+      if (!res.success) {
+        toast.error(res.message || 'No se pudo eliminar la orden');
+        return;
+      }
+      toast.exito(res.message || `Orden ${detalle.folio} eliminada`);
+      navigate(isMisOrdenes ? '/mis-ordenes' : '/ordenes');
+    } catch (err) {
+      console.error(err);
+      toast.error('Error al eliminar la orden');
+    } finally {
+      setEliminandoOrden(false);
+    }
+  };
 
   const [filters, setFilters] = useState<FiltersState>({ busqueda: '' });
   const [ordenes, setOrdenes] = useState<OrdenTrabajoList[]>([]);
@@ -1128,7 +1168,8 @@ export function OrdenesPage() {
         }
       }, 100);
     } catch (err) {
-      alert('No se pudo acceder a la cámara');
+      console.error(err);
+      toast.error('No se pudo acceder a la cámara. Revisa los permisos del navegador o usa la galería.');
     }
   };
 
@@ -1331,7 +1372,21 @@ export function OrdenesPage() {
               </h2>
               <p className="text-continental-gray-1">Prioridad {detalle.prioridadNombre || PrioridadNombres[detalle.prioridad]}</p>
             </div>
-            <Badge variant="secondary">{detalle.estadoNombre || EstadoOrdenNombres[detalle.estado]}</Badge>
+            <div className="flex flex-col items-end gap-2">
+              <Badge variant="secondary">{detalle.estadoNombre || EstadoOrdenNombres[detalle.estado]}</Badge>
+              {canEliminar && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleEliminarOrden}
+                  disabled={eliminandoOrden}
+                  className="flex items-center gap-2 border-red-300 text-red-700 hover:bg-red-50 print:hidden"
+                >
+                  {eliminandoOrden ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  Eliminar orden
+                </Button>
+              )}
+            </div>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
@@ -1498,7 +1553,7 @@ export function OrdenesPage() {
                               checked={checked}
                               onChange={(e) => {
                                 if (e.target.checked && !resp.fotoUrl) {
-                                  alert('Debes subir una foto de evidencia antes de marcar como completado.');
+                                  toast.aviso('Debes subir una foto de evidencia antes de marcar como completado.');
                                   return;
                                 }
                                 updateChecklistRespuesta(item.id, { valor: e.target.checked ? 'OK' : '' });
@@ -1618,7 +1673,12 @@ export function OrdenesPage() {
                                     </button>
                                     <button 
                                       onClick={async () => {
-                                        const confirmDelete = window.confirm("¿Estás seguro de eliminar esta evidencia?");
+                                        const confirmDelete = await confirmar({
+                                          titulo: 'Eliminar evidencia',
+                                          mensaje: `¿Eliminar la foto de evidencia de "${item.pregunta || 'este punto'}"?`,
+                                          textoConfirmar: 'Eliminar',
+                                          tono: 'peligro'
+                                        });
                                         if (!confirmDelete) return;
 
                                         setUploadingItemMap(prev => ({...prev, [item.id]: true}));
@@ -1632,6 +1692,10 @@ export function OrdenesPage() {
                                               tipo: tipoItem
                                             });
                                           }
+                                          toast.exito('Evidencia eliminada');
+                                        } catch (err) {
+                                          console.error(err);
+                                          toast.error('No se pudo eliminar la evidencia');
                                         } finally {
                                           setUploadingItemMap(prev => ({...prev, [item.id]: false}));
                                         }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Modal, ModalFooter } from '@/components/ui';
+import { Button, Card, Modal, ModalFooter, useToast } from '@/components/ui';
 import { ordenesCompraService } from '@/services/ordenesCompraService';
 import { refaccionesService } from '@/services/refaccionesService';
 import type { OrdenCompra, SolicitudRefaccion } from '@/interfaces';
@@ -7,6 +7,7 @@ import { FileText, RefreshCcw, Eye, Package } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 export function OrdenesCompraPage() {
+  const toast = useToast();
   const { hasRole } = useAuth();
   const isSupervisor = hasRole(['Supervisor', 'SuperUsuario', 'Administrador']);
 
@@ -60,8 +61,11 @@ export function OrdenesCompraPage() {
     }
   }, [createOpen]);
 
+  const [errorCrear, setErrorCrear] = useState('');
+
   const handleCreate = async () => {
     if (selectedSolicitudes.length === 0) return;
+    setErrorCrear('');
     try {
       const res = await (ordenesCompraService as any).create({
         solicitudRefaccionIds: selectedSolicitudes
@@ -69,13 +73,14 @@ export function OrdenesCompraPage() {
       if (res.success) {
         setCreateOpen(false);
         setSelectedSolicitudes([]);
+        toast.exito(`Orden de compra ${res.data?.folio ?? ''} generada`);
         loadOrdenes();
       } else {
-        alert(res.message || 'Error al crear orden');
+        setErrorCrear(res.message || 'No se pudo generar la orden de compra');
       }
     } catch (err) {
       console.error(err);
-      alert('Error de conexión');
+      setErrorCrear('Error de conexión. Inténtalo de nuevo.');
     }
   };
 
@@ -188,6 +193,9 @@ export function OrdenesCompraPage() {
                 </label>
               ))}
             </div>
+          )}
+          {errorCrear && (
+            <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errorCrear}</p>
           )}
         </div>
         <ModalFooter>

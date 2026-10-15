@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState } from 'react';
-import { Settings, Plus, Loader2, RefreshCcw, ToggleLeft, ToggleRight, ListChecks, ClipboardPlus, Trash2, Package, Users, AlertTriangle, Calendar, FileText, Download, FileSpreadsheet } from 'lucide-react';
+import { Settings, Plus, Loader2, RefreshCcw, ListChecks, ClipboardPlus, Trash2, Package, Users, AlertTriangle, Calendar, FileText, Download, FileSpreadsheet } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getFullImageUrl } from '@/lib/utils';
 import {
@@ -14,7 +14,9 @@ import {
   ModalFooter,
   Spinner,
   Textarea,
-  Select
+  Select,
+  useConfirm,
+  useToast
 } from '@/components/ui';
 import { catalogosService, usuariosService, checklistService, adminService, dashboardService } from '@/services';
 import { vehiculosService } from '@/services/vehiculosService';
@@ -57,6 +59,8 @@ interface ProgramacionPreventiva {
 }
 
 export function ConfiguracionPage() {
+  const { confirmar } = useConfirm();
+  const toast = useToast();
   const { hasRole } = useAuth();
   const [activeTab, setActiveTab] = useState<'areas' | 'checklists' | 'tipos' | 'preventivos'>('areas');
   const [areas, setAreas] = useState<Area[]>([]);
@@ -78,6 +82,8 @@ export function ConfiguracionPage() {
   const [asignaciones, setAsignaciones] = useState<Record<number, number | undefined>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // Error de la ventana abierta (se muestra dentro de ella, no detrás en la página)
+  const [modalError, setModalError] = useState('');
   const [crearOpen, setCrearOpen] = useState(false);
   const [creando, setCreando] = useState(false);
   const [accionando, setAccionando] = useState(false);
@@ -243,14 +249,21 @@ export function ConfiguracionPage() {
     }
   };
 
+  // Al abrir o cerrar una ventana se limpia su error
+  const supervisorAbierto = !!areaSeleccionada;
+  const tipoAbierto = !!editingTipo;
+  useEffect(() => {
+    setModalError('');
+  }, [crearOpen, crearChecklistOpen, supervisorAbierto, tipoAbierto]);
+
   const handleSaveTipo = async () => {
     if (!editingTipo) return;
     setAccionando(true);
-    setError('');
+    setModalError('');
     
     // Validación básica
     if (!editingTipo.nombre?.trim()) {
-      setError('El nombre del tipo de vehículo es obligatorio');
+      setModalError('El nombre del tipo de vehículo es obligatorio');
       setAccionando(false);
       return;
     }
@@ -266,7 +279,7 @@ export function ConfiguracionPage() {
         setUploading(true);
         const uploadRes = await catalogosService.uploadImagenTipoVehiculo(editingTipo.id, selectedFile);
         if (!uploadRes.success) {
-          setError(uploadRes.message || 'Error al subir la imagen');
+          setModalError(uploadRes.message || 'Error al subir la imagen');
           setUploading(false);
           setAccionando(false);
           return;
@@ -313,16 +326,17 @@ export function ConfiguracionPage() {
       }
 
       if (res && res.success) {
+        toast.exito(isCreatingTipo ? `Tipo "${editingTipo.nombre}" creado` : `Tipo "${editingTipo.nombre}" actualizado`);
         setEditingTipo(null);
         setSelectedFile(null);
         setIsCreatingTipo(false);
         loadTiposVehiculo();
       } else {
-        setError(res?.message || 'Error al guardar tipo de vehiculo');
+        setModalError(res?.message || 'Error al guardar tipo de vehiculo');
       }
     } catch (err) {
       console.error(err);
-      setError('Error al guardar tipo de vehiculo');
+      setModalError('Error al guardar tipo de vehiculo');
     } finally {
       setAccionando(false);
     }
@@ -330,20 +344,28 @@ export function ConfiguracionPage() {
 
 
   const handleDeleteTipo = async (id: number) => {
-    if (!window.confirm('¿Estás seguro de eliminar este tipo de vehículo? Esta acción no se puede deshacer.')) return;
-    
+    const tipo = tiposVehiculo.find((t) => t.id === id);
+    const ok = await confirmar({
+      titulo: 'Eliminar tipo de vehículo',
+      mensaje: `¿Eliminar el tipo "${tipo?.nombre ?? id}"? Esta acción no se puede deshacer.`,
+      textoConfirmar: 'Eliminar',
+      tono: 'peligro'
+    });
+    if (!ok) return;
+
     setAccionando(true);
     setError('');
     try {
       const res = await catalogosService.deleteTipoVehiculo(id);
       if (res.success) {
+        toast.exito(`Tipo de vehículo "${tipo?.nombre ?? id}" eliminado`);
         loadTiposVehiculo();
       } else {
-        setError(res.message || 'No se pudo eliminar el tipo de vehículo');
+        toast.error(res.message || 'No se pudo eliminar el tipo de vehículo');
       }
     } catch (err) {
       console.error(err);
-      setError('Error al eliminar el tipo de vehículo');
+      toast.error('Error al eliminar el tipo de vehículo');
     } finally {
       setAccionando(false);
     }
@@ -549,8 +571,12 @@ export function ConfiguracionPage() {
   };
 
   const handleCreate = async () => {
+    if (!form.nombre.trim()) {
+      setModalError('Escribe el nombre del área.');
+      return;
+    }
     setCreando(true);
-    setError('');
+    setModalError('');
     try {
       const payload = {
         nombre: form.nombre.trim(),
@@ -559,29 +585,54 @@ export function ConfiguracionPage() {
       };
       const res = await catalogosService.createArea(payload);
       if (res.success) {
+        toast.exito(`Área ${payload.nombre} creada`);
         setCrearOpen(false);
         setForm({ nombre: '', codigo: '', descripcion: '' });
         loadAreas();
       } else {
-        setError(res.message || 'No se pudo crear el area');
+        setModalError(res.message || 'No se pudo crear el area');
       }
     } catch (err) {
       console.error(err);
-      setError('Error al crear el area');
+      setModalError('Error al crear el area');
     } finally {
       setCreando(false);
     }
   };
 
-  const toggleActiva = async (area: Area) => {
+  /** Solo para áreas que quedaron inactivas antes: "Desactivar" ya no existe (solo aplica a usuarios) */
+  const reactivarArea = async (area: Area) => {
     setAccionando(true);
-    setError('');
     try {
-      await catalogosService.updateArea(area.id, { activa: !area.activa });
+      const res = await catalogosService.updateArea(area.id, { activa: true });
+      if (res.success === false) toast.error(res.message || 'No se pudo activar el área');
+      else toast.exito(`Área ${area.nombre} activada`);
       loadAreas();
     } catch (err) {
       console.error(err);
-      setError('No se pudo actualizar el estado del area');
+      toast.error('No se pudo activar el área');
+    } finally {
+      setAccionando(false);
+    }
+  };
+
+  const eliminarArea = async (area: Area) => {
+    const ok = await confirmar({
+      titulo: `Eliminar área ${area.nombre}`,
+      mensaje: 'Los vehículos y usuarios que tengan esta área quedarán sin área asignada (no se eliminan). Esta acción no se puede deshacer.',
+      textoConfirmar: 'Eliminar',
+      tono: 'peligro'
+    });
+    if (!ok) return;
+    setAccionando(true);
+    try {
+      const res = await catalogosService.deleteArea(area.id);
+      if (res.success === false) toast.error(res.message || 'No se pudo eliminar el área');
+      else toast.exito(res.message || `Área ${area.nombre} eliminada`);
+      loadAreas();
+    } catch (err) {
+      console.error(err);
+      toast.error('No se pudo eliminar el área');
     } finally {
       setAccionando(false);
     }
@@ -595,15 +646,20 @@ export function ConfiguracionPage() {
   const handleAsignarSupervisor = async () => {
     if (!areaSeleccionada) return;
     setAsignando(true);
-    setError('');
+    setModalError('');
     try {
-      await catalogosService.updateArea(areaSeleccionada.id, { supervisorId: supervisorId ? Number(supervisorId) : undefined });
+      const res = await catalogosService.updateArea(areaSeleccionada.id, { supervisorId: supervisorId ? Number(supervisorId) : undefined });
+      if (res.success === false) {
+        setModalError(res.message || 'No se pudo asignar el supervisor');
+        return;
+      }
+      toast.exito(`Supervisor asignado a ${areaSeleccionada.nombre}`);
       setAreaSeleccionada(null);
       setSupervisorId('');
       loadAreas();
     } catch (err) {
       console.error(err);
-      setError('No se pudo asignar el supervisor');
+      setModalError('No se pudo asignar el supervisor');
     } finally {
       setAsignando(false);
     }
@@ -632,7 +688,7 @@ export function ConfiguracionPage() {
       requiereFoto: false,
       costoEstimado: 0
     });
-    setError('');
+    setModalError('');
   };
 
   const eliminarItem = (idx: number) => {
@@ -647,11 +703,11 @@ export function ConfiguracionPage() {
 
   const handleCrearChecklist = async () => {
     if (!tplNombre.trim() || itemsDraft.length === 0) {
-      setError('Agrega nombre y al menos un item al checklist');
+      setModalError(!tplNombre.trim() ? 'Escribe el nombre del checklist.' : 'Agrega al menos un item al checklist.');
       return;
     }
     setCreandoChecklist(true);
-    setError('');
+    setModalError('');
     try {
       const payload = {
         nombre: tplNombre.trim(),
@@ -673,8 +729,9 @@ export function ConfiguracionPage() {
         ? await checklistService.updateTemplate(tplEditId, payload)
         : await checklistService.createTemplate(payload);
       if (!res.success) {
-        setError(res.message || 'No se pudo guardar el checklist');
+        setModalError(res.message || 'No se pudo guardar el checklist');
       } else {
+        toast.exito(tplEditId ? `Checklist "${payload.nombre}" actualizado` : `Checklist "${payload.nombre}" creado`);
         setCrearChecklistOpen(false);
         setTplNombre('');
         setTplDescripcion('');
@@ -686,7 +743,7 @@ export function ConfiguracionPage() {
       }
     } catch (err) {
       console.error(err);
-      setError('Error al guardar checklist');
+      setModalError('Error al guardar checklist');
     } finally {
       setCreandoChecklist(false);
     }
@@ -799,13 +856,24 @@ export function ConfiguracionPage() {
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                      <Badge variant={area.activa ? 'default' : 'outline'}>{area.activa ? 'Activa' : 'Inactiva'}</Badge>
+                      {!area.activa && <Badge variant="outline">Inactiva</Badge>}
                       <Button size="sm" variant="outline" onClick={() => abrirAsignarSupervisor(area)} disabled={accionando}>
                         Asignar supervisor
                       </Button>
-                      <Button size="sm" variant="secondary" disabled={accionando} onClick={() => toggleActiva(area)} className="flex items-center gap-1">
-                        {area.activa ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
-                        {area.activa ? 'Desactivar' : 'Activar'}
+                      {!area.activa && (
+                        <Button size="sm" variant="secondary" disabled={accionando} onClick={() => reactivarArea(area)}>
+                          Activar
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={accionando}
+                        onClick={() => eliminarArea(area)}
+                        className="flex items-center gap-1 border-red-300 text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Eliminar
                       </Button>
                     </div>
                   </div>
@@ -1343,6 +1411,11 @@ export function ConfiguracionPage() {
 
       <Modal isOpen={crearOpen} onClose={() => setCrearOpen(false)} title="Nueva area" description="Crear una nueva area o ubicacion.">
         <div className="space-y-3">
+          {modalError && (
+            <Alert variant="destructive">
+              <AlertDescription>{modalError}</AlertDescription>
+            </Alert>
+          )}
           <Input
             label="Nombre"
             value={form.nombre}
@@ -1468,6 +1541,12 @@ export function ConfiguracionPage() {
             </div>
           </div>
         </div>
+        {/* Junto a los botones: la lista de items puede ser larga y el aviso arriba no se vería */}
+        {modalError && (
+          <Alert variant="destructive" style={{ marginTop: 12 }}>
+            <AlertDescription>{modalError}</AlertDescription>
+          </Alert>
+        )}
         <ModalFooter>
           <Button
             variant="outline"
@@ -1499,6 +1578,11 @@ export function ConfiguracionPage() {
         description={areaSeleccionada ? `Asignar responsable para ${areaSeleccionada.nombre}` : ''}
       >
         <div className="space-y-3">
+          {modalError && (
+            <Alert variant="destructive">
+              <AlertDescription>{modalError}</AlertDescription>
+            </Alert>
+          )}
           <Select
             label="Supervisor"
             value={supervisorId}
@@ -1534,6 +1618,11 @@ export function ConfiguracionPage() {
         description={isCreatingTipo ? "Registra un nuevo tipo de vehículo o contenedor." : `Edita la información de ${editingTipo?.nombre}`}
       >
         <div className="space-y-4 overflow-y-auto max-h-[70vh] pr-2">
+          {modalError && (
+            <Alert variant="destructive">
+              <AlertDescription>{modalError}</AlertDescription>
+            </Alert>
+          )}
           <Input
             label="Nombre"
             placeholder="Ej: Carrito, Tugger, Montacargas..."

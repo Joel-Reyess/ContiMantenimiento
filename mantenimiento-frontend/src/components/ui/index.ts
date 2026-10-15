@@ -10,6 +10,8 @@ export { Modal, ModalFooter } from './modal';
 export { Spinner, LoadingOverlay, LoadingCard } from './spinner';
 export { Alert, AlertTitle, AlertDescription } from './alert';
 export { QrScannerButton } from './qr-scanner';
+export { ConfirmProvider, useConfirm } from './confirm-dialog';
+export { ToastProvider, useToast } from './toaster';
 
 export type { ButtonProps } from './button';
 export type { InputProps } from './input';

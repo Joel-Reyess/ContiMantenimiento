@@ -23,8 +23,11 @@ public class OrdenesController : ControllerBase
     private readonly IWebHostEnvironment _env;
     private readonly LiderTipoVehiculoAsignacionService _asignacionService;
 
-    public OrdenesController(OrdenTrabajoService ordenService, NotificacionService notificacionService, IWebHostEnvironment env, LiderTipoVehiculoAsignacionService asignacionService)
+    private readonly EliminacionService _eliminacion;
+
+    public OrdenesController(OrdenTrabajoService ordenService, NotificacionService notificacionService, IWebHostEnvironment env, LiderTipoVehiculoAsignacionService asignacionService, EliminacionService eliminacion)
     {
+        _eliminacion = eliminacion;
         _ordenService = ordenService;
         _notificacionService = notificacionService;
         _env = env;
@@ -90,6 +93,20 @@ public class OrdenesController : ControllerBase
     /// <summary>
     /// Crea una nueva orden de trabajo
     /// </summary>
+    /// <summary>
+    /// Elimina una orden de trabajo con su checklist, evidencias, refacciones, actividades y pagos.
+    /// Su reporte (si tiene) vuelve a quedar "sin orden". Solo administradores; queda en la bitácora.
+    /// </summary>
+    [HttpDelete("{id:int}")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var r = await _eliminacion.EliminarOrdenConRegistroAsync(id, User.UsuarioId(), User.NombreUsuario());
+        if (r.Ordenes == 0)
+            return NotFound(ApiResponse<string>.Error("Orden de trabajo no encontrada"));
+        return Ok(ApiResponse<EliminacionResultadoDto>.Ok(r, $"Orden de trabajo {r.Folios[0]} eliminada"));
+    }
+
     [HttpPost]
     [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico")]
     public async Task<IActionResult> Create([FromBody] OrdenTrabajoCreateRequest request, [FromQuery] bool force = false)

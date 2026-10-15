@@ -223,8 +223,15 @@ public class VehicleImagePointsController : ControllerBase
             return NotFound(ApiResponse<string>.Error("Punto de imagen no encontrado"));
         }
 
+        // Los reportes que ya usaron el punto conservan la falla, solo pierden la posición en la imagen.
+        // Se hace explícito porque según la BD la llave foránea puede no tener ON DELETE SET NULL.
+        using var tx = await _db.Database.BeginTransactionAsync();
+        await _db.ReportImageFaults
+            .Where(r => r.VehicleImagePointId == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.VehicleImagePointId, (int?)null));
         _db.VehicleImagePoints.Remove(vehicleImagePoint);
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();
 
         return Ok(ApiResponse<bool>.Ok(true, "Punto de imagen eliminado"));
     }

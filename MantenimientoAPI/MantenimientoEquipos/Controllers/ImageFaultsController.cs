@@ -177,15 +177,20 @@ public class ImageFaultsController : ControllerBase
             return NotFound(ApiResponse<string>.Error("Falla de imagen no encontrada"));
         }
 
-        var usedByPoints = await _db.VehicleImagePoints.AnyAsync(p => p.ImageFaultId == id);
-        var usedByReports = await _db.ReportImageFaults.AnyAsync(r => r.ImageFaultId == id);
-        if (usedByPoints || usedByReports)
+        // Usada en reportes: se conserva para no romper el historial. Si solo tiene puntos en imágenes,
+        // se eliminan junto con la falla (antes había que borrar cada punto a mano).
+        var reportes = await _db.ReportImageFaults.CountAsync(r => r.ImageFaultId == id);
+        if (reportes > 0)
         {
-            return BadRequest(ApiResponse<string>.Error("No se puede eliminar la falla porque tiene puntos o reportes asociados"));
+            return BadRequest(ApiResponse<string>.Error(
+                $"La falla \"{imageFault.Name}\" ya se usó en {reportes} reporte(s); no se puede eliminar para conservar el historial."));
         }
 
+        using var tx = await _db.Database.BeginTransactionAsync();
+        await _db.VehicleImagePoints.Where(p => p.ImageFaultId == id).ExecuteDeleteAsync();
         _db.ImageFaults.Remove(imageFault);
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();
 
         return Ok(ApiResponse<bool>.Ok(true, "Falla de imagen eliminada"));
     }

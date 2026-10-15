@@ -20,8 +20,11 @@ public class ReportesController : ControllerBase
     private readonly IWebHostEnvironment _env;
     private readonly LiderTipoVehiculoAsignacionService _asignacionService;
 
-    public ReportesController(ReporteFallaService reporteService, NotificacionService notificacionService, IWebHostEnvironment env, LiderTipoVehiculoAsignacionService asignacionService)
+    private readonly EliminacionService _eliminacion;
+
+    public ReportesController(ReporteFallaService reporteService, NotificacionService notificacionService, IWebHostEnvironment env, LiderTipoVehiculoAsignacionService asignacionService, EliminacionService eliminacion)
     {
+        _eliminacion = eliminacion;
         _reporteService = reporteService;
         _notificacionService = notificacionService;
         _env = env;
@@ -95,6 +98,30 @@ public class ReportesController : ControllerBase
         {
             return BadRequest(ApiResponse<string>.Error(ex.Message));
         }
+    }
+
+    /// <summary>
+    /// Elimina un reporte (y su orden de trabajo, si tiene). Solo administradores; queda en la bitácora
+    /// quién, cuándo y qué folio (requerimiento 9.3).
+    /// </summary>
+    [HttpDelete("{id:int}")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
+    public Task<IActionResult> Delete(int id) => EliminarAsync(new[] { id });
+
+    /// <summary>Elimina varios reportes a la vez</summary>
+    [HttpPost("eliminar")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
+    public Task<IActionResult> DeleteMany([FromBody] EliminarIdsRequest request) => EliminarAsync(request.Ids);
+
+    private async Task<IActionResult> EliminarAsync(IReadOnlyCollection<int> ids)
+    {
+        var r = await _eliminacion.EliminarReportesConRegistroAsync(ids, User.UsuarioId(), User.NombreUsuario());
+        if (r.Reportes == 0)
+            return NotFound(ApiResponse<string>.Error("No se encontraron los reportes seleccionados"));
+
+        var mensaje = r.Reportes == 1 ? $"Reporte {r.Folios[0]} eliminado" : $"{r.Reportes} reportes eliminados";
+        if (r.Ordenes > 0) mensaje += $", junto con {r.Ordenes} orden(es) de trabajo";
+        return Ok(ApiResponse<EliminacionResultadoDto>.Ok(r, mensaje));
     }
 
     [HttpGet("{id}/evidencias")]

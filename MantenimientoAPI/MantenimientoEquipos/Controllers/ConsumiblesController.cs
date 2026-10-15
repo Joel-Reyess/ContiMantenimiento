@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using MantenimientoEquipos.DTOs;
 using MantenimientoEquipos.Models;
 using System.Security.Claims;
+using MantenimientoEquipos.Services;
+using MantenimientoEquipos.Utils;
 
 namespace MantenimientoEquipos.Controllers;
 
@@ -14,9 +16,12 @@ public class ConsumiblesController : ControllerBase
 {
     private readonly MantenimientoDbContext _db;
 
-    public ConsumiblesController(MantenimientoDbContext db)
+    private readonly EliminacionService _eliminacion;
+
+    public ConsumiblesController(MantenimientoDbContext db, EliminacionService eliminacion)
     {
         _db = db;
+        _eliminacion = eliminacion;
     }
 
     private int? GetUserId() => int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
@@ -136,6 +141,25 @@ public class ConsumiblesController : ControllerBase
 
         await _db.SaveChangesAsync();
         return Ok(ApiResponse<bool>.Ok(true));
+    }
+
+    /// <summary>Elimina un artículo del inventario junto con su historial de movimientos</summary>
+    [HttpDelete("{id:int}")]
+    [Authorize(Roles = "SuperUsuario,Administrador")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var entity = await _db.Consumibles.FindAsync(id);
+        if (entity == null) return NotFound(ApiResponse<string>.Error("Consumible no encontrado"));
+
+        using var tx = await _db.Database.BeginTransactionAsync();
+        var movimientos = await _db.ConsumosConsumibles.Where(m => m.ConsumibleId == id).ExecuteDeleteAsync();
+        _db.Consumibles.Remove(entity);
+        _eliminacion.Registrar(User.UsuarioId(), User.NombreUsuario(), "Consumible", id,
+            $"Artículo {entity.Codigo} - {entity.Nombre} (stock {entity.StockActual}, {movimientos} movimiento(s))");
+        await _db.SaveChangesAsync();
+        await tx.CommitAsync();
+
+        return Ok(ApiResponse<string>.Ok(entity.Codigo, $"Artículo {entity.Codigo} eliminado"));
     }
 
     [HttpPost("{id:int}/ajuste")]

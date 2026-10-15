@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { ConfirmProvider, ToastProvider } from '@/components/ui';
 import { MainLayout } from '@/components/layout';
 import { Login, ProtectedRoute } from '@/components/auth';
 import { Dashboard } from '@/pages/Dashboard';
@@ -31,6 +32,8 @@ function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <ToastProvider>
+        <ConfirmProvider>
         <Routes>
           {/* Rutas publicas */}
           <Route path="/login" element={<Login />} />
@@ -278,6 +281,8 @@ function App() {
           <Route path="/acceso-denegado" element={<AccessDenied />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
+        </ConfirmProvider>
+        </ToastProvider>
       </BrowserRouter>
     </AuthProvider>
   );

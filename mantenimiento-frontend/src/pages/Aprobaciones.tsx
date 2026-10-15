@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Package, CheckCircle, XCircle, RefreshCcw, AlertTriangle, Check, Edit3, Eye } from 'lucide-react';
-import { Button, Card, LoadingCard, Alert, AlertDescription, Badge, Modal, ModalFooter, Textarea } from '@/components/ui';
+import { Button, Card, LoadingCard, Alert, AlertDescription, Badge, Modal, ModalFooter, Textarea, useToast } from '@/components/ui';
 import { refaccionesService } from '@/services/refaccionesService';
 import { ordenesService } from '@/services/ordenesService';
 import type { SolicitudRefaccion, OrdenTrabajo } from '@/interfaces';
@@ -9,6 +9,7 @@ const formatDate = (v?: string) => (v ? new Date(v).toLocaleString() : 'N/D');
 const currency = (v?: number) => (v !== undefined ? `$${Number(v).toFixed(2)}` : 'N/D');
 
 export function AprobacionesPage() {
+  const toast = useToast();
   const [items, setItems] = useState<SolicitudRefaccion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -22,6 +23,7 @@ export function AprobacionesPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [actionMode, setActionMode] = useState<'view' | 'reject' | 'changes'>('view');
   const [reason, setReason] = useState('');
+  const [reasonError, setReasonError] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -64,33 +66,6 @@ export function AprobacionesPage() {
     return 'bg-continental-gray-4 text-continental-gray-1';
   };
 
-  const handleAction = async (item: SolicitudRefaccion, action: 'aprobar' | 'rechazar' | 'cambios' | 'entregar') => {
-    setProcessingId(item.id);
-    setError('');
-    setMessage('');
-    try {
-      if (action === 'rechazar' || action === 'cambios') {
-        const motivo = window.prompt('Motivo:');
-        if (!motivo) {
-          setProcessingId(null);
-          return;
-        }
-        await refaccionesService.rechazar(item.id, motivo);
-      } else if (action === 'aprobar') {
-        await refaccionesService.aprobar(item.id, undefined);
-      } else if (action === 'entregar') {
-        await refaccionesService.marcarEntregada(item.id);
-      }
-      setMessage('Accion aplicada');
-      await load();
-    } catch (err) {
-      console.error(err);
-      setError('No se pudo aplicar la accion');
-    } finally {
-      setProcessingId(null);
-    }
-  };
-
   if (loading) return <LoadingCard message="Cargando aprobaciones..." />;
 
   const loadOrdenDetalle = async (ordenId: number) => {
@@ -110,6 +85,7 @@ export function AprobacionesPage() {
     setSelectedItem(item);
     setActionMode('view');
     setReason('');
+    setReasonError('');
     setDetailOpen(true);
     void loadOrdenDetalle(item.ordenTrabajoId);
   };
@@ -118,44 +94,44 @@ export function AprobacionesPage() {
     if (!selectedItem) return;
     
     if (actionMode === 'reject' || actionMode === 'changes') {
+      // Validación dentro de la misma ventana (antes: alert y además se volvía a pedir el motivo con prompt)
       if (!reason.trim()) {
-        alert('Debes ingresar un motivo o descripcion.');
+        setReasonError(actionMode === 'reject' ? 'Escribe el motivo del rechazo.' : 'Describe los cambios necesarios.');
         return;
       }
-      await handleAction(selectedItem, actionMode === 'reject' ? 'rechazar' : 'cambios');
-    } else {
-        // En modo vista, las acciones directas se manejan con botones especificos
+      await handleActionWithReason(selectedItem, actionMode === 'reject' ? 'rechazar' : 'cambios', reason.trim());
     }
-    setDetailOpen(false);
   };
 
-  // Override handleAction to use local state if needed, or keeping it as is but bypassing prompt if reason is provided?
-  // Actually, I should update handleAction to use 'reason' state if available, or args.
-  // But handleAction currently uses window.prompt. I will modify it to accept reason as arg.
-  
   const handleActionWithReason = async (item: SolicitudRefaccion, action: 'aprobar' | 'rechazar' | 'cambios' | 'entregar', motivoInput?: string) => {
       setProcessingId(item.id);
       setError('');
       setMessage('');
       try {
+        let res: { success?: boolean; message?: string } | undefined;
         if (action === 'rechazar' || action === 'cambios') {
           const motivo = motivoInput;
           if (!motivo) {
             setProcessingId(null);
             return;
           }
-          await refaccionesService.rechazar(item.id, motivo);
+          res = await refaccionesService.rechazar(item.id, motivo);
         } else if (action === 'aprobar') {
-          await refaccionesService.aprobar(item.id, undefined);
+          res = await refaccionesService.aprobar(item.id, undefined);
         } else if (action === 'entregar') {
-          await refaccionesService.marcarEntregada(item.id);
+          res = await refaccionesService.marcarEntregada(item.id);
         }
-        setMessage('Accion aplicada');
+        if (res && res.success === false) {
+          toast.error(res.message || 'No se pudo aplicar la acción');
+          return;
+        }
+        const textos = { aprobar: 'Solicitud aprobada', rechazar: 'Solicitud rechazada', cambios: 'Cambios solicitados', entregar: 'Marcada como entregada' };
+        toast.exito(textos[action]);
         await load();
         setDetailOpen(false);
       } catch (err) {
         console.error(err);
-        setError('No se pudo aplicar la accion');
+        toast.error('No se pudo aplicar la acción');
       } finally {
         setProcessingId(null);
       }
@@ -358,9 +334,13 @@ export function AprobacionesPage() {
                      <Textarea 
                         placeholder={actionMode === 'reject' ? "Motivo del rechazo..." : "Describe los cambios necesarios..."}
                         value={reason}
-                        onChange={e => setReason(e.target.value)}
+                        onChange={e => {
+                          setReason(e.target.value);
+                          if (reasonError) setReasonError('');
+                        }}
                         className="min-h-[100px]"
                      />
+                     {reasonError && <p className="text-sm font-medium text-red-600">{reasonError}</p>}
                  </div>
              )}
           </div>

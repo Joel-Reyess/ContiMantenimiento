@@ -75,7 +75,26 @@ p,
 li {
   line-height: 1.7;
   margin-bottom: 0.45rem;
-  color: var(--continental-gray-1);
+}
+
+/*
+ * Colores de texto base dentro de la capa "base" de Tailwind. Fuera de capa ganaban siempre y las clases
+ * de color de Tailwind (text-red-600 en un error, text-white sobre fondo oscuro...) se ignoraban.
+ * Ojo: el resto de reglas de este archivo siguen fuera de capa (p. ej. "* { margin:0; padding:0 }"
+ * anula los márgenes/rellenos de Tailwind); moverlas cambiaría el espaciado de toda la aplicación.
+ */
+@layer base {
+  p,
+  li {
+    color: var(--continental-gray-1);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    color: var(--continental-black);
+  }
 }
 
 /* Padding helpers for modales técnicos */
@@ -134,7 +153,6 @@ h2,
 h3,
 h4 {
   margin-bottom: 0.35rem;
-  color: var(--continental-black);
   letter-spacing: -0.01em;
 }
 
@@ -174,6 +192,13 @@ select {
 textarea {
   padding-top: 12px;
   padding-bottom: 12px;
+}
+
+/* Edge agrega su propio botón de "ver contraseña"; donde ya ponemos el nuestro se oculta
+   para que no salgan dos ojos */
+input.sin-ojo-nativo::-ms-reveal,
+input.sin-ojo-nativo::-ms-clear {
+  display: none;
 }
 
 /* Spacing helpers for formularios */

@@ -61,6 +61,11 @@ export const ordenesService = {
     return await httpClient.get<PaginatedResponse<OrdenTrabajoList>>(endpoint);
   },
 
+  /** Elimina la orden con su checklist, evidencias, refacciones y pagos. Solo administradores. */
+  async delete(id: number): Promise<ApiResponse<{ reportes: number; ordenes: number; folios: string[] }>> {
+    return await httpClient.delete<{ reportes: number; ordenes: number; folios: string[] }>(`/ordenes/${id}`);
+  },
+
   async getById(id: number): Promise<ApiResponse<OrdenTrabajo>> {
     return await httpClient.get<OrdenTrabajo>(`/ordenes/${id}`);
   },

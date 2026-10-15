@@ -14,7 +14,9 @@ import {
   type SearchableSelectOption,
   Select,
   Spinner,
-  Textarea
+  Textarea,
+  useConfirm,
+  useToast
 } from '@/components/ui';
 import { refaccionesService } from '@/services/refaccionesService';
 import { ordenesService } from '@/services/ordenesService';
@@ -46,6 +48,8 @@ type OrdenOption = SearchableSelectOption<{
 type RefaccionStockOption = SearchableSelectOption<{ costo?: number; codigo?: string; stock?: number }>;
 
 export function RefaccionesPage() {
+  const { pedirTexto } = useConfirm();
+  const toast = useToast();
   const [estadoFiltro, setEstadoFiltro] = useState('');
   const [refacciones, setRefacciones] = useState<SolicitudRefaccion[]>([]);
   const [loading, setLoading] = useState(false);
@@ -181,11 +185,14 @@ export function RefaccionesPage() {
     }
   };
 
-  const doAccion = async (fn: () => Promise<unknown>) => {
+  /** Ejecuta la acción y avisa éxito o error (antes el error de la API se ignoraba) */
+  const doAccion = async (fn: () => Promise<unknown>, mensajeExito: string) => {
     setAccionando(true);
     setError('');
     try {
-      await fn();
+      const res = (await fn()) as { success?: boolean; message?: string } | undefined;
+      if (res && res.success === false) toast.error(res.message || 'No se pudo completar la acción');
+      else toast.exito(mensajeExito);
       await loadRefacciones();
     } catch (err) {
       console.error(err);
@@ -196,17 +203,23 @@ export function RefaccionesPage() {
   };
 
   const handleAprobar = (id: number) => {
-    doAccion(() => refaccionesService.aprobar(id, undefined));
+    doAccion(() => refaccionesService.aprobar(id, undefined), 'Solicitud aprobada');
   };
 
-  const handleRechazar = (id: number) => {
-    const motivo = window.prompt('Motivo de rechazo:');
+  const handleRechazar = async (id: number) => {
+    const motivo = await pedirTexto({
+      titulo: 'Rechazar solicitud de refacción',
+      etiqueta: 'Motivo de rechazo',
+      requerido: true,
+      textoConfirmar: 'Rechazar',
+      tono: 'peligro'
+    });
     if (!motivo) return;
-    doAccion(() => refaccionesService.rechazar(id, motivo));
+    doAccion(() => refaccionesService.rechazar(id, motivo), 'Solicitud rechazada');
   };
 
   const handleEntregar = (id: number) => {
-    doAccion(() => refaccionesService.marcarEntregada(id));
+    doAccion(() => refaccionesService.marcarEntregada(id), 'Marcada como entregada');
   };
 
   const badgeVariant = (estado: string) => {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, CheckCircle, Loader2, Plus, RefreshCcw, Search, Printer, Calculator } from 'lucide-react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { AlertTriangle, ArrowLeft, CheckCircle, Loader2, Plus, RefreshCcw, Search, Printer, Calculator, Trash2 } from 'lucide-react';
 import {
   Alert,
   AlertDescription,
@@ -12,7 +12,9 @@ import {
   Modal,
   ModalFooter,
   Select,
-  Spinner
+  Spinner,
+  useConfirm,
+  useToast
 } from '@/components/ui';
 import { reportesService } from '@/services/reportesService';
 import { ordenesService } from '@/services/ordenesService';
@@ -35,6 +37,13 @@ export function ReportesPage() {
   const reporteId = reporteIdParam ? Number(reporteIdParam) : undefined;
   const { hasRole } = useAuth();
   const canCrearOrden = hasRole(['Administrador', 'Superusuario', 'Supervisor']);
+  // Eliminar reportes: solo administradores (requerimiento 9.3)
+  const canEliminar = hasRole(['Administrador', 'SuperUsuario']);
+  const { confirmar } = useConfirm();
+  const toast = useToast();
+  const navigate = useNavigate();
+  const [seleccionados, setSeleccionados] = useState<Set<number>>(new Set());
+  const [eliminando, setEliminando] = useState(false);
 
   const [filters, setFilters] = useState<FiltersState>({ busqueda: '' });
   const [reportes, setReportes] = useState<ReporteFallaList[]>([]);
@@ -213,11 +222,118 @@ export function ReportesPage() {
     }
   };
 
+  const toggleSeleccion = (id: number) =>
+    setSeleccionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  /** Confirmación del sistema, elimina y avisa; queda en la bitácora del servidor */
+  const eliminarReportes = async (lista: { id: number; folio: string; tieneOrdenTrabajo?: boolean }[]) => {
+    if (lista.length === 0 || eliminando) return;
+    const conOrden = lista.filter((r) => r.tieneOrdenTrabajo).length;
+    const ok = await confirmar({
+      titulo: lista.length === 1 ? `Eliminar reporte ${lista[0].folio}` : `Eliminar ${lista.length} reportes`,
+      mensaje: (
+        <div className="space-y-2">
+          <p>
+            {lista.length === 1
+              ? 'Se eliminará el reporte con sus evidencias, trabajos y componentes seleccionados.'
+              : `Se eliminarán: ${lista.map((r) => r.folio).join(', ')}.`}
+          </p>
+          {conOrden > 0 && (
+            <p className="font-semibold text-red-700">
+              {lista.length === 1
+                ? 'Tiene orden de trabajo: también se eliminará la orden'
+                : conOrden === 1
+                  ? '1 de ellos tiene orden de trabajo: también se eliminará esa orden'
+                  : `${conOrden} de ellos tienen orden de trabajo: también se eliminarán esas órdenes`}{' '}
+              con su checklist, evidencias, refacciones y pagos.
+            </p>
+          )}
+          <p>Esta acción no se puede deshacer. Quedará registrado quién la realizó y cuándo.</p>
+        </div>
+      ),
+      textoConfirmar: 'Eliminar',
+      tono: 'peligro'
+    });
+    if (!ok) return;
+
+    setEliminando(true);
+    try {
+      const res = lista.length === 1
+        ? await reportesService.delete(lista[0].id)
+        : await reportesService.deleteMany(lista.map((r) => r.id));
+      if (!res.success) {
+        toast.error(res.message || 'No se pudieron eliminar los reportes');
+        return;
+      }
+      toast.exito(res.message || 'Reportes eliminados');
+      setSeleccionados(new Set());
+      if (reporteId) navigate('/reportes');
+      else loadReportes();
+    } catch (err) {
+      console.error(err);
+      toast.error('Error al eliminar. Revisa tu conexión e inténtalo de nuevo.');
+    } finally {
+      setEliminando(false);
+    }
+  };
+
+  const todosSeleccionados = reportes.length > 0 && reportes.every((r) => seleccionados.has(r.id));
+
   const renderList = () => (
     <div className="space-y-3">
+      {canEliminar && reportes.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-continental-gray-3 bg-white px-4 py-3">
+          <label
+            className="items-center gap-2 text-sm font-medium text-continental-black cursor-pointer select-none"
+            style={{ display: 'flex', marginBottom: 0 }}
+          >
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-orange-500 cursor-pointer"
+              checked={todosSeleccionados}
+              onChange={() => setSeleccionados(todosSeleccionados ? new Set() : new Set(reportes.map((r) => r.id)))}
+            />
+            Seleccionar todos ({reportes.length})
+          </label>
+          <div className="flex items-center gap-2">
+            {seleccionados.size > 0 && (
+              <span className="text-sm text-continental-gray-1">{seleccionados.size} seleccionado(s)</span>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex items-center gap-2 border-red-300 text-red-700 hover:bg-red-50"
+              disabled={seleccionados.size === 0 || eliminando}
+              onClick={() => eliminarReportes(reportes.filter((r) => seleccionados.has(r.id)))}
+            >
+              {eliminando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Eliminar seleccionados
+            </Button>
+          </div>
+        </div>
+      )}
       {reportes.map((rep) => (
-        <Link key={rep.id} to={`/reportes/${rep.id}`} className="block">
-          <Card className="px-8 py-7 hover:-translate-y-1 transition-all duration-200 border-l-4 border-continental-yellow">
+        <div key={rep.id} className="relative">
+        {canEliminar && (
+          <input
+            type="checkbox"
+            aria-label={`Seleccionar ${rep.folio}`}
+            className="absolute left-2 top-2 z-10 h-4 w-4 accent-orange-500 cursor-pointer"
+            checked={seleccionados.has(rep.id)}
+            onChange={() => toggleSeleccion(rep.id)}
+          />
+        )}
+        <Link to={`/reportes/${rep.id}`} className="block">
+          <Card
+            className={`px-8 py-7 hover:-translate-y-1 transition-all duration-200 border-l-4 border-continental-yellow ${
+              seleccionados.has(rep.id) ? 'ring-2 ring-orange-400 bg-orange-50' : ''
+            }`}
+          >
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
@@ -243,6 +359,7 @@ export function ReportesPage() {
             </div>
           </Card>
         </Link>
+        </div>
       ))}
     </div>
   );
@@ -436,6 +553,17 @@ export function ReportesPage() {
               <Printer className="h-4 w-4" />
               Imprimir
             </Button>
+            {canEliminar && (
+              <Button
+                variant="outline"
+                onClick={() => eliminarReportes([detalle])}
+                disabled={eliminando}
+                className="flex items-center gap-2 border-red-300 text-red-700 hover:bg-red-50"
+              >
+                {eliminando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                Eliminar reporte
+              </Button>
+            )}
             <Button variant="outline" onClick={loadReportes} className="flex items-center gap-2">
               <RefreshCcw className="h-4 w-4" />
               Actualizar

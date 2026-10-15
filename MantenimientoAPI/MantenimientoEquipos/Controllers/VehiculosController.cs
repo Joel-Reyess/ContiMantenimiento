@@ -5,6 +5,7 @@ using MantenimientoEquipos.Models.Enums;
 using MantenimientoEquipos.DTOs;
 using MantenimientoEquipos.Services;
 using MantenimientoEquipos.Middlewares;
+using MantenimientoEquipos.Utils;
 using System.Security.Claims;
 
 namespace MantenimientoEquipos.Controllers;
@@ -141,7 +142,7 @@ public class VehiculosController : ControllerBase
     [RolesAllowed("SuperUsuario", "Administrador")]
     public async Task<IActionResult> Delete(int id)
     {
-        var result = await _vehiculoService.DeleteManyAsync(new List<int> { id });
+        var result = await _vehiculoService.DeleteManyAsync(new List<int> { id }, User.UsuarioId(), User.NombreUsuario());
         if (result.VehiculosEliminados == 0)
             return NotFound(ApiResponse<string>.Error("Vehículo no encontrado"));
 
@@ -155,7 +156,7 @@ public class VehiculosController : ControllerBase
     [RolesAllowed("SuperUsuario", "Administrador")]
     public async Task<IActionResult> DeleteMany([FromBody] EliminarVehiculosRequest request)
     {
-        var result = await _vehiculoService.DeleteManyAsync(request.Ids);
+        var result = await _vehiculoService.DeleteManyAsync(request.Ids, User.UsuarioId(), User.NombreUsuario());
         if (result.VehiculosEliminados == 0)
             return NotFound(ApiResponse<string>.Error("No se encontraron los vehículos seleccionados"));
 
