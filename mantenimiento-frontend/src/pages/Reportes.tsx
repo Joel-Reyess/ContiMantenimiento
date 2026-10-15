@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { AlertTriangle, ArrowLeft, CheckCircle, Loader2, Plus, RefreshCcw, Search, Printer, Calculator } from 'lucide-react';
 import {
@@ -9,6 +9,8 @@ import {
   Button,
   Card,
   Input,
+  Modal,
+  ModalFooter,
   Select,
   Spinner
 } from '@/components/ui';
@@ -42,6 +44,10 @@ export function ReportesPage() {
   const [error, setError] = useState('');
   const [crearOpen, setCrearOpen] = useState(false);
   const [creatingOrder, setCreatingOrder] = useState(false);
+  const creatingOrderRef = useRef(false);
+  // Resultado de "Crear orden de trabajo" (requerimiento 9.2): se muestra dentro del detalle, junto al botón
+  const [ordenMsg, setOrdenMsg] = useState<{ tipo: 'success' | 'destructive'; texto: string; ordenId?: number } | null>(null);
+  const [ordenDuplicada, setOrdenDuplicada] = useState<{ folio: string; id?: number } | null>(null);
   const [vehicleImageUrl, setVehicleImageUrl] = useState<string | undefined>(undefined);
 
   // We keep priority options for filtering, but ReportFailureModal handles its own dropdowns
@@ -121,9 +127,10 @@ export function ReportesPage() {
 
   // Carga la foto del tipo de vehiculo para dibujar las fallas visuales sobre ella.
   useEffect(() => {
+    const tipoId = detalle?.vehiculoTipoId;
     const tipoNombre = (detalle?.vehiculoTipo || '').trim().toLowerCase();
     const tieneFallas = Boolean(detalle?.imageFaults && detalle.imageFaults.length > 0);
-    if (!tipoNombre || !tieneFallas) {
+    if ((!tipoId && !tipoNombre) || !tieneFallas) {
       setVehicleImageUrl(undefined);
       return;
     }
@@ -134,9 +141,10 @@ export function ReportesPage() {
         const res = await catalogosService.getTiposVehiculo();
         if (cancelled) return;
         if (res.success && Array.isArray(res.data)) {
-          const tipo = res.data.find(
-            (t) => (t.nombre || '').trim().toLowerCase() === tipoNombre
-          );
+          // Por id: el nombre del tipo se puede renombrar en Configuración (requerimiento 9.1.1)
+          const tipo =
+            res.data.find((t) => tipoId && t.id === tipoId) ??
+            res.data.find((t) => (t.nombre || '').trim().toLowerCase() === tipoNombre);
           const preferida = tipo?.imagenFallasUrl || tipo?.imagenUrl;
           setVehicleImageUrl(preferida ? getFullImageUrl(preferida) : undefined);
         } else {
@@ -150,7 +158,7 @@ export function ReportesPage() {
     return () => {
       cancelled = true;
     };
-  }, [detalle?.id, detalle?.vehiculoTipo]);
+  }, [detalle?.id, detalle?.vehiculoTipo, detalle?.vehiculoTipoId]);
 
   const applyFilters = () => {
     if (!reporteId) {
@@ -165,10 +173,12 @@ export function ReportesPage() {
     }
   };
 
-  const handleCrearOrden = async () => {
-    if (!detalle) return;
+  const handleCrearOrden = async (force = false) => {
+    if (!detalle || creatingOrderRef.current) return;
+    creatingOrderRef.current = true;
     setCreatingOrder(true);
-    setError('');
+    setOrdenMsg(null);
+    setOrdenDuplicada(null);
     try {
       const payload = {
         reporteFallaId: detalle.id,
@@ -179,16 +189,26 @@ export function ReportesPage() {
         notas: detalle.ubicacion || undefined
       };
 
-      const res = await ordenesService.create(payload as any);
+      const res = await ordenesService.create(payload as any, force);
+      const codigo = res.errorCode || res.errors?.[0];
       if (res.success) {
+        setOrdenMsg({
+          tipo: 'success',
+          texto: `Orden de trabajo ${res.data?.folio ?? ''} creada correctamente.`,
+          ordenId: res.data?.id
+        });
         loadReportes();
+      } else if (codigo === 'DuplicateActiveOrder') {
+        const meta = (res.metadata || {}) as { existingOrderFolio?: string; existingOrderId?: number };
+        setOrdenDuplicada({ folio: meta.existingOrderFolio || 'N/A', id: meta.existingOrderId });
       } else {
-        setError(res.message || 'No se pudo crear la orden');
+        setOrdenMsg({ tipo: 'destructive', texto: res.message || 'No se pudo crear la orden de trabajo.' });
       }
     } catch (err) {
       console.error(err);
-      setError('Error al crear la orden de trabajo');
+      setOrdenMsg({ tipo: 'destructive', texto: 'Error al crear la orden de trabajo. Revisa tu conexión e inténtalo de nuevo.' });
     } finally {
+      creatingOrderRef.current = false;
       setCreatingOrder(false);
     }
   };
@@ -391,11 +411,25 @@ export function ReportesPage() {
             )}
           </div>
 
+          {ordenMsg && (
+            <Alert variant={ordenMsg.tipo} onClose={() => setOrdenMsg(null)} className="print:hidden">
+              <AlertTitle>{ordenMsg.tipo === 'success' ? 'Listo' : 'No se pudo crear la orden'}</AlertTitle>
+              <AlertDescription>
+                {ordenMsg.texto}{' '}
+                {ordenMsg.ordenId && (
+                  <Link to={`/ordenes/${ordenMsg.ordenId}`} className="font-semibold underline">
+                    Ver orden
+                  </Link>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
           <div className="flex flex-wrap gap-2 print:hidden">
             {!detalle.tieneOrdenTrabajo && canCrearOrden && (
-              <Button onClick={handleCrearOrden} disabled={creatingOrder} className="flex items-center gap-2">
+              <Button onClick={() => handleCrearOrden(false)} disabled={creatingOrder} className="flex items-center gap-2">
                 {creatingOrder ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                Crear orden de trabajo
+                {creatingOrder ? 'Creando orden...' : 'Crear orden de trabajo'}
               </Button>
             )}
             <Button variant="outline" onClick={() => window.print()} className="flex items-center gap-2">
@@ -408,6 +442,37 @@ export function ReportesPage() {
             </Button>
           </div>
         </Card>
+
+        <Modal
+          isOpen={ordenDuplicada !== null}
+          onClose={() => {
+            if (!creatingOrder) setOrdenDuplicada(null);
+          }}
+          title="Orden de trabajo activa"
+          description="Ya hay una orden en curso para este vehículo."
+        >
+          <div className="space-y-3 text-sm text-continental-black">
+            <p>
+              El vehículo <strong>{detalle.vehiculoCodigo}</strong> ya tiene la orden de trabajo activa{' '}
+              <strong className="font-mono">{ordenDuplicada?.folio}</strong>.
+            </p>
+            {ordenDuplicada?.id && (
+              <Link to={`/ordenes/${ordenDuplicada.id}`} className="font-semibold underline">
+                Ver la orden existente
+              </Link>
+            )}
+            <p>¿Deseas crear otra orden para este reporte de todos modos?</p>
+          </div>
+          <ModalFooter>
+            <Button variant="outline" onClick={() => setOrdenDuplicada(null)} disabled={creatingOrder}>
+              Cancelar
+            </Button>
+            <Button onClick={() => handleCrearOrden(true)} disabled={creatingOrder} className="flex items-center gap-2">
+              {creatingOrder && <Loader2 className="h-4 w-4 animate-spin" />}
+              Crear de todos modos
+            </Button>
+          </ModalFooter>
+        </Modal>
 
         <div className="hidden print:block bg-white p-4 text-black font-sans text-xs">
           <div className="border border-black mb-4">

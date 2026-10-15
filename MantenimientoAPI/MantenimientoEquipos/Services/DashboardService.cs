@@ -9,6 +9,16 @@ public class DashboardService
 {
     private readonly MantenimientoDbContext _db;
 
+    /// <summary>
+    /// Nombre del tipo tal como está en el catálogo (Configuración → Tipos de vehículo). Antes se usaba el
+    /// nombre interno del enum, así que un tipo renombrado seguía saliendo con el nombre viejo.
+    /// </summary>
+    private async Task<Func<TipoVehiculoEnum, string>> NombresTipoAsync()
+    {
+        var nombres = await _db.TiposVehiculo.AsNoTracking().ToDictionaryAsync(t => t.Id, t => t.Nombre);
+        return tipo => nombres.TryGetValue((int)tipo, out var n) && !string.IsNullOrWhiteSpace(n) ? n : tipo.ToString();
+    }
+
     public DashboardService(MantenimientoDbContext db)
     {
         _db = db;
@@ -90,6 +100,8 @@ public class DashboardService
             })
             .OrderByDescending(f => f.CantidadFallas)
             .ToListAsync();
+        var nombreTipo = await NombresTipoAsync();
+        fallasPorTipo.ForEach(f => f.TipoNombre = nombreTipo(f.TipoVehiculo));
 
         // Fallas mÃ¡s recurrentes por Ã­tem de checklist
         var fallasRecurrentes = await _db.ReportesFallaChecklistItems
@@ -132,7 +144,7 @@ public class DashboardService
                 StatsPorTipo = tiposVehiculoExistentes
                     .Select(tipo => new StatsPorTipoVehiculoDto
                     {
-                        TipoVehiculo = tipo.ToString(),
+                        TipoVehiculo = nombreTipo(tipo),
                         Cantidad = vehiculosMatrizClasificados.Count(v => v.Zona == zona && v.Tipo == tipo),
                         PromedioDias = 0
                     })
@@ -202,7 +214,7 @@ public class DashboardService
                 Id = o.Id,
                 Folio = o.Folio,
                 VehiculoCodigo = o.Vehiculo.Codigo,
-                VehiculoTipo = o.Vehiculo.Tipo.ToString(),
+                VehiculoTipo = _db.TiposVehiculo.Where(t => t.Id == (int)o.Vehiculo.Tipo).Select(t => t.Nombre).FirstOrDefault() ?? o.Vehiculo.Tipo.ToString(),
                 Estado = o.Estado,
                 EstadoNombre = o.Estado.ToString(),
                 Prioridad = o.Prioridad,
@@ -236,6 +248,7 @@ public class DashboardService
 
     public async Task<DashboardResumenDto> GetResumenFlotaAsync()
     {
+        var nombreTipo = await NombresTipoAsync();
         var vehiculos = await _db.Vehiculos
             .Include(v => v.Area)
             .OrderBy(v => v.Codigo)
@@ -298,7 +311,7 @@ public class DashboardService
             {
                 Id = v.Id,
                 Codigo = v.Codigo,
-                TipoNombre = v.Tipo.ToString(),
+                TipoNombre = nombreTipo(v.Tipo),
                 Marca = v.Marca,
                 Modelo = v.Modelo,
                 NumeroSerie = v.NumeroSerie,
@@ -318,6 +331,7 @@ public class DashboardService
 
     public async Task<List<ReporteAnualDto>> GetReporteAnualPorTipoAsync(int? anio = null)
     {
+        var nombreTipo = await NombresTipoAsync();
         var year = anio ?? DateTime.Now.Year;
         var startOfYear = new DateTime(year, 1, 1);
         var endOfYear = new DateTime(year, 12, 31);
@@ -340,7 +354,7 @@ public class DashboardService
         {
             Mes = d.Mes,
             MesNombre = culture.DateTimeFormat.GetMonthName(d.Mes),
-            TipoVehiculo = d.Tipo.ToString(),
+            TipoVehiculo = nombreTipo(d.Tipo),
             Cantidad = d.Cantidad
         }).ToList();
     }

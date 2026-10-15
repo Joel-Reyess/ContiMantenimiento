@@ -18,6 +18,7 @@ export interface ReporteFalla {
   vehiculoId: number;
   vehiculoCodigo?: string;
   vehiculoTipo?: string;
+  vehiculoTipoId?: number;
   categoriaFallaId?: number;
   categoriaNombre?: string;
   reportadoPorId: number;

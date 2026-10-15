@@ -86,6 +86,11 @@ public class ReportesController : ControllerBase
         {
             return Conflict(ApiResponse<string>.Error(ex.Message, "DuplicateActiveOrder", new { ex.ExistingOrderFolio, ex.ExistingOrderId }));
         }
+        catch (DuplicateActiveReportException ex)
+        {
+            return Conflict(ApiResponse<string>.Error(ex.Message, "DuplicateActiveReport",
+                new { ex.ExistingReportFolio, ex.ExistingReportId, ex.ExistingReportFecha }));
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(ApiResponse<string>.Error(ex.Message));
@@ -126,6 +131,11 @@ public class ReportesController : ControllerBase
         catch (DuplicateActiveOrderException ex)
         {
             return Conflict(ApiResponse<string>.Error(ex.Message, "DuplicateActiveOrder", new { ex.ExistingOrderFolio, ex.ExistingOrderId }));
+        }
+        catch (DuplicateActiveReportException ex)
+        {
+            return Conflict(ApiResponse<string>.Error(ex.Message, "DuplicateActiveReport",
+                new { ex.ExistingReportFolio, ex.ExistingReportId, ex.ExistingReportFecha }));
         }
         catch (ArgumentException ex)
         {

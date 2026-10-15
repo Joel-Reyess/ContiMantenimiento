@@ -57,7 +57,7 @@ public class OrdenTrabajoService
                 Id = o.Id,
                 Folio = o.Folio,
                 VehiculoCodigo = o.Vehiculo.Codigo,
-                VehiculoTipo = o.Vehiculo.Tipo.ToString(),
+                VehiculoTipo = _db.TiposVehiculo.Where(t => t.Id == (int)o.Vehiculo.Tipo).Select(t => t.Nombre).FirstOrDefault() ?? o.Vehiculo.Tipo.ToString(),
                 TecnicoNombre = o.TecnicoAsignado != null ? o.TecnicoAsignado.NombreCompleto : null,
                 Estado = o.Estado,
                 EstadoNombre = o.Estado.ToString(),
@@ -118,7 +118,7 @@ public class OrdenTrabajoService
                 ReporteFallaFolio = o.ReporteFalla != null ? o.ReporteFalla.Folio : null,
                 VehiculoId = o.VehiculoId,
                 VehiculoCodigo = o.Vehiculo.Codigo,
-                VehiculoTipo = o.Vehiculo.Tipo.ToString(),
+                VehiculoTipo = _db.TiposVehiculo.Where(t => t.Id == (int)o.Vehiculo.Tipo).Select(t => t.Nombre).FirstOrDefault() ?? o.Vehiculo.Tipo.ToString(),
                 TecnicoAsignadoId = o.TecnicoAsignadoId,
                 TecnicoNombre = o.TecnicoAsignado != null ? o.TecnicoAsignado.NombreCompleto : null,
                 FirmadoPorId = o.FirmadoPorId,
@@ -298,6 +298,17 @@ public class OrdenTrabajoService
 
     public async Task<OrdenTrabajo> CreateAsync(OrdenTrabajoCreateRequest request, int userId, bool force = false)
     {
+        // Un reporte solo puede tener una orden (p. ej. dos clics o dos usuarios a la vez); esto no se puede forzar
+        if (request.ReporteFallaId.HasValue)
+        {
+            var ordenDelReporte = await _db.OrdenesTrabajo
+                .Where(o => o.ReporteFallaId == request.ReporteFallaId)
+                .Select(o => new { o.Folio })
+                .FirstOrDefaultAsync();
+            if (ordenDelReporte != null)
+                throw new InvalidOperationException($"Este reporte ya tiene la orden de trabajo {ordenDelReporte.Folio}.");
+        }
+
         // Validar que no exista una orden activa para el vehículo
         var ordenActiva = await _db.OrdenesTrabajo
             .Where(o => o.VehiculoId == request.VehiculoId &&

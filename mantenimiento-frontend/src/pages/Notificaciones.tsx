@@ -41,7 +41,12 @@ export function NotificacionesPage() {
     };
     window.addEventListener('notifications:refresh', handler);
     return () => window.removeEventListener('notifications:refresh', handler);
-  }, []);
+    // Se vuelve a registrar al cambiar el filtro para que "load" use el valor actual de soloNoLeidas
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [soloNoLeidas]);
+
+  /** Recarga esta lista y actualiza el contador de la campana (Header escucha el mismo evento) */
+  const avisarCambio = () => window.dispatchEvent(new CustomEvent('notifications:refresh'));
 
   const marcarLeida = async (id: number) => {
     // Optimista: marcamos en UI; si falla, recargamos desde API
@@ -53,13 +58,14 @@ export function NotificacionesPage() {
     const resp = await notificacionesService.marcarLeida(id);
     if (!resp.success) {
       setError(resp.message || 'No se pudo marcar como leida');
-      load();
     }
+    avisarCambio();
   };
 
   const borrar = async (id: number) => {
-    await notificacionesService.eliminar(id);
-    load();
+    const resp = await notificacionesService.eliminar(id);
+    if (!resp.success) setError(resp.message || 'No se pudo borrar la notificación');
+    avisarCambio();
   };
 
   const marcarTodas = async () => {
@@ -67,8 +73,8 @@ export function NotificacionesPage() {
     const resp = await notificacionesService.marcarTodasLeidas();
     if (!resp.success) {
       setError(resp.message || 'No se pudieron marcar todas como leidas');
-      load();
     }
+    avisarCambio();
   };
 
   return (

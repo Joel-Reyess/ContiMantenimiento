@@ -16,6 +16,8 @@ export function Header({ onToggleSidebar }: HeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
+  // Contador de notificaciones sin recargar la página: al entrar, cada 20 s, al volver a la pestaña
+  // y en cuanto otra pantalla avisa que algo cambió (evento "notifications:refresh": nueva, leída o borrada).
   useEffect(() => {
     const fetchNotifications = async () => {
       try {
@@ -28,7 +30,21 @@ export function Header({ onToggleSidebar }: HeaderProps) {
       }
     };
 
-    fetchNotifications();
+    const alVolver = () => {
+      if (document.visibilityState === 'visible') void fetchNotifications();
+    };
+
+    void fetchNotifications();
+    const intervalo = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void fetchNotifications();
+    }, 20000);
+    window.addEventListener('notifications:refresh', fetchNotifications);
+    document.addEventListener('visibilitychange', alVolver);
+    return () => {
+      window.clearInterval(intervalo);
+      window.removeEventListener('notifications:refresh', fetchNotifications);
+      document.removeEventListener('visibilitychange', alVolver);
+    };
   }, []);
 
   const handleLogout = async () => {

@@ -109,7 +109,7 @@ public class ReporteFallaService
                 Id = r.Id,
                 Folio = r.Folio,
                 VehiculoCodigo = r.Vehiculo.Codigo,
-                VehiculoTipo = r.Vehiculo.Tipo.ToString(),
+                VehiculoTipo = _db.TiposVehiculo.Where(t => t.Id == (int)r.Vehiculo.Tipo).Select(t => t.Nombre).FirstOrDefault() ?? r.Vehiculo.Tipo.ToString(),
                 CategoriaNombre = r.CategoriaFalla != null ? r.CategoriaFalla.Nombre : null,
                 Prioridad = r.Prioridad,
                 PrioridadNombre = r.Prioridad.ToString(),
@@ -142,7 +142,8 @@ public class ReporteFallaService
                 Folio = r.Folio,
                 VehiculoId = r.VehiculoId,
                 VehiculoCodigo = r.Vehiculo.Codigo,
-                VehiculoTipo = r.Vehiculo.Tipo.ToString(),
+                VehiculoTipo = _db.TiposVehiculo.Where(t => t.Id == (int)r.Vehiculo.Tipo).Select(t => t.Nombre).FirstOrDefault() ?? r.Vehiculo.Tipo.ToString(),
+                VehiculoTipoId = (int)r.Vehiculo.Tipo,
                 CategoriaFallaId = r.CategoriaFallaId,
                 CategoriaNombre = r.CategoriaFalla != null ? r.CategoriaFalla.Nombre : null,
                 ReportadoPorId = r.ReportadoPorId,
@@ -199,17 +200,7 @@ public class ReporteFallaService
 
         if (!force)
         {
-            var ordenActiva = await _db.OrdenesTrabajo
-                .Where(o => o.VehiculoId == vehiculo.Id &&
-                            (o.Estado == EstadoOrdenTrabajoEnum.Pendiente ||
-                             o.Estado == EstadoOrdenTrabajoEnum.Asignada ||
-                             o.Estado == EstadoOrdenTrabajoEnum.EnProceso))
-                .FirstOrDefaultAsync();
-
-            if (ordenActiva != null)
-            {
-                throw new DuplicateActiveOrderException(ordenActiva.Folio, ordenActiva.Id);
-            }
+            await VerificarReporteOrdenActivaAsync(vehiculo.Id);
         }
 
         var itemsToProcess = new List<ChecklistItemSelectionDto>();
@@ -302,23 +293,44 @@ public class ReporteFallaService
         return reporte;
     }
 
+    /// <summary>
+    /// Antes de crear un reporte: si el vehículo ya tiene una orden activa o un reporte pendiente
+    /// (sin orden de trabajo), se avisa para que el usuario confirme (force=true) y no se dupliquen.
+    /// </summary>
+    private async Task VerificarReporteOrdenActivaAsync(int vehiculoId)
+    {
+        var ordenActiva = await _db.OrdenesTrabajo
+            .Where(o => o.VehiculoId == vehiculoId &&
+                        (o.Estado == EstadoOrdenTrabajoEnum.Pendiente ||
+                         o.Estado == EstadoOrdenTrabajoEnum.Asignada ||
+                         o.Estado == EstadoOrdenTrabajoEnum.EnProceso))
+            .FirstOrDefaultAsync();
+        if (ordenActiva != null)
+            throw new DuplicateActiveOrderException(ordenActiva.Folio, ordenActiva.Id);
+
+        var reportePendiente = await _db.ReportesFalla
+            .Where(r => r.VehiculoId == vehiculoId && !r.TieneOrdenTrabajo)
+            .OrderByDescending(r => r.FechaReporte)
+            .Select(r => new { r.Id, r.Folio, r.FechaReporte })
+            .FirstOrDefaultAsync();
+        if (reportePendiente != null)
+            throw new DuplicateActiveReportException(reportePendiente.Folio, reportePendiente.Id, reportePendiente.FechaReporte);
+    }
+
     public async Task<ReporteFalla> CreateWithAutoChecklistAsync(ReporteFallaCreateRequest request, int userId, bool force = false)
     {
+        // Antes de tocar nada (incluso antes de dar de alta un vehículo nuevo): el reporte debe
+        // traer al menos un trabajo del checklist o un componente con falla (requerimiento 9.1.2).
+        var traeTrabajos = (request.ChecklistItems?.Any() ?? false) || (request.ChecklistItemIds?.Any() ?? false);
+        var traeComponentes = request.ImageFaults?.Any() ?? false;
+        if (!traeTrabajos && !traeComponentes)
+            throw new ArgumentException("Selecciona al menos un trabajo del checklist o un componente con falla.");
+
         var vehiculo = await ObtenerOCrearVehiculoAsync(request.CodigoVehiculo, userId);
 
         if (!force)
         {
-            var ordenActiva = await _db.OrdenesTrabajo
-                .Where(o => o.VehiculoId == vehiculo.Id &&
-                            (o.Estado == EstadoOrdenTrabajoEnum.Pendiente ||
-                             o.Estado == EstadoOrdenTrabajoEnum.Asignada ||
-                             o.Estado == EstadoOrdenTrabajoEnum.EnProceso))
-                .FirstOrDefaultAsync();
-
-            if (ordenActiva != null)
-            {
-                throw new DuplicateActiveOrderException(ordenActiva.Folio, ordenActiva.Id);
-            }
+            await VerificarReporteOrdenActivaAsync(vehiculo.Id);
         }
 
         var itemsToProcess = new List<ChecklistItemSelectionDto>();
@@ -373,6 +385,8 @@ public class ReporteFallaService
 
         var checklistItemsToAdd = new List<ReporteFallaChecklistItem>();
 
+        // Solo los trabajos que eligió el usuario. Antes, si no elegía ninguno, se agregaban TODOS los
+        // del checklist y el reporte parecía tener todo seleccionado (requerimiento 9.1.2).
         if (itemsToProcess.Any())
         {
             checklistItemsToAdd = itemsToProcess.Select(item => new ReporteFallaChecklistItem
@@ -383,55 +397,6 @@ public class ReporteFallaService
                 Estado = "Pendiente",
                 Cantidad = item.Cantidad
             }).ToList();
-        }
-        else
-        {
-            var asignacion = await _db.VehiculoChecklistAsignaciones
-                .Include(a => a.ChecklistTemplate)
-                .ThenInclude(t => t.Items.Where(i => i.Activo))
-                .FirstOrDefaultAsync(a => a.VehiculoId == vehiculo.Id && a.Activo);
-
-            if (asignacion != null && asignacion.ChecklistTemplate != null)
-            {
-                 checklistItemsToAdd = asignacion.ChecklistTemplate.Items
-                    .Where(i => i.Activo)
-                    .Select(item => new ReporteFallaChecklistItem
-                    {
-                        ReporteFallaId = reporte.Id,
-                        ChecklistItemId = item.Id,
-                        FechaAsignacion = DateTime.UtcNow,
-                        Estado = "Pendiente"
-                    })
-                    .ToList();
-            }
-            else
-            {
-                var tipoMant = request.TipoMantenimiento ?? string.Empty;
-                var tipoVehiculoEnum = vehiculo.Tipo;
-
-                var template = await _db.ChecklistTemplates
-                    .Include(t => t.Items.Where(i => i.Activo))
-                    .Where(t =>
-                        t.Activo &&
-                        t.TipoVehiculo == tipoVehiculoEnum &&
-                        (string.IsNullOrWhiteSpace(tipoMant) ? true : (t.TipoMantenimiento == null || t.TipoMantenimiento == tipoMant)))
-                    .OrderByDescending(t => t.Id)
-                    .FirstOrDefaultAsync();
-
-                if (template != null)
-                {
-                    checklistItemsToAdd = template.Items
-                        .Where(i => i.Activo)
-                        .Select(item => new ReporteFallaChecklistItem
-                        {
-                            ReporteFallaId = reporte.Id,
-                            ChecklistItemId = item.Id,
-                            FechaAsignacion = DateTime.UtcNow,
-                            Estado = "Pendiente"
-                        })
-                        .ToList();
-                }
-            }
         }
 
         if (checklistItemsToAdd.Any())
