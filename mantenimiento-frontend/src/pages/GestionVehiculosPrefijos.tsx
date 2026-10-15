@@ -13,11 +13,13 @@ import {
   Textarea,
   Select,
   useConfirm,
-  useToast
+  useToast,
+  SearchInput
 } from '@/components/ui';
 import { catalogosService, vehiculoPrefijoConfigsService } from '@/services';
 import type { VehiculoPrefijoConfig } from '@/interfaces';
 
+import { VolverConfiguracion } from '@/components/configuracion/VolverConfiguracion';
 interface CrearPrefijoForm {
   prefijoCodigo: string;
   tipoVehiculoId: number;
@@ -196,6 +198,7 @@ export function GestionVehiculosPrefijosPage() {
 
   return (
     <div className="dashboard-wrapper space-y-4">
+      <VolverConfiguracion />
       <div className="flex flex-col gap-2">
         <p className="text-sm uppercase tracking-[0.3em] text-continental-gray-1">Configuracion</p>
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -236,7 +239,7 @@ export function GestionVehiculosPrefijosPage() {
             <h2 className="text-xl font-semibold text-continental-black">Configuracion de Prefijos</h2>
           </div>
           <div className="flex gap-3 mb-4">
-            <Input
+            <SearchInput
               placeholder="Buscar por prefijo o tipo de vehículo..."
               value={filtroBusqueda}
               onChange={(e) => setFiltroBusqueda(e.target.value)}

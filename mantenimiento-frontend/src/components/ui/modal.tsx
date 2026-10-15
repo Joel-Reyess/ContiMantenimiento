@@ -34,9 +34,15 @@ export function Modal({
   children,
   size = 'xl',
 }: ModalProps) {
+  const dialogRef = React.useRef<HTMLDivElement>(null);
+
   React.useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      // Con una ventana encima de otra, Esc solo cierra la de arriba
+      const abiertas = document.querySelectorAll('[role="dialog"]');
+      if (abiertas[abiertas.length - 1] !== dialogRef.current) return;
+      onClose();
     };
 
     if (isOpen) {
@@ -46,7 +52,8 @@ export function Modal({
 
     return () => {
       document.removeEventListener('keydown', handleEscape);
-      document.body.style.overflow = 'unset';
+      // Si queda otra ventana abierta, la página sigue sin scroll
+      if (document.querySelectorAll('[role="dialog"]').length === 0) document.body.style.overflow = 'unset';
     };
   }, [isOpen, onClose]);
 
@@ -64,6 +71,7 @@ export function Modal({
           sizeClasses[size],
           'max-h-[90vh] overflow-hidden flex flex-col'
         )}
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
       >

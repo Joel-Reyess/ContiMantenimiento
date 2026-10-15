@@ -10,6 +10,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { InteractiveVehicleImage } from '@/components/vehiculos/InteractiveVehicleImage';
+import { useConfirm } from '@/components/ui';
 import { catalogosService, vehicleImagePointsService, reportesService } from '@/services';
 import type { TipoVehiculoItem } from '@/services/catalogosService';
 import type { VehicleImagePoint, ReporteFallaCreateRequest, ReportImageFaultCreateRequest } from '@/interfaces';
@@ -66,7 +67,15 @@ function isDuplicateError(res: any): boolean {
   );
 }
 
+const NOMBRE_PRIORIDAD: Record<number, string> = {
+  [Prioridad.Baja]: 'Baja',
+  [Prioridad.Media]: 'Media',
+  [Prioridad.Alta]: 'Alta',
+  [Prioridad.Urgente]: 'Urgente',
+};
+
 export function ReportarReparacionPage() {
+  const { confirmar } = useConfirm();
   const [tipos, setTipos] = useState<TipoVehiculoItem[]>([]);
   const [selectedTipoId, setSelectedTipoId] = useState<number | null>(null);
   const [points, setPoints] = useState<VehicleImagePoint[]>([]);
@@ -244,6 +253,53 @@ export function ReportarReparacionPage() {
       checklistItems: [],
       imageFaults,
     };
+
+    // 9.1.4: vista previa de lo que se va a registrar antes de guardarlo
+    // (al volver a intentar tras el aviso de duplicado ya se había confirmado)
+    if (!force) {
+      const ok = await confirmar({
+        titulo: 'Vista previa del reporte',
+        mensaje: (
+          <div className="flex flex-col gap-2 text-sm">
+            <p>Revisa que todo esté correcto. Así se va a registrar:</p>
+            <p>
+              <strong>Contenedor:</strong> {code}
+              {selectedTipo?.nombre ? ` · ${selectedTipo.nombre}` : ''}
+            </p>
+            <p>
+              <strong>Tipo de mantenimiento:</strong> Correctivo
+            </p>
+            <p>
+              <strong>Prioridad:</strong> {NOMBRE_PRIORIDAD[Number(prioridad)] ?? prioridad} ·{' '}
+              {reporteData.puedeOperar ? 'Puede operar' : 'No puede operar'}
+            </p>
+            <div>
+              <strong>Actividades ({selectedActivities.length}):</strong>
+              <ul className="flex max-h-48 flex-col gap-1 overflow-y-auto" style={{ marginTop: 4 }}>
+                {selectedActivities.map((act) => (
+                  <li key={act.point.id} className="flex justify-between gap-3 border-b border-gray-100">
+                    <span>
+                      #{act.numero} {act.nombre}
+                    </span>
+                    <span className="flex-shrink-0">{formatCurrency(priceFor(act.faultId))}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <p>
+              <strong>Total estimado:</strong> {formatCurrency(total)} MXN (con IVA)
+            </p>
+            <p>
+              <strong>Imágenes adjuntas:</strong> ninguna (este formulario no adjunta fotos)
+            </p>
+          </div>
+        ),
+        textoConfirmar: 'Confirmar y guardar',
+        textoCancelar: 'Corregir',
+        tono: 'info'
+      });
+      if (!ok) return;
+    }
 
     setSaving(true);
     try {

@@ -436,7 +436,7 @@ export function AdminDashboard() {
 
               <Card
                 className="p-6 cursor-pointer hover:shadow-md transition-shadow"
-                onClick={() => navigate('/configuracion?tab=preventivos')}
+                onClick={() => navigate('/configuracion/preventivos')}
               >
                 <h3 className="font-semibold text-lg mb-4 text-continental-black flex items-center gap-2">
                   <Calendar className="h-5 w-5 text-continental-yellow" />

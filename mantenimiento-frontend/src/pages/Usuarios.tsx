@@ -13,13 +13,15 @@ import {
   Modal,
   ModalFooter,
   useConfirm,
-  useToast
+  useToast,
+  SearchInput
 } from '@/components/ui';
 import { usuariosService } from '@/services/usuariosService';
 import { catalogosService } from '@/services/catalogosService';
 import type { UserList, UserCreateRequest, UserUpdateRequest } from '@/interfaces';
 import { useAuth } from '@/contexts/AuthContext';
 
+import { VolverConfiguracion } from '@/components/configuracion/VolverConfiguracion';
 const estadoOpciones = [
   { value: '', label: 'Todos' },
   { value: 'true', label: 'Activos' },
@@ -279,6 +281,7 @@ export function UsuariosPage() {
 
   return (
     <div className="dashboard-wrapper space-y-4">
+      <VolverConfiguracion />
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-sm uppercase tracking-[0.3em] text-continental-gray-1">Usuarios</p>
@@ -286,11 +289,14 @@ export function UsuariosPage() {
           <p className="text-continental-gray-1">Listado basico de roles y estado.</p>
         </div>
         <div className="flex gap-2">
-          <Input
-            placeholder="Buscar por nombre o numero"
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-          />
+          <div style={{ minWidth: 280 }}>
+            <SearchInput
+              placeholder="Buscar por nombre o numero"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              onBuscar={loadUsuarios}
+            />
+          </div>
           <Select options={estadoOpciones} value={activo} onChange={(value) => setActivo(value)} />
           <Button variant="outline" onClick={loadUsuarios} className="flex items-center gap-2">
             <RefreshCcw className="h-4 w-4" />

@@ -36,7 +36,10 @@ public class ReportesController : ControllerBase
         [FromQuery] bool? sinOrden = null,
         [FromQuery] int? vehiculoId = null,
         [FromQuery] DateTime? desde = null,
-        [FromQuery] DateTime? hasta = null)
+        [FromQuery] DateTime? hasta = null,
+        [FromQuery] string? busqueda = null,
+        [FromQuery] PrioridadEnum? prioridad = null,
+        [FromQuery] int? categoriaId = null)
     {
         List<TipoVehiculoEnum>? tiposPermitidos = null;
         
@@ -50,7 +53,7 @@ public class ReportesController : ControllerBase
             }
         }
 
-        var reportes = await _reporteService.GetAllAsync(sinOrden, vehiculoId, desde, hasta, tiposPermitidos);
+        var reportes = await _reporteService.GetAllAsync(sinOrden, vehiculoId, desde, hasta, tiposPermitidos, busqueda, prioridad, categoriaId);
         return Ok(ApiResponse<List<ReporteFallaListDto>>.Ok(reportes));
     }
 

@@ -12,7 +12,16 @@ public class ChecklistTemplateDto
     public string? TipoVehiculoNombre { get; set; }
     public string? TipoMantenimiento { get; set; }
     public bool Activo { get; set; }
+    /// <summary>Es el checklist que usan los vehículos de su tipo (si el tipo tiene varios, solo uno lo es)</summary>
+    public bool Vigente { get; set; }
     public List<ChecklistItemDto> Items { get; set; } = new();
+}
+
+public class ChecklistEliminadoDto
+{
+    public required string Nombre { get; set; }
+    /// <summary>Ya se había usado: se retiró pero se conserva para el historial</summary>
+    public bool ConservadoEnHistorial { get; set; }
 }
 
 public class ChecklistItemDto
@@ -31,9 +40,9 @@ public class ChecklistItemDto
 
 public class ChecklistTemplateCreateRequest
 {
-    [Required(ErrorMessage = "El nombre es requerido")]
+    /// <summary>Ya no se captura: el nombre es el del tipo de vehículo (12.3.1)</summary>
     [MaxLength(100)]
-    public required string Nombre { get; set; }
+    public string? Nombre { get; set; }
 
     [MaxLength(300)]
     public string? Descripcion { get; set; }

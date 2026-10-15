@@ -8,6 +8,7 @@ import { Upload, Trash2, FileImage, ExternalLink, GitPullRequest, Plus, FileText
 import { useMemo } from 'react';
 import { useAllowedTipoVehiculo } from '@/hooks/useAllowedTipoVehiculo';
 
+import { VolverConfiguracion } from '@/components/configuracion/VolverConfiguracion';
 export function ArchivoPage() {
   const { confirmar, pedirTexto } = useConfirm();
   const toast = useToast();
@@ -235,6 +236,7 @@ export function ArchivoPage() {
 
   return (
     <div className="dashboard-wrapper space-y-4">
+      <VolverConfiguracion />
       <div className="flex flex-col gap-2">
         <p className="text-sm uppercase tracking-[0.3em] text-continental-gray-1">Archivo</p>
         <h1 className="text-3xl font-semibold text-continental-black">Documentos por contenedor</h1>

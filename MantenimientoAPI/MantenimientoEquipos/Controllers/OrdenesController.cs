@@ -45,7 +45,9 @@ public class OrdenesController : ControllerBase
         [FromQuery] DateTime? desde = null,
         [FromQuery] DateTime? hasta = null,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 10)
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string? busqueda = null,
+        [FromQuery] PrioridadEnum? prioridad = null)
     {
         List<TipoVehiculoEnum>? tiposPermitidos = null;
         
@@ -59,7 +61,7 @@ public class OrdenesController : ControllerBase
             }
         }
 
-        var ordenes = await _ordenService.GetAllAsync(estado, tecnicoId, vehiculoId, desde, hasta, tiposPermitidos);
+        var ordenes = await _ordenService.GetAllAsync(estado, tecnicoId, vehiculoId, desde, hasta, tiposPermitidos, busqueda, prioridad);
 
         // Paginación simple
         var total = ordenes.Count;

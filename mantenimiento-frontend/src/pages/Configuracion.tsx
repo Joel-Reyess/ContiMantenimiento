@@ -1,6 +1,6 @@
-﻿import { useEffect, useState } from 'react';
-import { Settings, Plus, Loader2, RefreshCcw, ListChecks, ClipboardPlus, Trash2, Package, Users, AlertTriangle, Calendar, FileText, Download, FileSpreadsheet } from 'lucide-react';
-import { useLocation, useNavigate } from 'react-router-dom';
+﻿import { useEffect, useState, type ReactNode } from 'react';
+import { Settings, Plus, Loader2, RefreshCcw, ListChecks, Trash2, Package, Users, AlertTriangle, Calendar, FileText, Download, FileSpreadsheet, MapPin, Truck, Tag, UserCheck, Database, ArrowLeft } from 'lucide-react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getFullImageUrl } from '@/lib/utils';
 import {
   Alert,
@@ -18,12 +18,10 @@ import {
   useConfirm,
   useToast
 } from '@/components/ui';
-import { catalogosService, usuariosService, checklistService, adminService, dashboardService } from '@/services';
-import { vehiculosService } from '@/services/vehiculosService';
+import { catalogosService, usuariosService, adminService, dashboardService } from '@/services';
 import type { Area } from '@/interfaces';
 import type { TipoVehiculoItem } from '@/services/catalogosService';
-import type { ChecklistTemplate } from '@/services/checklistService';
-import { useAllowedTipoVehiculo } from '@/hooks/useAllowedTipoVehiculo';
+import { ChecklistsPorTipo } from '@/components/configuracion/ChecklistsPorTipo';
 import { useAuth } from '@/contexts/AuthContext';
 import { excelService } from '@/services/excelService';
 
@@ -31,17 +29,6 @@ interface CrearAreaForm {
   nombre: string;
   codigo: string;
   descripcion: string;
-}
-
-interface ChecklistItemDraft {
-  id?: number;
-  orden: number;
-  pregunta: string;
-  tipoRespuesta: number;
-  opciones?: string;
-  obligatorio?: boolean;
-  requiereFoto?: boolean;
-  costoEstimado?: number;
 }
 
 interface PreventivoConfigDraft {
@@ -58,11 +45,29 @@ interface ProgramacionPreventiva {
   estado: string;
 }
 
+type Seccion = 'areas' | 'checklists' | 'tipos' | 'preventivos' | 'datos';
+const SECCIONES_INTERNAS: Seccion[] = ['areas', 'checklists', 'tipos', 'preventivos', 'datos'];
+
+const MODULOS: { titulo: string; descripcion: string; ruta: string; icono: ReactNode; soloReset?: boolean }[] = [
+  { titulo: 'Gestión de usuarios', descripcion: 'Usuarios, roles, contraseñas y acceso.', ruta: '/usuarios', icono: <Users className="h-7 w-7" /> },
+  { titulo: 'Catálogo de áreas', descripcion: 'Áreas o ubicaciones y su supervisor.', ruta: '/configuracion/areas', icono: <MapPin className="h-7 w-7" /> },
+  { titulo: 'Checklists', descripcion: 'Un checklist por tipo de vehículo, con sus ítems y costos.', ruta: '/configuracion/checklists', icono: <ListChecks className="h-7 w-7" /> },
+  { titulo: 'Tipos de vehículo', descripcion: 'Tipos de contenedor, imágenes y capacidad del taller.', ruta: '/configuracion/tipos', icono: <Truck className="h-7 w-7" /> },
+  { titulo: 'Prefijos de vehículos', descripcion: 'Prefijos del código para detectar el tipo automáticamente.', ruta: '/gestion-prefijos', icono: <Tag className="h-7 w-7" /> },
+  { titulo: 'Fallas visuales', descripcion: 'Fallas y puntos sobre la imagen de cada tipo.', ruta: '/fallas-imagen', icono: <AlertTriangle className="h-7 w-7" /> },
+  { titulo: 'Archivo técnico (planos)', descripcion: 'Planos y documentos técnicos de los vehículos.', ruta: '/archivo', icono: <FileText className="h-7 w-7" /> },
+  { titulo: 'Programación preventiva', descripcion: 'Cada cuántos meses se da mantenimiento preventivo por tipo.', ruta: '/configuracion/preventivos', icono: <Calendar className="h-7 w-7" /> },
+  { titulo: 'Asignación de líderes', descripcion: 'Qué líder atiende cada tipo de vehículo.', ruta: '/asignacion-lideres', icono: <UserCheck className="h-7 w-7" /> },
+  { titulo: 'Respaldo y reinicio de datos', descripcion: 'Exportar todo a Excel y reiniciar los datos con la clave maestra.', ruta: '/configuracion/datos', icono: <Database className="h-7 w-7" />, soloReset: true }
+];
+
 export function ConfiguracionPage() {
   const { confirmar } = useConfirm();
   const toast = useToast();
   const { hasRole } = useAuth();
-  const [activeTab, setActiveTab] = useState<'areas' | 'checklists' | 'tipos' | 'preventivos'>('areas');
+  // Sección abierta (/configuracion/:seccion); sin sección se muestra la cuadrícula de módulos
+  const { seccion } = useParams<{ seccion?: string }>();
+  const activeTab = seccion as Seccion | undefined;
   const [areas, setAreas] = useState<Area[]>([]);
   const [tiposVehiculo, setTiposVehiculo] = useState<TipoVehiculoItem[]>([]);
   const [preventivoDraft, setPreventivoDraft] = useState<Record<number, PreventivoConfigDraft>>({});
@@ -76,10 +81,6 @@ export function ConfiguracionPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [supervisores, setSupervisores] = useState<{ id: number; nombre: string }[]>([]);
-  const [plantillas, setPlantillas] = useState<ChecklistTemplate[]>([]);
-  const [vehiculos, setVehiculos] = useState<{ id: number; codigo: string; tipo?: string; area?: string }[]>([]);
-  const [loadingVehiculos, setLoadingVehiculos] = useState(false);
-  const [asignaciones, setAsignaciones] = useState<Record<number, number | undefined>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   // Error de la ventana abierta (se muestra dentro de ella, no detrás en la página)
@@ -91,24 +92,6 @@ export function ConfiguracionPage() {
   const [areaSeleccionada, setAreaSeleccionada] = useState<Area | null>(null);
   const [supervisorId, setSupervisorId] = useState<string>('');
   const [form, setForm] = useState<CrearAreaForm>({ nombre: '', codigo: '', descripcion: '' });
-  const [crearChecklistOpen, setCrearChecklistOpen] = useState(false);
-  const [creandoChecklist, setCreandoChecklist] = useState(false);
-  const [tplNombre, setTplNombre] = useState('');
-  const [tplDescripcion, setTplDescripcion] = useState('');
-  const [tplTipoVehiculo, setTplTipoVehiculo] = useState('');
-  const [tplTipoMantenimiento, setTplTipoMantenimiento] = useState('');
-  const [tplEditId, setTplEditId] = useState<number | null>(null);
-  const [itemsDraft, setItemsDraft] = useState<ChecklistItemDraft[]>([]);
-  const { filterVehiculos } = useAllowedTipoVehiculo();
-  const [nuevoItem, setNuevoItem] = useState<ChecklistItemDraft>({
-    orden: 1,
-    pregunta: '',
-    tipoRespuesta: 1,
-    opciones: '',
-    obligatorio: true,
-    requiereFoto: false,
-    costoEstimado: 0
-  });
   const [resetModalOpen, setResetModalOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resetMessage, setResetMessage] = useState('');
@@ -120,12 +103,6 @@ export function ConfiguracionPage() {
 
   const navigate = useNavigate();
   const location = useLocation();
-
-  const parseNumero = (val: string | number | undefined) => {
-    if (val === undefined || val === null) return 0;
-    const num = Number(String(val).replace(',', '.'));
-    return Number.isNaN(num) ? 0 : num;
-  };
 
   const calcularCuotaSemanalFallback = (totalVehiculos: number, frecuenciaMeses?: number, frecuenciaDias?: number) => {
     if (totalVehiculos <= 0) return 0;
@@ -171,12 +148,16 @@ export function ConfiguracionPage() {
     return programacion.slice(0, 120);
   };
 
+  // Enlaces viejos (/configuracion?tab=preventivos) abren la sección nueva
   useEffect(() => {
     const tab = new URLSearchParams(location.search).get('tab');
-    if (tab === 'preventivos') {
-      setActiveTab('preventivos');
-    }
-  }, [location.search]);
+    if (tab && SECCIONES_INTERNAS.includes(tab as Seccion)) navigate(`/configuracion/${tab}`, { replace: true });
+  }, [location.search, navigate]);
+
+  // Una sección que no existe regresa a la cuadrícula
+  useEffect(() => {
+    if (seccion && !SECCIONES_INTERNAS.includes(seccion as Seccion)) navigate('/configuracion', { replace: true });
+  }, [seccion, navigate]);
 
   const handleResetDatos = async () => {
     if (!canReset || !claveMaestra.trim()) return;
@@ -217,17 +198,6 @@ export function ConfiguracionPage() {
     }
   };
 
-  const loadPlantillas = async () => {
-    try {
-      const res = await checklistService.getTemplates();
-      if (res.success && res.data) setPlantillas(res.data);
-      else setPlantillas([]);
-    } catch (err) {
-      console.error('No se pudieron cargar plantillas', err);
-      setPlantillas([]);
-    }
-  };
-
   const loadTiposVehiculo = async () => {
     setLoadingTipos(true);
     try {
@@ -254,7 +224,7 @@ export function ConfiguracionPage() {
   const tipoAbierto = !!editingTipo;
   useEffect(() => {
     setModalError('');
-  }, [crearOpen, crearChecklistOpen, supervisorAbierto, tipoAbierto]);
+  }, [crearOpen, supervisorAbierto, tipoAbierto]);
 
   const handleSaveTipo = async () => {
     if (!editingTipo) return;
@@ -454,9 +424,6 @@ export function ConfiguracionPage() {
   useEffect(() => {
     loadAreas();
     loadSupervisores();
-    loadPlantillas();
-    loadVehiculos();
-    loadAsignaciones();
     loadTiposVehiculo();
     loadTecnicos();
   }, []);
@@ -466,64 +433,6 @@ export function ConfiguracionPage() {
       loadProgramacionPreventiva();
     }
   }, [activeTab]);
-
-  const loadVehiculos = async () => {
-    setLoadingVehiculos(true);
-    try {
-      // Traer todos los vehiculos (activos o no) para permitir asignar checklist
-      const res = await vehiculosService.getAll({ page: 1, pageSize: 200 });
-      if (res.success && res.data) {
-        const raw: any = res.data as any;
-        const items =
-          raw.items ||
-          raw.Items ||
-          (Array.isArray(raw) ? raw : []) ||
-          (raw.data && (raw.data.items || raw.data.Items)) ||
-          [];
-        const filtered = filterVehiculos(items);
-        setVehiculos(filtered.map((v: any) => ({ id: v.id, codigo: v.codigo, tipo: v.tipoNombre || v.tipo, area: v.areaNombre })));
-      } else {
-        setVehiculos([]);
-      }
-    } catch (err) {
-      console.error('No se pudieron cargar vehiculos', err);
-      setVehiculos([]);
-    } finally {
-      setLoadingVehiculos(false);
-    }
-  };
-
-  const loadAsignaciones = async () => {
-    try {
-      const res = await checklistService.getAsignaciones();
-      if (res.success && res.data) {
-        const map: Record<number, number | undefined> = {};
-        res.data.forEach((a) => {
-          map[a.vehiculoId] = a.checklistTemplateId;
-        });
-        setAsignaciones(map);
-      } else {
-        setAsignaciones({});
-      }
-    } catch (err) {
-      console.error('No se pudieron cargar asignaciones de checklist', err);
-      setAsignaciones({});
-    }
-  };
-
-  const handleAsignarChecklist = async (vehiculoId: number, templateId?: number) => {
-    try {
-      const res = await checklistService.asignarChecklistVehiculo({ vehiculoId, checklistTemplateId: templateId });
-      if (!res.success) {
-        setError(res.message || 'No se pudo guardar la asignacion de checklist');
-        return;
-      }
-      setAsignaciones((prev) => ({ ...prev, [vehiculoId]: templateId }));
-    } catch (err) {
-      console.error('No se pudo asignar checklist', err);
-      setError('No se pudo asignar checklist al vehiculo');
-    }
-  };
 
   const loadTecnicos = async () => {
     try {
@@ -665,134 +574,23 @@ export function ConfiguracionPage() {
     }
   };
 
-  const agregarItemDraft = () => {
-    const preguntaLimpia = nuevoItem.pregunta.trim();
-    if (!preguntaLimpia) return;
-
-    const prevLength = itemsDraft.length;
-    const nuevoDraft: ChecklistItemDraft = {
-      ...nuevoItem,
-      pregunta: preguntaLimpia,
-      opciones: nuevoItem.opciones?.trim() || '',
-      costoEstimado: parseNumero(nuevoItem.costoEstimado),
-      orden: prevLength + 1
-    };
-
-    setItemsDraft((prev) => [...prev, nuevoDraft]);
-    setNuevoItem({
-      orden: prevLength + 2,
-      pregunta: '',
-      tipoRespuesta: 1,
-      opciones: '',
-      obligatorio: true,
-      requiereFoto: false,
-      costoEstimado: 0
-    });
-    setModalError('');
-  };
-
-  const eliminarItem = (idx: number) => {
-    setItemsDraft((prev) => prev.filter((_, i) => i !== idx).map((it, i) => ({ ...it, orden: i + 1 })));
-  };
-
-  const actualizarItem = (idx: number, changes: Partial<ChecklistItemDraft>) => {
-    setItemsDraft((prev) =>
-      prev.map((it, i) => (i === idx ? { ...it, ...changes } : it)).map((it, i) => ({ ...it, orden: i + 1 }))
-    );
-  };
-
-  const handleCrearChecklist = async () => {
-    if (!tplNombre.trim() || itemsDraft.length === 0) {
-      setModalError(!tplNombre.trim() ? 'Escribe el nombre del checklist.' : 'Agrega al menos un item al checklist.');
-      return;
-    }
-    setCreandoChecklist(true);
-    setModalError('');
-    try {
-      const payload = {
-        nombre: tplNombre.trim(),
-        descripcion: tplDescripcion.trim() || undefined,
-        tipoVehiculo: tplTipoVehiculo ? Number(tplTipoVehiculo) : undefined,
-        tipoMantenimiento: tplTipoMantenimiento || undefined,
-        items: itemsDraft.map((i, idx) => ({
-          id: i.id,
-          orden: idx + 1,
-          pregunta: i.pregunta,
-          tipoRespuesta: 1,
-          opciones: i.opciones || undefined,
-          obligatorio: !!i.obligatorio,
-          requiereFoto: !!i.requiereFoto,
-          costoEstimado: i.costoEstimado ?? 0
-        }))
-      };
-      const res = tplEditId
-        ? await checklistService.updateTemplate(tplEditId, payload)
-        : await checklistService.createTemplate(payload);
-      if (!res.success) {
-        setModalError(res.message || 'No se pudo guardar el checklist');
-      } else {
-        toast.exito(tplEditId ? `Checklist "${payload.nombre}" actualizado` : `Checklist "${payload.nombre}" creado`);
-        setCrearChecklistOpen(false);
-        setTplNombre('');
-        setTplDescripcion('');
-        setTplTipoVehiculo('');
-        setTplTipoMantenimiento('');
-        setItemsDraft([]);
-        setTplEditId(null);
-        loadPlantillas();
-      }
-    } catch (err) {
-      console.error(err);
-      setModalError('Error al guardar checklist');
-    } finally {
-      setCreandoChecklist(false);
-    }
-  };
-
-  const isEditingChecklist = tplEditId !== null;
-
   return (
     <div className="dashboard-wrapper space-y-4">
       <div className="flex flex-col gap-2">
-        <p className="text-sm uppercase tracking-[0.3em] text-continental-gray-1">Configuracion</p>
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm uppercase tracking-[0.3em] text-continental-gray-1">Configuración del sistema</p>
+        {activeTab ? (
           <div>
-            <h1 className="text-3xl font-semibold text-continental-black">Panel de ajustes</h1>
-            <p className="text-continental-gray-1">Mantiene catalogos clave para el sistema.</p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => { loadAreas(); loadPlantillas(); loadTiposVehiculo(); }} className="flex items-center gap-2">
-              <RefreshCcw className="h-4 w-4" />
-              Actualizar
-            </Button>
-            <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => {
-              setTplEditId(null);
-              setTplNombre('');
-              setTplDescripcion('');
-              setTplTipoVehiculo('');
-              setTplTipoMantenimiento('');
-              setItemsDraft([]);
-              setCrearChecklistOpen(true);
-            }}>
-              <ClipboardPlus className="h-4 w-4" />
-              Nuevo checklist
-            </Button>
-            <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => setCrearOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Nueva area
+            <Button variant="ghost" onClick={() => navigate('/configuracion')} className="flex items-center gap-2">
+              <ArrowLeft className="h-4 w-4" />
+              Volver a Configuración del sistema
             </Button>
           </div>
-        </div>
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={() => navigate('/fallas-imagen')} className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4" />
-            Fallas visuales
-          </Button>
-          <Button variant="outline" onClick={() => navigate('/asignacion-lideres')} className="flex items-center gap-2">
-            <Users className="h-4 w-4" />
-            Asignar Líderes
-          </Button>
-        </div>
+        ) : (
+          <div>
+            <h1 className="text-3xl font-semibold text-continental-black">Configuración del sistema</h1>
+            <p className="text-continental-gray-1">Elige el módulo que quieres configurar.</p>
+          </div>
+        )}
       </div>
 
       {error && (
@@ -802,26 +600,47 @@ export function ConfiguracionPage() {
         </Alert>
       )}
 
-      <div className="flex flex-wrap gap-2 mt-4">
-        <Button variant={activeTab === "areas" ? "default" : "outline"} onClick={() => setActiveTab("areas")}>
-          Catalogo de Areas
-        </Button>
-        <Button variant={activeTab === "checklists" ? "default" : "outline"} onClick={() => setActiveTab("checklists")}>
-          Checklists y asignacion
-        </Button>
-        <Button variant={activeTab === "tipos" ? "default" : "outline"} onClick={() => setActiveTab("tipos")}>
-          Gestión de Tipos de Vehículo
-        </Button>
-        <Button variant={activeTab === "preventivos" ? "default" : "outline"} onClick={() => setActiveTab("preventivos")}>
-          Programación preventiva
-        </Button>
-      </div>
+      {/* Cuadrícula de módulos: cada tarjeta abre solo su módulo (reestructuración de navegación) */}
+      {!activeTab && (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {MODULOS.filter((m) => !m.soloReset || canReset).map((m) => (
+            <button
+              key={m.ruta}
+              type="button"
+              data-icon="true"
+              onClick={() => navigate(m.ruta)}
+              className="group flex items-start gap-4 rounded-2xl border border-continental-gray-3/70 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:border-continental-yellow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-continental-yellow/70"
+              style={{ padding: 20 }}
+            >
+              <span className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-continental-yellow/15 text-continental-yellow transition group-hover:bg-continental-yellow group-hover:text-white">
+                {m.icono}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-lg font-semibold text-continental-black">{m.titulo}</span>
+                <span className="block text-sm text-continental-gray-1">{m.descripcion}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {activeTab === "areas" && (
         <div className="space-y-3 mt-4">
-          <div className="flex items-center gap-2">
-            <Settings className="h-5 w-5 text-continental-yellow" />
-            <h2 className="text-xl font-semibold text-continental-black">Catalogo de Areas</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-continental-yellow" />
+              <h2 className="text-xl font-semibold text-continental-black">Catálogo de áreas</h2>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={loadAreas} className="flex items-center gap-2">
+                <RefreshCcw className="h-4 w-4" />
+                Actualizar
+              </Button>
+              <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => setCrearOpen(true)}>
+                <Plus className="h-4 w-4" />
+                Nueva área
+              </Button>
+            </div>
           </div>
           {loading ? (
             <Spinner />
@@ -1142,136 +961,16 @@ export function ConfiguracionPage() {
         </div>
       )}
 
-      {activeTab === "checklists" && (
-        <div className="mt-6 space-y-6">
-          <div className="flex items-center gap-2 mb-1">
-            <ListChecks className="h-5 w-5 text-continental-yellow" />
-            <h2 className="text-xl font-semibold text-continental-black">Checklists</h2>
-          </div>
-          {plantillas.length === 0 ? (
-            <Card className="p-6 text-center space-y-3">
-              <p className="text-lg font-semibold text-continental-black">No hay checklists configurados</p>
-              <p className="text-continental-gray-1">Crea plantillas para usarlas en las ordenes de trabajo.</p>
-              <div className="flex justify-center">
-                <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => setCrearChecklistOpen(true)}>
-                  <ClipboardPlus className="h-4 w-4" />
-                  Nuevo checklist
-                </Button>
-              </div>
-            </Card>
-          ) : (
-            <div className="grid gap-3 md:grid-cols-2">
-              {plantillas.map((tpl) => {
-                const total = tpl.items.reduce((acc, it) => acc + (Number((it as any).costoEstimado || 0) || 0), 0);
-                return (
-                  <Card key={tpl.id} className="p-5 border-l-4 border-continental-blue space-y-2">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-semibold text-continental-black">{tpl.nombre}</p>
-                        <p className="text-sm text-continental-gray-1">{tpl.descripcion || 'Sin descripcion'}</p>
-                        <p className="text-xs text-continental-gray-2">
-                          Vehiculo: {tpl.tipoVehiculoNombre || 'Todos'} - Mantenimiento: {tpl.tipoMantenimiento || 'Todos'}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <Badge variant="secondary">{tpl.items.length} items</Badge>
-                        <p className="text-xs text-continental-gray-2">Costo base: ${total.toFixed(2)}</p>
-                        <Button
-                          size="sm"
-                          className="mt-2"
-                          variant="outline"
-                          onClick={() => {
-                            setTplEditId(tpl.id);
-                            setTplNombre(tpl.nombre);
-                            setTplDescripcion(tpl.descripcion || '');
-                            setTplTipoVehiculo(tpl.tipoVehiculo ? String(tpl.tipoVehiculo) : '');
-                            setTplTipoMantenimiento(tpl.tipoMantenimiento || '');
-                            setItemsDraft(
-                              tpl.items.map((it, idx) => ({
-                                id: it.id,
-                                orden: idx + 1,
-                                pregunta: it.pregunta,
-                                // Conservamos tipo si viene, si no, checkbox
-                                tipoRespuesta: (it as any).tipoRespuesta || 1,
-                                opciones: it.opciones || '',
-                                obligatorio: it.obligatorio,
-                                requiereFoto: it.requiereFoto,
-                                costoEstimado: (it as any).costoEstimado ?? 0
-                              }))
-                            );
-                            setCrearChecklistOpen(true);
-                          }}
-                        >
-                          Editar
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="text-xs text-continental-gray-1 space-y-1 max-h-28 overflow-y-auto pr-1">
-                      {tpl.items.map((item) => (
-                        <div key={item.id} className="flex items-center gap-2">
-                          <span className="text-continental-gray-2">#{item.orden}</span>
-                          <span className="text-continental-black">{item.pregunta}</span>
-                          <span className="text-continental-gray-2">${((item as any).costoEstimado ?? 0).toFixed(2)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
+      {activeTab === 'checklists' && <ChecklistsPorTipo />}
 
-          <div className="space-y-3 mt-4">
-            <div className="flex items-center gap-2">
-              <Package className="h-5 w-5 text-continental-yellow" />
-              <h3 className="text-lg font-semibold text-continental-black">Asignar checklist a vehiculos</h3>
-            </div>
-            {loadingVehiculos ? (
-              <Card className="p-8 flex flex-col items-center justify-center space-y-3">
-                <Loader2 className="h-8 w-8 text-continental-blue animate-spin" />
-                <p className="text-sm text-continental-gray-1 animate-pulse">Cargando vehículos...</p>
-              </Card>
-            ) : vehiculos.length === 0 ? (
-              <Card className="p-4 text-sm text-continental-gray-1">No hay vehiculos cargados o activos.</Card>
-            ) : (
-              <div className="overflow-x-auto rounded-xl border border-continental-gray-3/60">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-continental-bg text-continental-gray-1 uppercase tracking-wide">
-                    <tr>
-                      <th className="px-4 py-3 text-left font-semibold text-continental-black">Vehiculo</th>
-                      <th className="px-4 py-3 text-left font-semibold text-continental-black">Tipo / Area</th>
-                      <th className="px-4 py-3 text-left font-semibold text-continental-black">Checklist</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {vehiculos.map((v) => (
-                      <tr key={v.id} className="border-t border-continental-gray-3/60">
-                        <td className="px-4 py-3 font-semibold text-continental-black">{v.codigo}</td>
-                        <td className="px-4 py-3 text-continental-gray-1">{[v.tipo, v.area].filter(Boolean).join(' / ') || 'N/D'}</td>
-                        <td className="px-4 py-3">
-                          <Select
-                            value={asignaciones[v.id] ? String(asignaciones[v.id]) : ''}
-                            onChange={(val) => handleAsignarChecklist(v.id, val ? Number(val) : undefined)}
-                            options={[
-                              { value: '', label: 'Sin checklist' },
-                              ...plantillas.map((p) => ({ value: String(p.id), label: `${p.nombre} (${p.items.length} items)` }))
-                            ]}
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            <p className="text-xs text-continental-gray-2">
-              Nota: Asignacion guardada en backend.
-            </p>
-          </div>
+      {activeTab === 'datos' && (
+        <div className="flex items-center gap-2">
+          <Database className="h-5 w-5 text-continental-yellow" />
+          <h2 className="text-xl font-semibold text-continental-black">Respaldo y reinicio de datos</h2>
         </div>
       )}
 
-      {canReset && (
+      {canReset && activeTab === 'datos' && (
         <Card className="border border-continental-gray-3 p-5 space-y-3">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-3">
@@ -1315,7 +1014,7 @@ export function ConfiguracionPage() {
         </Card>
       )}
 
-      {canReset && (
+      {canReset && activeTab === 'datos' && (
         <Card className="border border-red-200 bg-red-50/60 p-5 space-y-3">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100 text-red-700">
@@ -1443,131 +1142,6 @@ export function ConfiguracionPage() {
         </ModalFooter>
       </Modal>
 
-      <Modal
-        isOpen={crearChecklistOpen}
-        onClose={() => {
-          setCrearChecklistOpen(false);
-          setItemsDraft([]);
-          setTplNombre('');
-          setTplDescripcion('');
-          setTplTipoVehiculo('');
-          setTplTipoMantenimiento('');
-          setTplEditId(null);
-        }}
-        title={isEditingChecklist ? 'Editar checklist' : 'Nuevo checklist'}
-        description={
-          isEditingChecklist
-            ? 'Edita la plantilla de checklist para actualizar preguntas y costos.'
-            : 'Crea una plantilla de checklist para usar en las ordenes.'
-        }
-      >
-        <div className="space-y-3">
-          <Input label="Nombre" value={tplNombre} onChange={(e) => setTplNombre(e.target.value)} />
-          <Textarea label="Descripcion" value={tplDescripcion} onChange={(e) => setTplDescripcion(e.target.value)} />
-          <div className="grid grid-cols-2 gap-2">
-            <Select
-              label="Tipo de vehiculo (opcional)"
-              value={tplTipoVehiculo}
-              onChange={(v) => setTplTipoVehiculo(v)}
-              options={[
-                { value: '', label: 'Todos' },
-                { value: '1', label: 'Carrito' },
-                { value: '2', label: 'Tugger' },
-                { value: '3', label: 'Montacargas' }
-              ]}
-            />
-            <Input
-              label="Tipo de mantenimiento (opcional)"
-              placeholder="Correctivo, Preventivo..."
-              value={tplTipoMantenimiento}
-              onChange={(e) => setTplTipoMantenimiento(e.target.value)}
-            />
-          </div>
-
-          <div className="border rounded-lg p-3 space-y-3">
-            <p className="font-semibold text-continental-black text-sm">Items del checklist</p>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-2">
-                <p className="text-xs text-continental-gray-2">Lista actual</p>
-                {itemsDraft.length === 0 && <p className="text-xs text-continental-gray-2">Aun no agregas items.</p>}
-                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                  {itemsDraft.map((item, idx) => (
-                    <div key={idx} className="flex items-start gap-2 border rounded-lg p-2">
-                      <div className="flex-1 space-y-1">
-                        <Input
-                          label={`Item #${idx + 1}`}
-                          value={item.pregunta}
-                          onChange={(e) => actualizarItem(idx, { pregunta: e.target.value })}
-                        />
-                        <div className="grid grid-cols-2 gap-2">
-                          <Input
-                            label="Costo estimado (MXN)"
-                            type="number"
-                            value={String(item.costoEstimado ?? 0)}
-                            onChange={(e) => actualizarItem(idx, { costoEstimado: parseNumero(e.target.value) })}
-                          />
-                          <div className="flex flex-col justify-end text-xs text-continental-gray-2">
-                            <span>Respuesta: Si/No</span>
-                          </div>
-                        </div>
-                      </div>
-                      <Button size="sm" variant="ghost" onClick={() => eliminarItem(idx)}>
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-xs text-continental-gray-2">Agregar nuevo</p>
-                <Input
-                  label="Pregunta"
-                  value={nuevoItem.pregunta}
-                  onChange={(e) => setNuevoItem((prev) => ({ ...prev, pregunta: e.target.value }))}
-                />
-                <Input
-                  label="Costo estimado (MXN)"
-                  type="number"
-                  value={String(nuevoItem.costoEstimado ?? 0)}
-                  onChange={(e) => setNuevoItem((prev) => ({ ...prev, costoEstimado: parseNumero(e.target.value) }))}
-                />
-                <div className="text-xs text-continental-gray-2">Tipo de respuesta: Si/No</div>
-                <Button variant="outline" onClick={agregarItemDraft} className="flex items-center gap-2">
-                  <Plus className="h-4 w-4" />
-                  Agregar item
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-        {/* Junto a los botones: la lista de items puede ser larga y el aviso arriba no se vería */}
-        {modalError && (
-          <Alert variant="destructive" style={{ marginTop: 12 }}>
-            <AlertDescription>{modalError}</AlertDescription>
-          </Alert>
-        )}
-        <ModalFooter>
-          <Button
-            variant="outline"
-            onClick={() => {
-              setCrearChecklistOpen(false);
-              setItemsDraft([]);
-              setTplNombre('');
-              setTplDescripcion('');
-              setTplTipoVehiculo('');
-              setTplTipoMantenimiento('');
-              setTplEditId(null);
-            }}
-          >
-            Cancelar
-          </Button>
-          <Button onClick={handleCrearChecklist} disabled={creandoChecklist} className="flex items-center gap-2">
-            {creandoChecklist ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardPlus className="h-4 w-4" />}
-            {isEditingChecklist ? 'Actualizar checklist' : 'Guardar checklist'}
-          </Button>
-        </ModalFooter>
-      </Modal>
       <Modal
         isOpen={!!areaSeleccionada}
         onClose={() => {

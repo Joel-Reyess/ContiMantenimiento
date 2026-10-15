@@ -9,7 +9,24 @@ export interface ChecklistTemplate {
   tipoVehiculoNombre?: string;
   tipoMantenimiento?: string;
   activo: boolean;
+  /** Es el checklist que usan los vehículos de su tipo (si el tipo trae varios de antes, solo uno lo es) */
+  vigente?: boolean;
   items: ChecklistItem[];
+}
+
+/** Datos para crear o editar un checklist: uno por tipo de vehículo, el nombre lo pone el tipo (12.3.1) */
+export interface ChecklistTemplateRequest {
+  tipoVehiculo: number;
+  items: Array<{
+    id?: number;
+    orden: number;
+    pregunta: string;
+    tipoRespuesta: number;
+    opciones?: string;
+    obligatorio?: boolean;
+    requiereFoto?: boolean;
+    costoEstimado?: number;
+  }>;
 }
 
 export interface ChecklistItem {
@@ -84,43 +101,26 @@ export const checklistService = {
     return await httpClient.get<ChecklistTemplate>(`/checklists/templates/${id}`);
   },
 
-  async createTemplate(request: {
-    nombre: string;
-    descripcion?: string;
-    tipoVehiculo?: number;
-    tipoMantenimiento?: string;
-    items: Array<{
-      orden: number;
-      pregunta: string;
-      tipoRespuesta: number;
-      opciones?: string;
-      obligatorio?: boolean;
-      requiereFoto?: boolean;
-      costoEstimado?: number;
-    }>;
-  }): Promise<ApiResponse<{ id: number; nombre: string }>> {
+  async createTemplate(request: ChecklistTemplateRequest): Promise<ApiResponse<{ id: number; nombre: string }>> {
     return await httpClient.post<{ id: number; nombre: string }>('/checklists/templates', request);
   },
 
-  async updateTemplate(
-    id: number,
-    request: {
-      nombre: string;
-      descripcion?: string;
-      tipoVehiculo?: number;
-      tipoMantenimiento?: string;
-      items: Array<{
-        orden: number;
-        pregunta: string;
-        tipoRespuesta: number;
-        opciones?: string;
-        obligatorio?: boolean;
-        requiereFoto?: boolean;
-        costoEstimado?: number;
-      }>;
-    }
-  ): Promise<ApiResponse<{ id: number; nombre: string }>> {
+  async updateTemplate(id: number, request: ChecklistTemplateRequest): Promise<ApiResponse<{ id: number; nombre: string }>> {
     return await httpClient.put<{ id: number; nombre: string }>(`/checklists/templates/${id}`, request);
+  },
+
+  async deleteTemplate(id: number): Promise<ApiResponse<{ nombre: string; conservadoEnHistorial: boolean }>> {
+    return await httpClient.delete<{ nombre: string; conservadoEnHistorial: boolean }>(`/checklists/templates/${id}`);
+  },
+
+  /** Checklist del tipo de vehículo (data = null si el tipo no tiene). Requerimiento 12.3. */
+  async getPorTipo(tipoVehiculoId: number): Promise<ApiResponse<ChecklistTemplate | null>> {
+    return await httpClient.get<ChecklistTemplate | null>(`/checklists/templates/por-tipo/${tipoVehiculoId}`);
+  },
+
+  /** Checklist del tipo del vehículo (data = null si su tipo no tiene) */
+  async getPorVehiculo(vehiculoId: number): Promise<ApiResponse<ChecklistTemplate | null>> {
+    return await httpClient.get<ChecklistTemplate | null>(`/checklists/templates/por-vehiculo/${vehiculoId}`);
   },
 
   // ===== RESPUESTAS =====

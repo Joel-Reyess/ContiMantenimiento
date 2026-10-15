@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, type ChangeEvent } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, type ChangeEvent } from 'react';
 import { X, Camera, Upload, QrCode, Check, AlertTriangle, Info, ScanLine } from 'lucide-react';
 import {
   Button,
@@ -63,13 +63,17 @@ export function ReportFailureModal({
   initialTipoMantenimiento,
   forceFormStep = false
 }: ReportFailureModalProps) {
-  const [step, setStep] = useState<'scan' | 'form'>('scan');
+  // 'preview' = vista previa antes de enviar (requerimiento 9.1.4)
+  const [step, setStep] = useState<'scan' | 'form' | 'preview'>('scan');
   const [vehiculoSeleccionado, setVehiculoSeleccionado] = useState<VehiculoOption | null>(null);
   const [codigoVehiculo, setCodigoVehiculo] = useState('');
   // Sin opción predeterminada: el usuario debe elegir (requerimiento 9.1.2)
   const [prioridad, setPrioridad] = useState('');
   const [tipoMantenimiento, setTipoMantenimiento] = useState('');
   const [fotos, setFotos] = useState<File[]>([]);
+  // Una URL por foto (y se liberan al cambiar), en vez de crear una nueva en cada render
+  const urlsFotos = useMemo(() => fotos.map((f) => URL.createObjectURL(f)), [fotos]);
+  useEffect(() => () => urlsFotos.forEach((u) => URL.revokeObjectURL(u)), [urlsFotos]);
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
   const [selectedChecklistItems, setSelectedChecklistItems] = useState<number[]>([]);
   const [checklistQuantities, setChecklistQuantities] = useState<Record<number, number>>({});
@@ -150,7 +154,6 @@ const prefijoConfigCacheRef = useRef(new Map<string, { tipoId?: number; template
 const templatesCacheRef = useRef(new Map<string, ChecklistItem[]>());
 const templateByIdCacheRef = useRef(new Map<number, ChecklistItem[]>());
 const checklistReqSeqRef = useRef(0);
-const lastChecklistReloadKeyRef = useRef('');
 
   const buildImageKey = useCallback((tipoVehiculoId?: number | null) => {
     if (!tipoVehiculoId || Number.isNaN(Number(tipoVehiculoId))) return '';
@@ -283,7 +286,7 @@ const lastChecklistReloadKeyRef = useRef('');
         };
         setVehiculoSeleccionado(option);
         setCodigoVehiculo(codigoInicial);
-        await loadChecklistItems(initialVehiculoId, undefined, false, mantenimientoInicial);
+        await loadChecklistItems(initialVehiculoId, undefined, false);
         return;
       }
 
@@ -306,7 +309,7 @@ const lastChecklistReloadKeyRef = useRef('');
             setVehiculoSeleccionado(option);
             setCodigoVehiculo(codigo);
             applyTipoVehiculoContext(vehiculoRes.data.tipo);
-            await loadChecklistItems(initialVehiculoId, undefined, false, mantenimientoInicial);
+            await loadChecklistItems(initialVehiculoId, undefined, false);
             return;
           }
         } catch (err) {
@@ -436,12 +439,10 @@ const lastChecklistReloadKeyRef = useRef('');
     const loadChecklistItems = async (
     vehiculoId?: number,
     tipoVehiculoId?: number,
-    autoSelect = false,
-    mantenimientoOverride?: string
+    autoSelect = false
   ) => {
     if (!vehiculoId && tipoVehiculoId === undefined) return;
 
-    const mantenimiento = mantenimientoOverride ?? tipoMantenimiento;
     const reqSeq = ++checklistReqSeqRef.current;
     let tipoVehiculo = tipoVehiculoId;
 
@@ -461,44 +462,6 @@ const lastChecklistReloadKeyRef = useRef('');
         applyTipoVehiculoContext(Number(tipoVehiculo));
       }
 
-      if (!mantenimiento) {
-        // Los trabajos dependen del tipo de mantenimiento; se cargan cuando el usuario lo elija
-        if (reqSeq !== checklistReqSeqRef.current) return;
-        setChecklistItems([]);
-        setSelectedChecklistItems([]);
-        return;
-      }
-
-      if (vehiculoId) {
-        try {
-          const asignacionesRes = await checklistService.getAsignaciones(vehiculoId);
-          if (asignacionesRes.success && asignacionesRes.data && asignacionesRes.data.length > 0) {
-            const templateId = asignacionesRes.data[0]?.checklistTemplateId;
-            if (templateId) {
-              const cachedItems = templateByIdCacheRef.current.get(templateId);
-              let items: ChecklistItem[] = cachedItems || [];
-              if (!cachedItems) {
-                const templateRes = await checklistService.getTemplateById(templateId);
-                if (templateRes.success && templateRes.data) {
-                  items = (templateRes.data.items || []) as ChecklistItem[];
-                  templateByIdCacheRef.current.set(templateId, items);
-                }
-              }
-
-              if (reqSeq !== checklistReqSeqRef.current) return;
-
-              setChecklistItems(items);
-              if (autoSelect) setSelectedChecklistItems(items.map((i) => i.id));
-              else setSelectedChecklistItems([]);
-              setError('');
-              return;
-            }
-          }
-        } catch (asignacionesErr) {
-          console.error('Error al obtener asignaciones de checklist para el vehiculo:', asignacionesErr);
-        }
-      }
-
       if (tipoVehiculo === undefined || tipoVehiculo === null || Number.isNaN(Number(tipoVehiculo))) {
         applyTipoVehiculoContext(null);
         setChecklistItems([]);
@@ -507,61 +470,23 @@ const lastChecklistReloadKeyRef = useRef('');
         return;
       }
 
-      const pickTemplate = (templates: any[]) => {
-        if (!Array.isArray(templates) || templates.length === 0) return undefined;
-        return (
-          templates.find((t) => t?.predeterminado || t?.isDefault || t?.default) ??
-          templates.find((t) => t?.activo || t?.isActive) ??
-          templates[0]
-        );
-      };
-
-      const tryLoad = async (mant: string) => {
-        const cacheKey = `${Number(tipoVehiculo)}:${mant}`;
-        const cached = templatesCacheRef.current.get(cacheKey);
-        if (cached) {
-          if (reqSeq !== checklistReqSeqRef.current) return true;
-          setChecklistItems(cached);
-          if (autoSelect) setSelectedChecklistItems(cached.map((i) => i.id));
-          else setSelectedChecklistItems([]);
-          setError('');
-          return true;
-        }
-
-        const res = await checklistService.getTemplates(Number(tipoVehiculo), mant);
-        if (res.success && res.data && Array.isArray(res.data) && res.data.length > 0) {
-          const template = pickTemplate(res.data as any[]);
-          const items: ChecklistItem[] = (template?.items || []) as ChecklistItem[];
-
-          templatesCacheRef.current.set(cacheKey, items);
-
-          if (reqSeq !== checklistReqSeqRef.current) return true;
-
-          setChecklistItems(items);
-          if (autoSelect) setSelectedChecklistItems(items.map((i) => i.id));
-          else setSelectedChecklistItems([]);
-          setChecklistQuantities({});
-          setError('');
-          return true;
-        }
-        return false;
-      };
-
-      let loaded = await tryLoad(mantenimiento);
-
-      if (!loaded && mantenimiento === 'Correctivo') {
-        // Si el tipo no tiene checklist de Correctivo se muestran los trabajos del Preventivo,
-        // pero SIN cambiar la selección del usuario (antes regresaba solo a "Preventivo": requerimiento 9.1)
-        loaded = await tryLoad('Preventivo');
+      // 12.3: un checklist por tipo de vehículo; ya no depende del mantenimiento ni de asignaciones
+      const tipoNum = Number(tipoVehiculo);
+      let items = templatesCacheRef.current.get(String(tipoNum));
+      if (!items) {
+        const res = await checklistService.getPorTipo(tipoNum);
+        if (!res.success) throw new Error(res.message || 'No se pudo cargar el checklist');
+        items = (res.data?.items || []) as ChecklistItem[];
+        templatesCacheRef.current.set(String(tipoNum), items);
       }
 
-      if (!loaded) {
-        setChecklistItems([]);
-        setSelectedChecklistItems([]);
-        setError('No se encontró checklist para el tipo de vehículo y mantenimiento seleccionado.');
-      } else {
-        setError('');
-      }
+      if (reqSeq !== checklistReqSeqRef.current) return;
+
+      setChecklistItems(items);
+      if (autoSelect) setSelectedChecklistItems(items.map((i) => i.id));
+      else setSelectedChecklistItems([]);
+      setChecklistQuantities({});
+      setError(items.length === 0 ? 'No hay checklist configurado para este tipo de vehículo.' : '');
     } catch (err) {
       console.error('Error al cargar los items del checklist:', err);
       setChecklistItems([]);
@@ -690,12 +615,6 @@ if (reqSeq !== checklistReqSeqRef.current) return;
 
       setError('');
 
-      if (!mantenimiento) {
-        setChecklistItems([]);
-        setSelectedChecklistItems([]);
-        return;
-      }
-
       if (templateId) {
         const cachedItems = templateByIdCacheRef.current.get(templateId);
         let items: ChecklistItem[] = cachedItems || [];
@@ -716,7 +635,7 @@ if (reqSeq !== checklistReqSeqRef.current) return;
         return;
       }
 
-      await loadChecklistItems(undefined, tipoId, autoSelect, mantenimiento);
+      await loadChecklistItems(undefined, tipoId, autoSelect);
     } catch (err) {
       console.error('No se pudo cargar checklist por prefijo', err);
       if (reqSeq !== checklistReqSeqRef.current) return;
@@ -728,26 +647,6 @@ if (reqSeq !== checklistReqSeqRef.current) return;
     }
   };
 
-  useEffect(() => {
-    if (!isOpen || step !== 'form') return;
-
-    const code = (vehiculoSeleccionado?.meta?.codigo || codigoVehiculo).trim();
-    if (!code) return;
-
-    const selectedKey =
-      vehiculoSeleccionado && !vehiculoSeleccionado.meta?.isCreate ? vehiculoSeleccionado.value : 'new';
-
-    const key = `${selectedKey}:${code}:${tipoMantenimiento}`;
-    if (lastChecklistReloadKeyRef.current === key) return;
-    lastChecklistReloadKeyRef.current = key;
-
-    if (vehiculoSeleccionado && !vehiculoSeleccionado.meta?.isCreate) {
-      void loadChecklistItems(Number(vehiculoSeleccionado.value), undefined, false, tipoMantenimiento);
-    } else {
-      void loadChecklistByCodigo(code, false, tipoMantenimiento);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipoMantenimiento]);
 
 
 
@@ -891,13 +790,65 @@ if (reqSeq !== checklistReqSeqRef.current) return;
     return Object.keys(errores).length === 0;
   };
 
-  const handleSubmit = async (force: boolean = false) => {
+  /**
+   * Arma el reporte tal como se va a registrar. Lo usan la vista previa (9.1.4) y el envío,
+   * así lo que el usuario confirma es exactamente lo que se guarda.
+   */
+  const armarReporte = () => {
+    const code = (vehiculoSeleccionado?.meta?.codigo || codigoVehiculo).trim();
+
+    const trabajos = selectedChecklistItems.map((id) => ({
+      id,
+      pregunta: checklistItems.find((i) => i.id === id)?.pregunta ?? `Trabajo ${id}`,
+      cantidad: checklistQuantities[id] || undefined
+    }));
+
+    const componentes = selectedImageFaults.map((fault) => {
+      const point = vehicleImagePoints.find((p) => p.id === fault.vehicleImagePointId);
+      return {
+        numero: point ? imagePointNumbers[point.id] : undefined,
+        nombre: point?.imageFaultName || 'Componente'
+      };
+    });
+
+    const itemsSummary = trabajos.map((t) => t.pregunta).join(', ');
+    const visualNames = Array.from(new Set(componentes.filter((c) => c.nombre !== 'Componente').map((c) => c.nombre)));
+    const visualSummary = visualNames.length > 0 ? `Fallas visuales: ${visualNames.join(', ')}` : '';
+    const descripcionCompuesta = [itemsSummary, visualSummary].filter(Boolean).join(' | ');
+
+    const reporteData: ReporteFallaCreateRequest = {
+      codigoVehiculo: code,
+      descripcion: descripcionCompuesta || 'Reporte de falla generado desde selector visual/checklist',
+      prioridad: Prioridad[prioridad as keyof typeof Prioridad] || Prioridad.Media,
+      puedeOperar: prioridad !== 'Alta' && prioridad !== 'Urgente',
+      tipoMantenimiento,
+      checklistItemIds: [], // Legacy
+      checklistItems: trabajos.map((t) => ({ id: t.id, cantidad: t.cantidad })), // New structure
+      imageFaults: selectedImageFaults
+    };
+
+    return { code, trabajos, componentes, reporteData };
+  };
+
+  /** "Revisar reporte": valida y muestra la vista previa; el envío se hace al confirmar */
+  const irAVistaPrevia = () => {
     if (submittingRef.current) return;
     if (!validar()) {
       setError('');
       return;
     }
-    const code = (vehiculoSeleccionado?.meta?.codigo || codigoVehiculo).trim();
+    setError('');
+    setStep('preview');
+  };
+
+  const handleSubmit = async (force: boolean = false) => {
+    if (submittingRef.current) return;
+    if (!validar()) {
+      setError('');
+      setStep('form');
+      return;
+    }
+    const { reporteData } = armarReporte();
 
     submittingRef.current = true;
     setIsSubmitting(true);
@@ -905,40 +856,6 @@ if (reqSeq !== checklistReqSeqRef.current) return;
     if (!force) setShowConfirmDuplicate(false);
 
     try {
-      const checklistItemsPayload = selectedChecklistItems.map(id => ({
-        id,
-        cantidad: checklistQuantities[id] || undefined
-      }));
-
-      const itemsSummary = selectedChecklistItems
-        .map(id => checklistItems.find(i => i.id === id)?.pregunta)
-        .filter(Boolean)
-        .join(', ');
-
-      const visualNames = Array.from(
-        new Set(
-          selectedImageFaults
-            .map((fault) => {
-              const point = vehicleImagePoints.find((p) => p.id === fault.vehicleImagePointId);
-              return point?.imageFaultName;
-            })
-            .filter(Boolean) as string[]
-        )
-      );
-      const visualSummary = visualNames.length > 0 ? `Fallas visuales: ${visualNames.join(', ')}` : '';
-      const descripcionCompuesta = [itemsSummary, visualSummary].filter(Boolean).join(' | ');
-
-      const reporteData: ReporteFallaCreateRequest = {
-        codigoVehiculo: code,
-        descripcion: descripcionCompuesta || 'Reporte de falla generado desde selector visual/checklist',
-        prioridad: Prioridad[prioridad as keyof typeof Prioridad] || Prioridad.Media,
-        puedeOperar: prioridad !== 'Alta' && prioridad !== 'Urgente',
-        tipoMantenimiento,
-        checklistItemIds: [], // Legacy
-        checklistItems: checklistItemsPayload, // New structure
-        imageFaults: selectedImageFaults
-      };
-
       const response = await reportesService.createWithAutoChecklist(reporteData, force);
 
       if (response.success && response.data?.id) {
@@ -1005,6 +922,105 @@ if (reqSeq !== checklistReqSeqRef.current) return;
       </p>
     ) : null;
   const bordeError = (campo: keyof typeof fieldErrors) => (fieldErrors[campo] ? { borderColor: '#ef4444' } : undefined);
+
+  /** 9.1.4: lo que se va a registrar, para confirmarlo antes de enviar */
+  const renderVistaPrevia = () => {
+    const { code, trabajos, componentes, reporteData } = armarReporte();
+    const area = vehiculoSeleccionado?.meta?.area;
+    const notaAlta = vehiculoSeleccionado?.meta?.isCreate
+      ? ' (vehículo nuevo, se dará de alta)'
+      : !vehiculoSeleccionado
+        ? ' (si no existe, se dará de alta)'
+        : '';
+    const fila = (etiqueta: string, valor: React.ReactNode) => (
+      <div className="flex flex-col gap-1 sm:flex-row sm:gap-3">
+        <span className="w-48 flex-shrink-0 text-sm font-semibold text-gray-600">{etiqueta}</span>
+        <span className="text-sm text-gray-900">{valor}</span>
+      </div>
+    );
+
+    return (
+      <div className="flex flex-col gap-5" data-testid="vista-previa-reporte">
+        <div>
+          <h3 className="text-xl font-bold text-gray-900">Vista previa del reporte</h3>
+          <p className="text-sm text-gray-600">Revisa que todo esté correcto. Así se va a registrar:</p>
+        </div>
+
+        <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-gray-50" style={{ padding: 16 }}>
+          {fila(
+            'Vehículo',
+            <>
+              <span className="font-mono font-bold">{code}</span>
+              {tipoVehiculoNombreSeleccionado ? ` · ${tipoVehiculoNombreSeleccionado}` : ''}
+              {area ? ` · ${area}` : ''}
+              {notaAlta}
+            </>
+          )}
+          {fila('Tipo de mantenimiento', tipoMantenimiento)}
+          {fila('Prioridad', `${prioridad} · ${reporteData.puedeOperar ? 'Puede operar' : 'No puede operar'}`)}
+          {fila('Descripción de la falla', reporteData.descripcion)}
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-semibold text-gray-700">Componentes con falla ({componentes.length})</p>
+          {componentes.length === 0 ? (
+            <p className="text-sm text-gray-500">Ninguno</p>
+          ) : (
+            <ul className="flex flex-wrap gap-2">
+              {componentes.map((c, i) => (
+                <li key={i} className="rounded-full border border-blue-200 bg-blue-50 text-sm text-blue-900" style={{ padding: '4px 12px' }}>
+                  {c.numero ? `#${c.numero} ` : ''}
+                  {c.nombre}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-semibold text-gray-700">Actividades / trabajos seleccionados ({trabajos.length})</p>
+          {trabajos.length === 0 ? (
+            <p className="text-sm text-gray-500">Ninguno</p>
+          ) : (
+            <ul className="flex flex-col gap-1">
+              {trabajos.map((t) => (
+                <li key={t.id} className="flex justify-between gap-3 border-b border-gray-100 text-sm text-gray-900" style={{ paddingBottom: 4 }}>
+                  <span>{t.pregunta}</span>
+                  <span className="flex-shrink-0 text-gray-600">× {t.cantidad ?? 1}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-semibold text-gray-700">Imágenes adjuntas ({fotos.length})</p>
+          {fotos.length === 0 ? (
+            <p className="text-sm text-gray-500">Sin imágenes</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {fotos.map((foto, i) => (
+                <img key={i} src={urlsFotos[i]} alt={`Imagen ${i + 1} (${foto.name})`} className="h-24 w-24 rounded-lg border object-cover" />
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-3 pt-2">
+          <Button variant="outline" onClick={() => setStep('form')} className="flex-1" disabled={isSubmitting}>
+            Corregir
+          </Button>
+          <Button
+            onClick={() => void handleSubmit(false)}
+            disabled={isSubmitting}
+            className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-white"
+          >
+            {isSubmitting ? 'Enviando...' : 'Confirmar y generar reporte'}
+          </Button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <>
@@ -1233,6 +1249,8 @@ if (reqSeq !== checklistReqSeqRef.current) return;
                 Ingresar Manualmente
               </Button>
             </div>
+          ) : step === 'preview' ? (
+            renderVistaPrevia()
           ) : (
             <div className="space-y-6">
               <div className="space-y-5">
@@ -1311,17 +1329,6 @@ if (reqSeq !== checklistReqSeqRef.current) return;
                         setTipoMantenimiento(m);
                         setError('');
                         setFieldErrors((f) => ({ ...f, tipoMantenimiento: undefined }));
-                        const vehId =
-                          vehiculoSeleccionado && !vehiculoSeleccionado.meta?.isCreate
-                            ? Number(vehiculoSeleccionado.value)
-                            : undefined;
-
-                        if (vehId) {
-                          void loadChecklistItems(vehId, undefined, false, m);
-                        } else {
-                          const code = (codigoVehiculo || '').trim();
-                          if (code) void loadChecklistByCodigo(code, false, m);
-                        }
                       }}
                       className={`w-full p-3 border rounded-lg focus:border-yellow-500 focus:outline-none ${fieldErrors.tipoMantenimiento ? 'border-red-500' : 'border-gray-300'} ${tipoMantenimiento ? '' : 'text-gray-500'}`}
                       style={bordeError('tipoMantenimiento')}
@@ -1435,8 +1442,8 @@ if (reqSeq !== checklistReqSeqRef.current) return;
                       {fotos.map((foto, index) => (
                         <div key={index} className="relative">
                           <img
-                            src={URL.createObjectURL(foto)}
-                            alt={`Foto ${index + 1}`}
+                            src={urlsFotos[index]}
+                            alt={`Foto ${index + 1} (${foto.name})`}
                             className="h-16 w-16 object-cover rounded"
                           />
                           <button
@@ -1520,9 +1527,9 @@ if (reqSeq !== checklistReqSeqRef.current) return;
                     </div>
                   ) : (
                     <p className="text-sm text-gray-500 italic">
-                      {tipoMantenimiento
-                        ? 'No hay items de checklist disponibles'
-                        : 'Selecciona el tipo de mantenimiento para ver los trabajos del checklist.'}
+                      {vehiculoSeleccionado || codigoVehiculo.trim()
+                        ? 'No hay checklist configurado para este tipo de vehículo.'
+                        : 'Selecciona el vehículo para ver los trabajos de su checklist.'}
                     </p>
                   )}
                   {errorCampo('trabajos')}
@@ -1545,11 +1552,11 @@ if (reqSeq !== checklistReqSeqRef.current) return;
                   Atras
                 </Button>
                 <Button
-                  onClick={() => void handleSubmit(false)}
+                  onClick={irAVistaPrevia}
                   disabled={isSubmitting}
                   className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-white"
                 >
-                  {isSubmitting ? 'Enviando...' : 'Enviar Reporte'}
+                  Revisar reporte
                 </Button>
               </div>
             </div>

@@ -23,12 +23,27 @@ public class OrdenTrabajoService
         int? vehiculoId = null,
         DateTime? desde = null,
         DateTime? hasta = null,
-        List<TipoVehiculoEnum>? tiposPermitidos = null)
+        List<TipoVehiculoEnum>? tiposPermitidos = null,
+        string? busqueda = null,
+        PrioridadEnum? prioridad = null)
     {
         var query = _db.OrdenesTrabajo
             .Include(o => o.Vehiculo)
             .Include(o => o.TecnicoAsignado)
             .AsQueryable();
+
+        // Búsqueda y prioridad de la pantalla de Órdenes (antes se enviaban pero no se aplicaban)
+        if (!string.IsNullOrWhiteSpace(busqueda))
+        {
+            var texto = busqueda.Trim();
+            query = query.Where(o => o.Folio.Contains(texto)
+                || o.Vehiculo.Codigo.Contains(texto)
+                || o.Descripcion.Contains(texto)
+                || (o.TecnicoAsignado != null && o.TecnicoAsignado.NombreCompleto.Contains(texto)));
+        }
+
+        if (prioridad.HasValue)
+            query = query.Where(o => o.Prioridad == prioridad.Value);
 
         if (tiposPermitidos != null && tiposPermitidos.Any())
         {

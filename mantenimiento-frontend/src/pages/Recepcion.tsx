@@ -195,21 +195,16 @@ export function RecepcionPage() {
 
       setChecklistLoading(true);
       try {
-        const asignRes = await checklistService.getAsignaciones(sel.vehiculoId);
-        const asignaciones = (asignRes as any).data || asignRes;
-        const asign = Array.isArray(asignaciones) ? asignaciones[0] : null;
-        if (asign && asign.checklistTemplateId) {
-          const tplRes = await checklistService.getTemplateById(asign.checklistTemplateId);
-          if ((tplRes as any).items || (tplRes as any).data?.items) {
-            const tplData: any = (tplRes as any).data || tplRes;
-            setChecklistItems(tplData.items || []);
-            setChecklistNombre(tplData.nombre || asign.checklistNombre || 'Checklist asignado');
-            setChecklistFuente('asignacion');
-            return;
-          }
+        // 12.3: el checklist es el del tipo del vehículo
+        const tplRes = await checklistService.getPorVehiculo(sel.vehiculoId);
+        if (tplRes.success && tplRes.data && tplRes.data.items.length > 0) {
+          setChecklistItems(tplRes.data.items);
+          setChecklistNombre(`Checklist de ${tplRes.data.nombre}`);
+          setChecklistFuente('asignacion');
+          return;
         }
       } catch (err) {
-        console.error('No se pudo cargar checklist asignado', err);
+        console.error('No se pudo cargar el checklist del tipo de vehículo', err);
       } finally {
         setChecklistLoading(false);
       }
