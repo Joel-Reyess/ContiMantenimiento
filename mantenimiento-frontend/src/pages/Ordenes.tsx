@@ -16,7 +16,8 @@ import {
   Spinner,
   Textarea,
   useConfirm,
-  useToast
+  useToast,
+  SearchInput
 } from '@/components/ui';
 import {
   ArrowLeft,
@@ -285,7 +286,6 @@ export function OrdenesPage() {
     setChecklistSource('default');
     try {
       let items: ChecklistTemplateItem[] = [];
-      let templateId: number | undefined;
 
       // 0) Items ya guardados en OrdenTrabajoChecklistItem (Prioridad Máxima)
       if (detalle.itemsChecklist && detalle.itemsChecklist.length > 0) {
@@ -333,35 +333,14 @@ export function OrdenesPage() {
       }
 
       if (!items.length) {
-      // 1) Checklist asignado al vehiculo (preferido)
-      const asignRes = await checklistService.getAsignaciones(detalle.vehiculoId);
-      if (asignRes.success && asignRes.data) {
-        const listaAsignaciones: any[] = (Array.isArray(asignRes.data) ? asignRes.data : []) as any[];
-        if (listaAsignaciones.length > 0) {
-          const first = listaAsignaciones[0];
-          templateId = first.checklistTemplateId ?? first.ChecklistTemplateId;
-        }
+      // 1) Checklist del tipo del vehículo (12.3: ya no hay asignación por vehículo)
+      const tplRes = await checklistService.getPorVehiculo(detalle.vehiculoId);
+      if (tplRes.success && tplRes.data) {
+        items = (tplRes.data.items || []).slice().sort((a, b) => a.orden - b.orden);
+        setChecklistSource('tipo');
       }
 
-      // 2) Si hay asignacion, obtener plantilla completa
-      if (templateId) {
-        const tplById = await checklistService.getTemplateById(templateId);
-        if (tplById.success && tplById.data) {
-          items = (tplById.data.items || []).slice().sort((a, b) => a.orden - b.orden);
-          setChecklistSource('vehiculo');
-        }
-      }
-
-      // 3) Fallback: plantilla por tipo de mantenimiento
-      if (!items.length) {
-        const tplRes = await checklistService.getTemplates(undefined, detalle.tipoMantenimiento);
-        if (tplRes.success && tplRes.data && tplRes.data.length > 0) {
-          items = (tplRes.data[0].items || []).slice().sort((a, b) => a.orden - b.orden);
-          setChecklistSource('tipo');
-        }
-      }
-
-      // 4) Ultimo recurso: checklist basico por defecto
+      // 2) Ultimo recurso: checklist basico por defecto
       if (!items.length) {
         items = checklistService.getDefaultInspectionChecklist() as unknown as ChecklistTemplateItem[];
         setChecklistSource('default');
@@ -2466,10 +2445,11 @@ export function OrdenesPage() {
 
       {!ordenId && (
         <div className="grid gap-3 md:grid-cols-4">
-          <Input
+          <SearchInput
             placeholder="Buscar por folio, vehiculo o texto"
             value={filters.busqueda}
             onChange={(e) => setFilters((prev) => ({ ...prev, busqueda: e.target.value }))}
+            onBuscar={applyFilters}
           />
           <Select
             options={[{ value: '', label: 'Todos los estados' }, ...estadoOptions]}

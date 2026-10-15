@@ -229,6 +229,14 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="configuracion/:seccion"
+              element={
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador']}>
+                  <ConfiguracionPage />
+                </ProtectedRoute>
+              }
+            />
 
             {/* Gestion de Prefijos */}
             <Route

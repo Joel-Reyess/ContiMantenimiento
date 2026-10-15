@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Truck, Search, Plus, Loader2, RefreshCw, Info, Package, Trash2, CheckCircle2, Download, Upload } from 'lucide-react';
+import { Truck, Plus, Loader2, RefreshCw, Info, Package, Trash2, CheckCircle2, Download, Upload } from 'lucide-react';
 import { formatDate, getFullImageUrl } from '@/lib/utils';
-import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, Input, Modal, ModalFooter, Select, Spinner, Textarea } from '@/components/ui';
+import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, Input, Modal, ModalFooter, Select, Spinner, Textarea, SearchInput } from '@/components/ui';
 import { vehiculosService } from '@/services/vehiculosService';
 import { catalogosService } from '@/services/catalogosService';
 import type { Area, ValidacionCodigoVehiculo, VehiculoFoto, VehiculoList } from '@/interfaces';
@@ -531,15 +531,14 @@ export function VehiculosPage() {
       </div>
 
       <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-5">
-        <Button variant="outline" className="flex items-center gap-2 w-full md:w-auto" onClick={applyFilters}>
-            <Search className="h-4 w-4" />
-            Buscar
-        </Button>
-        <Input
-          placeholder="Buscar por codigo, modelo o marca"
-          value={filters.busqueda}
-          onChange={(e) => setFilters((prev) => ({ ...prev, busqueda: e.target.value }))}
-        />
+        <div className="md:col-span-2">
+          <SearchInput
+            placeholder="Buscar por codigo, modelo o marca"
+            value={filters.busqueda}
+            onChange={(e) => setFilters((prev) => ({ ...prev, busqueda: e.target.value }))}
+            onBuscar={applyFilters}
+          />
+        </div>
         <Select
           options={tipoOptions}
           value={filters.tipo || ''}

@@ -16,6 +16,7 @@ import {
 import { usuariosService, asignacionesService, catalogosService } from '@/services';
 import type { LiderTipoVehiculoAsignacionDto, UserList } from '@/interfaces';
 
+import { VolverConfiguracion } from '@/components/configuracion/VolverConfiguracion';
 type RoleKey = 'Lider' | 'Supervisor';
 
 const normalize = (value?: string) =>
@@ -253,6 +254,7 @@ export function GestionAsignacionLideresPage() {
 
   return (
     <div className="dashboard-wrapper space-y-4">
+      <VolverConfiguracion />
       <div className="flex flex-col gap-2">
         <p className="text-sm uppercase tracking-[0.3em] text-continental-gray-1">Configuracion</p>
         <div className="flex flex-wrap items-center justify-between gap-3">

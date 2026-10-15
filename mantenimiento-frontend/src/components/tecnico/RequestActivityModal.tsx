@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, CheckCircle, ClipboardList, Check } from 'lucide-react';
 import { Button, Spinner } from '@/components/ui';
-import { ordenesService, solicitudActividadAdicionalService, checklistService, vehiculosService } from '@/services';
+import { solicitudActividadAdicionalService, checklistService } from '@/services';
 
 interface RequestActivityModalProps {
   isOpen: boolean;
@@ -42,55 +42,14 @@ export function RequestActivityModal({ isOpen, onClose, onSuccess, ordenTrabajoI
     
     try {
       let items: any[] = [];
-      let templateId: number | undefined;
 
-      // 1. Intentar por asignación directa al vehículo
-      const asignRes = await checklistService.getAsignaciones(vehiculoId);
-      if (asignRes.success && asignRes.data) {
-        const listaAsignaciones: any[] = (Array.isArray(asignRes.data) ? asignRes.data : []) as any[];
-        if (listaAsignaciones.length > 0) {
-          const first = listaAsignaciones[0];
-          templateId = first.checklistTemplateId ?? first.ChecklistTemplateId;
-        }
+      // 12.3: el checklist es el del tipo del vehículo (ya no hay asignación por vehículo)
+      const tplRes = await checklistService.getPorVehiculo(vehiculoId);
+      if (tplRes.success && tplRes.data) {
+        items = tplRes.data.items || [];
       }
 
-      // Si hay template asignado, cargarlo
-      if (templateId) {
-        const tplById = await checklistService.getTemplateById(templateId);
-        if (tplById.success && tplById.data && tplById.data.items) {
-          items = tplById.data.items;
-        }
-      }
-
-      // 2. Si no hay items, intentar por el tipo de vehículo
-      if (items.length === 0) {
-        // Obtener info del vehículo para saber su tipo
-        const ordenRes = await ordenesService.getById(ordenTrabajoId!);
-        if (ordenRes.success && ordenRes.data) {
-          const vehiculoId = ordenRes.data.vehiculoId;
-          const vehRes = await vehiculosService.getById(vehiculoId);
-          const tipoVehiculoId = vehRes.data?.tipo;
-
-          if (tipoVehiculoId) {
-          const tplRes = await checklistService.getTemplates(tipoVehiculoId, tipoMantenimiento);
-          if (tplRes.success && tplRes.data && tplRes.data.length > 0) {
-            // Buscar el predeterminado o el primero
-            const template = tplRes.data.find((t: any) => t.isDefault || t.predeterminado) || tplRes.data[0];
-            items = template.items || [];
-          }
-        }
-      }
-      }
-
-      // 3. Si aun no hay, intentar por tipo de mantenimiento genérico
-      if (items.length === 0) {
-        const tplRes = await checklistService.getTemplates(undefined, tipoMantenimiento);
-        if (tplRes.success && tplRes.data && tplRes.data.length > 0) {
-          items = tplRes.data[0].items || [];
-        }
-      }
-
-      // 4. Si aun no hay, usar default
+      // Si su tipo no tiene checklist, usar el de inspección por defecto
       if (items.length === 0) {
         items = checklistService.getDefaultInspectionChecklist();
       }

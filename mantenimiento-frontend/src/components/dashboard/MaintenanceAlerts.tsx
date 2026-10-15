@@ -164,7 +164,7 @@ export function MaintenanceAlerts() {
   }
 
   const hasAlerts = upcomingMaintenance.length > 0 || overdueMaintenance.length > 0;
-  const preventivosLink = '/configuracion?tab=preventivos';
+  const preventivosLink = '/configuracion/preventivos';
 
   return (
     <div className="dashboard-card p-7 space-y-1">

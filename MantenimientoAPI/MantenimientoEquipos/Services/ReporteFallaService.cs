@@ -76,7 +76,10 @@ public class ReporteFallaService
         int? vehiculoId = null, 
         DateTime? desde = null, 
         DateTime? hasta = null,
-        List<TipoVehiculoEnum>? tiposPermitidos = null)
+        List<TipoVehiculoEnum>? tiposPermitidos = null,
+        string? busqueda = null,
+        PrioridadEnum? prioridad = null,
+        int? categoriaId = null)
     {
         var query = _db.ReportesFalla
             .Include(r => r.Vehiculo)
@@ -101,6 +104,22 @@ public class ReporteFallaService
 
         if (hasta.HasValue)
             query = query.Where(r => r.FechaReporte <= hasta.Value);
+
+        // Búsqueda y filtros de la pantalla de Reportes (antes se enviaban pero no se aplicaban)
+        if (!string.IsNullOrWhiteSpace(busqueda))
+        {
+            var texto = busqueda.Trim();
+            query = query.Where(r => r.Folio.Contains(texto)
+                || r.Vehiculo.Codigo.Contains(texto)
+                || r.Descripcion.Contains(texto)
+                || r.ReportadoPor.NombreCompleto.Contains(texto));
+        }
+
+        if (prioridad.HasValue)
+            query = query.Where(r => r.Prioridad == prioridad.Value);
+
+        if (categoriaId.HasValue)
+            query = query.Where(r => r.CategoriaFallaId == categoriaId.Value);
 
         return await query
             .OrderByDescending(r => r.FechaReporte)

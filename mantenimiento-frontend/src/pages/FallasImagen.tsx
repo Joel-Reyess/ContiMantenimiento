@@ -14,6 +14,7 @@ import type {
 import type { TipoVehiculoItem } from '@/services/catalogosService';
 import { getFullImageUrl } from '@/lib/utils';
 
+import { VolverConfiguracion } from '@/components/configuracion/VolverConfiguracion';
 const DEFAULT_RADIUS = 1.8;
 
 type TabType = 'catalogo' | 'hotspots';
@@ -366,6 +367,7 @@ export function FallasImagenPage() {
 
   return (
     <div className="dashboard-wrapper space-y-5">
+      <VolverConfiguracion />
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm uppercase tracking-[0.3em] text-continental-gray-1">Configuración visual</p>

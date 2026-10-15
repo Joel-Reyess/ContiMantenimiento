@@ -4,6 +4,8 @@ using MantenimientoEquipos.Models;
 using MantenimientoEquipos.Models.Enums;
 using MantenimientoEquipos.DTOs;
 using MantenimientoEquipos.Services;
+using MantenimientoEquipos.Middlewares;
+using MantenimientoEquipos.Utils;
 using System.Security.Claims;
 
 namespace MantenimientoEquipos.Controllers;
@@ -48,9 +50,29 @@ public class ChecklistsController : ControllerBase
     }
 
     /// <summary>
-    /// Crea una nueva plantilla de checklist
+    /// Checklist que usan los vehículos del tipo indicado (12.3: se asigna solo por tipo).
+    /// data = null si el tipo todavía no tiene checklist.
+    /// </summary>
+    [HttpGet("templates/por-tipo/{tipoId:int}")]
+    public async Task<IActionResult> GetPorTipo(int tipoId)
+    {
+        var template = await _checklistService.GetVigentePorTipoAsync(tipoId);
+        return Ok(ApiResponse<ChecklistTemplateDto?>.Ok(template, template == null ? "El tipo de vehículo no tiene checklist configurado" : ""));
+    }
+
+    /// <summary>Checklist del tipo del vehículo indicado. data = null si no tiene.</summary>
+    [HttpGet("templates/por-vehiculo/{vehiculoId:int}")]
+    public async Task<IActionResult> GetPorVehiculo(int vehiculoId)
+    {
+        var template = await _checklistService.GetVigentePorVehiculoAsync(vehiculoId);
+        return Ok(ApiResponse<ChecklistTemplateDto?>.Ok(template, template == null ? "El tipo de este vehículo no tiene checklist configurado" : ""));
+    }
+
+    /// <summary>
+    /// Crea el checklist de un tipo de vehículo (uno por tipo)
     /// </summary>
     [HttpPost("templates")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
     public async Task<IActionResult> CreateTemplate([FromBody] ChecklistTemplateCreateRequest request)
     {
         try
@@ -59,7 +81,11 @@ public class ChecklistsController : ControllerBase
             var template = await _checklistService.CreateTemplateAsync(request, userId);
 
             return CreatedAtAction(nameof(GetTemplateById), new { id = template.Id },
-                ApiResponse<object>.Ok(new { template.Id, template.Nombre }, "Plantilla creada exitosamente"));
+                ApiResponse<object>.Ok(new { template.Id, template.Nombre }, $"Checklist de {template.Nombre} creado"));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ApiResponse<string>.Error(ex.Message, "DuplicateChecklist"));
         }
         catch (Exception ex)
         {
@@ -68,9 +94,27 @@ public class ChecklistsController : ControllerBase
     }
 
     /// <summary>
+    /// Elimina el checklist. Si ya se usó en reportes u órdenes se retira pero se conserva para el historial.
+    /// </summary>
+    [HttpDelete("templates/{id:int}")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
+    public async Task<IActionResult> DeleteTemplate(int id)
+    {
+        var r = await _checklistService.EliminarTemplateAsync(id, User.UsuarioId(), User.NombreUsuario());
+        if (r == null)
+            return NotFound(ApiResponse<string>.Error("Checklist no encontrado"));
+
+        var mensaje = r.ConservadoEnHistorial
+            ? $"Checklist de {r.Nombre} eliminado. Como ya se usó en reportes u órdenes, esos registros conservan sus ítems."
+            : $"Checklist de {r.Nombre} eliminado";
+        return Ok(ApiResponse<ChecklistEliminadoDto>.Ok(r, mensaje));
+    }
+
+    /// <summary>
     /// Actualiza una plantilla de checklist
     /// </summary>
     [HttpPut("templates/{id}")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
     public async Task<IActionResult> UpdateTemplate(int id, [FromBody] ChecklistTemplateUpdateRequest request)
     {
         try
@@ -79,9 +123,13 @@ public class ChecklistsController : ControllerBase
             var template = await _checklistService.UpdateTemplateAsync(id, request, userId);
 
             if (template == null)
-                return NotFound(ApiResponse<string>.Error("Plantilla no encontrada"));
+                return NotFound(ApiResponse<string>.Error("Checklist no encontrado"));
 
-            return Ok(ApiResponse<object>.Ok(new { template.Id, template.Nombre }, "Plantilla actualizada exitosamente"));
+            return Ok(ApiResponse<object>.Ok(new { template.Id, template.Nombre }, $"Checklist de {template.Nombre} actualizado"));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ApiResponse<string>.Error(ex.Message, "DuplicateChecklist"));
         }
         catch (Exception ex)
         {

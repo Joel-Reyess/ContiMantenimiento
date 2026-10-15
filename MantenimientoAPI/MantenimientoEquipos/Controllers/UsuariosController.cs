@@ -36,11 +36,20 @@ public class UsuariosController : ControllerBase
 
     [HttpGet]
     [RolesAllowed("SuperUsuario", "Administrador")]
-    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 100, [FromQuery] int? rolId = null, [FromQuery] bool? activo = null)
+    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 100, [FromQuery] int? rolId = null, [FromQuery] bool? activo = null, [FromQuery] string? busqueda = null)
     {
         var query = _db.Users
             .Include(u => u.Roles)
             .AsQueryable();
+
+        // Búsqueda de la pantalla de Usuarios (antes se enviaba pero no se aplicaba)
+        if (!string.IsNullOrWhiteSpace(busqueda))
+        {
+            var texto = busqueda.Trim();
+            query = query.Where(u => u.NombreCompleto.Contains(texto)
+                || u.Username.Contains(texto)
+                || (u.NumeroEmpleado != null && u.NumeroEmpleado.Contains(texto)));
+        }
 
         if (rolId.HasValue)
             query = query.Where(u => u.Roles.Any(r => r.Id == rolId.Value));

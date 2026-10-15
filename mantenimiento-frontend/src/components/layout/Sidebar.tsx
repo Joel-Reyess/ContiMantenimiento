@@ -1,14 +1,21 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
-import { LayoutDashboard, Truck, AlertTriangle, Wrench, Users, DollarSign, Settings, FileText, Package, X, ClipboardList, CheckSquare } from 'lucide-react';
+import { LayoutDashboard, Truck, AlertTriangle, Wrench, DollarSign, Settings, FileText, Package, X, ClipboardList, CheckSquare } from 'lucide-react';
 
 interface NavItem {
   label: string;
   href: string;
   icon: React.ReactNode;
   roles?: string[];
+  /** Roles que no lo ven en el menú porque lo abren desde Configuración del sistema */
+  ocultarPara?: string[];
+  /** Otras rutas en las que esta opción se marca como activa */
+  incluye?: string[];
 }
+
+// Módulos que se abren desde Configuración del sistema (requerimiento de navegación)
+const RUTAS_DE_CONFIGURACION = ['/usuarios', '/fallas-imagen', '/gestion-prefijos', '/archivo', '/asignacion-lideres'];
 
 const navItems: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Lider'] },
@@ -16,16 +23,13 @@ const navItems: NavItem[] = [
   { label: 'Entrega y Conformidad', href: '/entregas', icon: <CheckSquare className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Lider'] },
   { label: 'Órdenes de Trabajo', href: '/ordenes', icon: <Wrench className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico'] },
   { label: 'Inventario y Materiales', href: '/materiales', icon: <Package className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor'] },
-  { label: 'Archivo Técnico (Planos)', href: '/archivo', icon: <FileText className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor'] },
+  { label: 'Archivo Técnico (Planos)', href: '/archivo', icon: <FileText className="h-6 w-6" />, roles: ['Supervisor'], ocultarPara: ['SuperUsuario', 'Administrador'] },
   { label: 'Control de Pagos', href: '/pagos', icon: <DollarSign className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador'] },
   { label: 'Flota de Contenedores', href: '/vehiculos', icon: <Truck className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor'] },
   { label: 'Reportes de Falla', href: '/reportes', icon: <AlertTriangle className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Operador', 'Lider'] },
   { label: 'Mis Órdenes', href: '/mis-ordenes', icon: <FileText className="h-6 w-6" />, roles: ['Tecnico'] },
   { label: 'Validación y Aprobaciones', href: '/aprobaciones', icon: <CheckSquare className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor'] },
-  { label: 'Gestión de Usuarios', href: '/usuarios', icon: <Users className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador'] },
-  { label: 'Configuración de Sistema', href: '/configuracion', icon: <Settings className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador'] },
-  { label: 'Fallas Visuales', href: '/fallas-imagen', icon: <AlertTriangle className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador'] },
-  { label: 'Configuración de Prefijos', href: '/gestion-prefijos', icon: <Settings className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador'] }
+  { label: 'Configuración del Sistema', href: '/configuracion', icon: <Settings className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador'], incluye: RUTAS_DE_CONFIGURACION }
 ];
 
 interface SidebarProps {
@@ -35,11 +39,15 @@ interface SidebarProps {
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const { hasRole } = useAuth();
+  const { pathname } = useLocation();
 
   const filteredNavItems = navItems.filter((item) => {
+    if (item.ocultarPara && hasRole(item.ocultarPara)) return false;
     if (!item.roles) return true;
     return hasRole(item.roles);
   });
+
+  const enRuta = (rutas?: string[]) => !!rutas?.some((r) => pathname === r || pathname.startsWith(`${r}/`));
 
   return (
     <aside
@@ -66,7 +74,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             className={({ isActive }) =>
               cn(
                 'group relative flex items-center gap-3 rounded-xl px-4 py-3.5 text-base font-semibold transition-all duration-200 shadow-sm',
-                isActive
+                isActive || enRuta(item.incluye)
                   ? 'bg-continental-yellow/90 text-continental-black shadow-lg shadow-continental-yellow/35'
                   : 'text-continental-gray-1 hover:bg-continental-gray-4/70 hover:text-continental-black'
               )

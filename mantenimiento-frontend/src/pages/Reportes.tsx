@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, CheckCircle, Loader2, Plus, RefreshCcw, Search, Printer, Calculator, Trash2 } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle, Loader2, Plus, RefreshCcw, Printer, Calculator, Trash2 } from 'lucide-react';
 import {
   Alert,
   AlertDescription,
@@ -8,13 +8,13 @@ import {
   Badge,
   Button,
   Card,
-  Input,
   Modal,
   ModalFooter,
   Select,
   Spinner,
   useConfirm,
-  useToast
+  useToast,
+  SearchInput
 } from '@/components/ui';
 import { reportesService } from '@/services/reportesService';
 import { ordenesService } from '@/services/ordenesService';
@@ -714,10 +714,6 @@ export function ReportesPage() {
         </div>
         {!reporteId && (
           <div className="flex gap-2">
-            <Button variant="outline" className="flex items-center gap-2" onClick={applyFilters}>
-              <Search className="h-4 w-4" />
-              Buscar
-            </Button>
             <Link
               to="/reportar-reparacion"
               className="inline-flex items-center gap-2 rounded-md border border-continental-gray-3 px-4 py-2 text-sm font-medium text-continental-black hover:bg-continental-gray-4"
@@ -735,10 +731,11 @@ export function ReportesPage() {
 
       {!reporteId && (
         <div className="grid gap-3 md:grid-cols-4">
-          <Input
+          <SearchInput
             placeholder="Buscar por folio, vehiculo o texto"
             value={filters.busqueda}
             onChange={(e) => setFilters((prev) => ({ ...prev, busqueda: e.target.value }))}
+            onBuscar={applyFilters}
           />
           <Select
             options={[{ value: '', label: 'Todas las prioridades' }, ...prioridadOptions]}
