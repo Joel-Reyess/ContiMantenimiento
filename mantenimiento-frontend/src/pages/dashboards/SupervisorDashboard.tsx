@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Button, LoadingCard } from '@/components/ui';
+import { Button, LoadingCard, useConfirm, useToast } from '@/components/ui';
 import { dashboardService, usuariosService, refaccionesService } from '@/services';
 import type { KPIs } from '@/interfaces';
 import type { OrdenSinFirma, ReporteAnual } from '@/services/dashboardService';
@@ -61,6 +61,8 @@ interface PendingApproval {
 }
 
 export function SupervisorDashboard() {
+  const { pedirTexto } = useConfirm();
+  const toast = useToast();
   const navigate = useNavigate();
   const { user } = useAuth();
   const [kpis, setKpis] = useState<KPIs | null>(null);
@@ -172,24 +174,36 @@ export function SupervisorDashboard() {
   const handleApprove = async (id: number) => {
     setAccionPendienteId(id);
     try {
-      await refaccionesService.aprobar(id);
+      const res = await refaccionesService.aprobar(id);
+      if (res.success === false) toast.error(res.message || 'No se pudo aprobar la solicitud');
+      else toast.exito('Solicitud aprobada');
       await loadPendingApprovals();
     } catch (error) {
       console.error('No se pudo aprobar la solicitud', error);
+      toast.error('No se pudo aprobar la solicitud');
     } finally {
       setAccionPendienteId(null);
     }
   };
 
   const handleReject = async (id: number) => {
-    const motivo = window.prompt('Motivo de rechazo:') || '';
-    if (!motivo.trim()) return;
+    const motivo = await pedirTexto({
+      titulo: 'Rechazar solicitud de refacción',
+      etiqueta: 'Motivo de rechazo',
+      requerido: true,
+      textoConfirmar: 'Rechazar',
+      tono: 'peligro'
+    });
+    if (!motivo) return;
     setAccionPendienteId(id);
     try {
-      await refaccionesService.rechazar(id, motivo);
+      const res = await refaccionesService.rechazar(id, motivo);
+      if (res.success === false) toast.error(res.message || 'No se pudo rechazar la solicitud');
+      else toast.exito('Solicitud rechazada');
       await loadPendingApprovals();
     } catch (error) {
       console.error('No se pudo rechazar la solicitud', error);
+      toast.error('No se pudo rechazar la solicitud');
     } finally {
       setAccionPendienteId(null);
     }

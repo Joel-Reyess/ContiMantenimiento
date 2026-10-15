@@ -5,6 +5,8 @@ using MantenimientoEquipos.Models;
 using MantenimientoEquipos.Models.Enums;
 using MantenimientoEquipos.DTOs;
 using MantenimientoEquipos.Middlewares;
+using MantenimientoEquipos.Services;
+using MantenimientoEquipos.Utils;
 
 namespace MantenimientoEquipos.Controllers;
 
@@ -15,9 +17,12 @@ public class CatalogosController : ControllerBase
 {
     private readonly MantenimientoDbContext _db;
 
-    public CatalogosController(MantenimientoDbContext db)
+    private readonly EliminacionService _eliminacion;
+
+    public CatalogosController(MantenimientoDbContext db, EliminacionService eliminacion)
     {
         _db = db;
+        _eliminacion = eliminacion;
     }
 
     // ===== ÁREAS =====
@@ -194,6 +199,33 @@ public class CatalogosController : ControllerBase
     }
 
     // === ACTUALIZAR AREA (supervisor/estado) ===
+    /// <summary>
+    /// Elimina un área. Los vehículos y usuarios que la tenían quedan "sin área" (no se borran).
+    /// Reemplaza a "Desactivar": solo los usuarios conservan esa opción.
+    /// </summary>
+    [HttpDelete("areas/{id:int}")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
+    public async Task<IActionResult> DeleteArea(int id)
+    {
+        var area = await _db.Areas.FindAsync(id);
+        if (area == null)
+            return NotFound(ApiResponse<string>.Error("Área no encontrada"));
+
+        using var tx = await _db.Database.BeginTransactionAsync();
+        var vehiculos = await _db.Vehiculos.Where(v => v.AreaId == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(v => v.AreaId, (int?)null));
+        var usuarios = await _db.Users.Where(u => u.AreaId == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.AreaId, (int?)null));
+        _db.Areas.Remove(area);
+        _eliminacion.Registrar(User.UsuarioId(), User.NombreUsuario(), "Area", id,
+            $"Área {area.Nombre}: {vehiculos} vehículo(s) y {usuarios} usuario(s) quedaron sin área");
+        await _db.SaveChangesAsync();
+        await tx.CommitAsync();
+
+        var detalle = vehiculos + usuarios > 0 ? $" ({vehiculos} vehículo(s) y {usuarios} usuario(s) quedaron sin área)" : "";
+        return Ok(ApiResponse<string>.Ok(area.Nombre, $"Área {area.Nombre} eliminada{detalle}"));
+    }
+
     [HttpPut("areas/{id}")]
     [RolesAllowed("SuperUsuario", "Administrador")]
     public async Task<IActionResult> UpdateArea(int id, [FromBody] AreaUpdateRequest request)

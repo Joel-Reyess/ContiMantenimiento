@@ -14,7 +14,9 @@ import {
   type SearchableSelectOption,
   Select,
   Spinner,
-  Textarea
+  Textarea,
+  useConfirm,
+  useToast
 } from '@/components/ui';
 import { pagosService } from '@/services/pagosService';
 import { ordenesService } from '@/services/ordenesService';
@@ -61,6 +63,8 @@ type TecnicoOption = SearchableSelectOption<{
 }>;
 
 export function PagosPage() {
+  const { confirmar, pedirTexto } = useConfirm();
+  const toast = useToast();
   const { hasRole } = useAuth();
   const isAdmin = hasRole(['Administrador']);
   const canRevert = hasRole(['Superusuario', 'Administrador']);
@@ -742,34 +746,54 @@ export function PagosPage() {
     }
   };
 
-  const doAccion = async (fn: () => Promise<unknown>) => {
+  /** Ejecuta la acción, avisa éxito o error (antes el error de la API se ignoraba) y recarga la lista */
+  const doAccion = async (fn: () => Promise<{ success?: boolean; message?: string } | unknown>, mensajeExito: string) => {
     setAccionando(true);
     setError('');
     try {
-      await fn();
+      const res = (await fn()) as { success?: boolean; message?: string } | undefined;
+      if (res && res.success === false) toast.error(res.message || 'No se pudo completar la acción');
+      else toast.exito(mensajeExito);
       await loadPagos();
     } catch (err) {
       console.error(err);
-      setError('No se pudo completar la accion');
+      toast.error('No se pudo completar la acción');
     } finally {
       setAccionando(false);
     }
   };
 
-  const handleAprobar = (id: number) => doAccion(() => pagosService.aprobar(id));
-  const handleRechazar = (id: number) => {
-    const motivo = window.prompt('Motivo de rechazo:');
+  const handleAprobar = (id: number) => doAccion(() => pagosService.aprobar(id), 'Pago aprobado');
+  const handleRechazar = async (id: number) => {
+    const motivo = await pedirTexto({
+      titulo: 'Rechazar pago',
+      etiqueta: 'Motivo de rechazo',
+      requerido: true,
+      textoConfirmar: 'Rechazar',
+      tono: 'peligro'
+    });
     if (!motivo) return;
-    doAccion(() => pagosService.rechazar(id, motivo));
+    doAccion(() => pagosService.rechazar(id, motivo), 'Pago rechazado');
   };
-  const handlePagar = (id: number) => {
-    const factura = window.prompt('Numero de factura (opcional):') || undefined;
-    doAccion(() => pagosService.marcarPagado(id, factura));
+  const handlePagar = async (id: number) => {
+    const factura = await pedirTexto({
+      titulo: 'Marcar como pagado',
+      etiqueta: 'Número de factura (opcional)',
+      textoConfirmar: 'Marcar pagado'
+    });
+    if (factura === null) return;
+    doAccion(() => pagosService.marcarPagado(id, factura || undefined), 'Pago marcado como pagado');
   };
 
-  const handleRevertir = (id: number) => {
-    if (!window.confirm('¿Seguro que deseas revertir este pago a estado Pendiente?')) return;
-    doAccion(() => pagosService.revertir(id));
+  const handleRevertir = async (id: number) => {
+    const ok = await confirmar({
+      titulo: 'Revertir pago',
+      mensaje: '¿Regresar este pago a estado Pendiente?',
+      textoConfirmar: 'Revertir',
+      tono: 'advertencia'
+    });
+    if (!ok) return;
+    doAccion(() => pagosService.revertir(id), 'Pago regresado a Pendiente');
   };
 
   const handlePagarDetalle = async () => {
@@ -813,7 +837,13 @@ export function PagosPage() {
 
   const handleBatchPagar = async () => {
     if (selectedIds.size === 0) return;
-    if (!window.confirm(`¿Estás seguro de generar una Orden de Compra para ${selectedIds.size} órdenes? Esto las marcará como PAGADAS.`)) return;
+    const ok = await confirmar({
+      titulo: 'Generar orden de compra',
+      mensaje: `Se generará una Orden de Compra para ${selectedIds.size} pago(s) y quedarán marcados como PAGADOS. ¿Continuar?`,
+      textoConfirmar: 'Generar',
+      tono: 'advertencia'
+    });
+    if (!ok) return;
 
     setAccionando(true);
     setError('');
@@ -823,13 +853,13 @@ export function PagosPage() {
       if (res.success) {
         setSelectedIds(new Set());
         await loadPagos();
-        alert(`Orden de Compra generada: ${res.data?.folio}`);
+        toast.exito(`Orden de Compra ${res.data?.folio ?? ''} generada`);
       } else {
-        setError(res.message || 'No se pudo generar la orden de compra');
+        toast.error(res.message || 'No se pudo generar la orden de compra');
       }
     } catch (err) {
       console.error(err);
-      setError('Error al generar la orden de compra');
+      toast.error('Error al generar la orden de compra');
     } finally {
       setAccionando(false);
     }

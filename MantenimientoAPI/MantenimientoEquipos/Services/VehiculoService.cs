@@ -12,17 +12,20 @@ public class VehiculoService
     private readonly ITipoVehiculoRepository _tipoVehiculoRepository;
     private readonly VehiculoPrefijoConfigService _prefijoConfigService;
     private readonly VehiculoDocumentoService _documentoService;
+    private readonly EliminacionService _eliminacion;
 
     public VehiculoService(
         MantenimientoDbContext db,
         ITipoVehiculoRepository tipoVehiculoRepository,
         VehiculoPrefijoConfigService prefijoConfigService,
-        VehiculoDocumentoService documentoService)
+        VehiculoDocumentoService documentoService,
+        EliminacionService eliminacion)
     {
         _db = db;
         _tipoVehiculoRepository = tipoVehiculoRepository;
         _prefijoConfigService = prefijoConfigService;
         _documentoService = documentoService;
+        _eliminacion = eliminacion;
     }
 
     public async Task<PaginatedResponse<VehiculoListDto>> GetAllAsync(
@@ -313,30 +316,32 @@ public class VehiculoService
     /// <summary>
     /// Elimina definitivamente los vehículos indicados junto con todo su historial
     /// (reportes, órdenes, evidencias, checklist, refacciones, pagos, documentos).
-    /// Varias FKs en la BD son NO ACTION, por eso se borran los dependientes a mano
-    /// en el mismo orden que usa el reinicio de datos (AdminController).
+    /// Reportes y órdenes se borran con EliminacionService (mismo criterio que Reportes y Órdenes).
     /// </summary>
-    public async Task<EliminarVehiculosResultDto> DeleteManyAsync(List<int> ids)
+    public async Task<EliminarVehiculosResultDto> DeleteManyAsync(List<int> ids, int? usuarioId = null, string? nombreUsuario = null)
     {
         ids = ids.Distinct().ToList();
 
-        var vehiculoIds = await _db.Vehiculos
+        var vehiculos = await _db.Vehiculos
             .Where(v => ids.Contains(v.Id))
-            .Select(v => v.Id)
+            .Select(v => new { v.Id, v.Codigo })
             .ToListAsync();
+        var vehiculoIds = vehiculos.Select(v => v.Id).ToList();
 
         if (!vehiculoIds.Any())
             return new EliminarVehiculosResultDto();
 
-        var reporteIds = await _db.ReportesFalla
+        var reportes = await _db.ReportesFalla
             .Where(r => vehiculoIds.Contains(r.VehiculoId))
-            .Select(r => r.Id)
+            .Select(r => new { r.Id, r.Folio, r.VehiculoId })
             .ToListAsync();
+        var reporteIds = reportes.Select(r => r.Id).ToList();
 
-        var ordenIds = await _db.OrdenesTrabajo
+        var ordenes = await _db.OrdenesTrabajo
             .Where(o => vehiculoIds.Contains(o.VehiculoId) || (o.ReporteFallaId.HasValue && reporteIds.Contains(o.ReporteFallaId.Value)))
-            .Select(o => o.Id)
+            .Select(o => new { o.Id, o.Folio, o.VehiculoId })
             .ToListAsync();
+        var ordenIds = ordenes.Select(o => o.Id).ToList();
 
         var urlsFotos = await _db.VehiculoDocumentos
             .Where(d => vehiculoIds.Contains(d.VehiculoId) && d.Tipo == VehiculoDocumentoService.TipoFoto)
@@ -345,33 +350,11 @@ public class VehiculoService
 
         using var tx = await _db.Database.BeginTransactionAsync();
 
-        // Dependientes de reportes y órdenes
-        await _db.EvidenciasFotograficas
-            .Where(e => (e.ReporteFallaId.HasValue && reporteIds.Contains(e.ReporteFallaId.Value))
-                     || (e.OrdenTrabajoId.HasValue && ordenIds.Contains(e.OrdenTrabajoId.Value)))
-            .ExecuteDeleteAsync();
-        await _db.ReportesFallaChecklistItems.Where(i => reporteIds.Contains(i.ReporteFallaId)).ExecuteDeleteAsync();
-        await _db.ReportImageFaults.Where(f => reporteIds.Contains(f.ReporteFallaId)).ExecuteDeleteAsync();
-        await _db.OrdenesTrabajoChecklistItems.Where(i => ordenIds.Contains(i.OrdenTrabajoId)).ExecuteDeleteAsync();
-        await _db.ChecklistRespuestas.Where(r => ordenIds.Contains(r.OrdenTrabajoId)).ExecuteDeleteAsync();
-        await _db.SolicitudesRefaccion.Where(s => ordenIds.Contains(s.OrdenTrabajoId)).ExecuteDeleteAsync();
-        await _db.SolicitudesActividadAdicional.Where(s => ordenIds.Contains(s.OrdenTrabajoId)).ExecuteDeleteAsync();
-        await _db.RegistrosPago.Where(p => ordenIds.Contains(p.OrdenTrabajoId)).ExecuteDeleteAsync();
+        // Órdenes (incluidas las que vienen de un reporte) y reportes, con todo lo que depende de ellos
+        var ordenesEliminadas = await _eliminacion.EliminarOrdenesAsync(ordenIds);
+        var (reportesEliminados, _) = await _eliminacion.EliminarReportesAsync(reporteIds);
 
-        // Los movimientos de inventario se conservan; solo se desvinculan de la orden/reporte
-        await _db.ConsumosConsumibles
-            .Where(c => c.OrdenTrabajoId.HasValue && ordenIds.Contains(c.OrdenTrabajoId.Value))
-            .ExecuteUpdateAsync(s => s.SetProperty(c => c.OrdenTrabajoId, (int?)null));
-        await _db.ConsumosConsumibles
-            .Where(c => c.ReporteId.HasValue && reporteIds.Contains(c.ReporteId.Value))
-            .ExecuteUpdateAsync(s => s.SetProperty(c => c.ReporteId, (int?)null));
-
-        await _db.HistorialMantenimiento
-            .Where(h => vehiculoIds.Contains(h.VehiculoId) || (h.OrdenTrabajoId.HasValue && ordenIds.Contains(h.OrdenTrabajoId.Value)))
-            .ExecuteDeleteAsync();
-
-        var ordenesEliminadas = await _db.OrdenesTrabajo.Where(o => ordenIds.Contains(o.Id)).ExecuteDeleteAsync();
-        var reportesEliminados = await _db.ReportesFalla.Where(r => reporteIds.Contains(r.Id)).ExecuteDeleteAsync();
+        await _db.HistorialMantenimiento.Where(h => vehiculoIds.Contains(h.VehiculoId)).ExecuteDeleteAsync();
 
         // Dependientes directos del vehículo
         await _db.VehiculoDocumentos.Where(d => vehiculoIds.Contains(d.VehiculoId)).ExecuteDeleteAsync();
@@ -379,6 +362,17 @@ public class VehiculoService
         await _db.SolicitudesCambio.Where(s => vehiculoIds.Contains(s.VehiculoId)).ExecuteDeleteAsync();
 
         var vehiculosEliminados = await _db.Vehiculos.Where(v => vehiculoIds.Contains(v.Id)).ExecuteDeleteAsync();
+
+        // Bitácora: también deja los folios de reportes y órdenes que se fueron con cada vehículo
+        foreach (var v in vehiculos)
+        {
+            var folios = reportes.Where(r => r.VehiculoId == v.Id).Select(r => r.Folio)
+                .Concat(ordenes.Where(o => o.VehiculoId == v.Id).Select(o => o.Folio))
+                .ToList();
+            _eliminacion.Registrar(usuarioId, nombreUsuario, "Vehiculo", v.Id,
+                $"Vehículo {v.Codigo}" + (folios.Count > 0 ? $" con su historial: {string.Join(", ", folios)}" : ""));
+        }
+        await _db.SaveChangesAsync();
 
         await tx.CommitAsync();
 

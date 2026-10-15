@@ -46,6 +46,11 @@ export const consumiblesService = {
 
   getAlertas() {
     return httpClient.get<Consumible[]>('/consumibles/alertas');
+  },
+
+  /** Elimina el artículo y su historial de movimientos. Solo administradores. */
+  delete(id: number) {
+    return httpClient.delete<string>(`/consumibles/${id}`);
   }
 };
 

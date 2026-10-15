@@ -11,7 +11,9 @@ import {
   Select,
   Spinner,
   Modal,
-  ModalFooter
+  ModalFooter,
+  useConfirm,
+  useToast
 } from '@/components/ui';
 import { usuariosService } from '@/services/usuariosService';
 import { catalogosService } from '@/services/catalogosService';
@@ -25,6 +27,8 @@ const estadoOpciones = [
 ];
 
 export function UsuariosPage() {
+  const { confirmar } = useConfirm();
+  const toast = useToast();
   const { hasRole, user } = useAuth();
   const [usuarios, setUsuarios] = useState<UserList[]>([]);
   const [roles, setRoles] = useState<{ id: number; nombre: string }[]>([]);
@@ -40,6 +44,8 @@ export function UsuariosPage() {
   const [editUser, setEditUser] = useState<UserList | null>(null);
   const [saving, setSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  // Errores del formulario: se muestran dentro de la ventana, bajo cada campo
+  const [formErrors, setFormErrors] = useState<Partial<Record<'nombreCompleto' | 'username' | 'password' | 'rolId' | 'email' | 'general', string>>>({});
   const [form, setForm] = useState<Partial<UserCreateRequest & UserUpdateRequest>>({
     nombreCompleto: '',
     username: '',
@@ -120,8 +126,14 @@ export function UsuariosPage() {
   };
 
   const handleResetPassword = async (id: number) => {
-    if (!confirm('¿Estás seguro de que deseas restablecer la contraseña de este usuario?')) return;
-    
+    const ok = await confirmar({
+      titulo: 'Restablecer contraseña',
+      mensaje: 'Se generará una contraseña temporal y la actual dejará de funcionar. ¿Continuar?',
+      textoConfirmar: 'Restablecer',
+      tono: 'advertencia'
+    });
+    if (!ok) return;
+
     setAccionando(true);
     setError('');
     try {
@@ -131,19 +143,25 @@ export function UsuariosPage() {
         setTempPassword(temporal);
         setPasswordModalOpen(true);
       } else {
-        setError(res.message || 'No se pudo restablecer la contraseña');
+        toast.error(res.message || 'No se pudo restablecer la contraseña');
       }
     } catch (err) {
       console.error(err);
-      setError('Error al conectar con el servidor');
+      toast.error('Error al conectar con el servidor');
     } finally {
       setAccionando(false);
     }
   };
 
+  const campo = (nombre: keyof typeof formErrors, valor: Partial<typeof form>) => {
+    setForm((p) => ({ ...p, ...valor }));
+    if (formErrors[nombre] || formErrors.general) setFormErrors((e) => ({ ...e, [nombre]: undefined, general: undefined }));
+  };
+
   const openCreate = () => {
     setEditUser(null);
     setShowPassword(false);
+    setFormErrors({});
     setForm({
       nombreCompleto: '',
       username: '',
@@ -159,6 +177,7 @@ export function UsuariosPage() {
   const openEdit = (u: UserList) => {
     setEditUser(u);
     setShowPassword(false);
+    setFormErrors({});
     setForm({
       nombreCompleto: u.nombreCompleto,
       username: u.username,
@@ -171,22 +190,25 @@ export function UsuariosPage() {
     setModalOpen(true);
   };
 
+  const validarForm = () => {
+    const e: typeof formErrors = {};
+    if (!form.nombreCompleto?.trim()) e.nombreCompleto = 'Escribe el nombre completo.';
+    if (!editUser && !form.username?.trim()) e.username = 'Escribe el nombre de usuario.';
+    else if (!editUser && /\s/.test(form.username || '')) e.username = 'El usuario no debe llevar espacios.';
+    if (!editUser && !form.password) e.password = 'Escribe una contraseña.';
+    else if (form.password && form.password.length < 6) e.password = 'La contraseña debe tener al menos 6 caracteres.';
+    if (!form.rolId) e.rolId = 'Selecciona un rol.';
+    if (form.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) e.email = 'El correo no tiene un formato válido.';
+    return e;
+  };
+
   const handleSave = async () => {
+    const errores = validarForm();
+    setFormErrors(errores);
+    if (Object.keys(errores).length > 0) return;
+
     setSaving(true);
-    setError('');
     try {
-      if (!form.nombreCompleto || !form.username || (!editUser && !form.password)) {
-        setError('Nombre, usuario y contraseña (solo al crear) son requeridos');
-        return;
-      }
-      if (!editUser && form.password && form.password.length < 6) {
-        setError('La contrasena debe tener al menos 6 caracteres');
-        return;
-      }
-      if (editUser && form.password && form.password.length < 6) {
-        setError('La nueva contrasena debe tener al menos 6 caracteres');
-        return;
-      }
       if (editUser) {
         const payload: UserUpdateRequest = {
           nombreCompleto: form.nombreCompleto,
@@ -197,7 +219,7 @@ export function UsuariosPage() {
           password: form.password?.trim() ? form.password : undefined
         };
         const res = await usuariosService.update(editUser.id, payload);
-        if (!res.success) throw new Error(res.message || 'No se pudo actualizar');
+        if (!res.success) throw new Error(res.message || 'No se pudo actualizar el usuario');
       } else {
         const payload: UserCreateRequest = {
           nombreCompleto: form.nombreCompleto!,
@@ -210,12 +232,17 @@ export function UsuariosPage() {
           numeroEmpleado: (form as any).numeroEmpleado
         };
         const res = await usuariosService.create(payload);
-        if (!res.success) throw new Error(res.message || 'No se pudo crear');
+        if (!res.success) throw new Error(res.message || 'No se pudo crear el usuario');
       }
       setModalOpen(false);
+      toast.exito(editUser ? `Usuario ${form.nombreCompleto} actualizado` : `Usuario ${form.username} creado`);
       await loadUsuarios();
     } catch (err: any) {
-      setError(err.message || 'No se pudo guardar el usuario');
+      const msg: string = err.message || 'No se pudo guardar el usuario';
+      // "El nombre de usuario ya está en uso" va bajo su campo; lo demás arriba de la ventana
+      if (/usuario ya est/i.test(msg)) setFormErrors({ username: msg });
+      else if (/contrase/i.test(msg)) setFormErrors({ password: msg });
+      else setFormErrors({ general: msg });
     } finally {
       setSaving(false);
     }
@@ -224,10 +251,16 @@ export function UsuariosPage() {
   const handleDelete = async (id: number) => {
     if (!isAdmin) return;
     if (user?.id === id) {
-      setError('No puedes eliminar tu propio usuario.');
+      toast.error('No puedes eliminar tu propio usuario.');
       return;
     }
-    const confirmed = window.confirm('¿Estás seguro de eliminar este usuario? Esta acción no se puede deshacer.');
+    const usuario = usuarios.find((u) => u.id === id);
+    const confirmed = await confirmar({
+      titulo: 'Eliminar usuario',
+      mensaje: `¿Eliminar a ${usuario?.nombreCompleto ?? 'este usuario'}? Esta acción no se puede deshacer. Si solo quieres quitarle el acceso, usa "Desactivar".`,
+      textoConfirmar: 'Eliminar',
+      tono: 'peligro'
+    });
     if (!confirmed) return;
 
     setAccionando(true);
@@ -235,9 +268,10 @@ export function UsuariosPage() {
     try {
       const res = await usuariosService.delete(id);
       if (!res.success) throw new Error(res.message || 'No se pudo eliminar el usuario');
+      toast.exito(`Usuario ${usuario?.nombreCompleto ?? ''} eliminado`);
       await loadUsuarios();
     } catch (err: any) {
-      setError(err.message || 'No se pudo eliminar el usuario');
+      toast.error(err.message || 'No se pudo eliminar el usuario');
     } finally {
       setAccionando(false);
     }
@@ -344,31 +378,54 @@ export function UsuariosPage() {
         description="Completa los datos del usuario y asigna su rol."
       >
         <div className="space-y-3">
-          <Input label="Nombre completo" value={form.nombreCompleto || ''} onChange={(e) => setForm((p) => ({ ...p, nombreCompleto: e.target.value }))} />
-          <Input label="Usuario" value={form.username || ''} onChange={(e) => setForm((p) => ({ ...p, username: e.target.value }))} disabled={!!editUser} />
-          <div className="relative">
-            <Input
-              label={editUser ? 'Nueva contrasena (opcional)' : 'Contrasena'}
-              type={showPassword ? 'text' : 'password'}
-              value={form.password || ''}
-              onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
-              placeholder={editUser ? 'Dejar vacio para no cambiarla' : undefined}
-              className="pr-10"
-            />
-            <button
-              type="button"
-              className="absolute right-3 top-9 text-continental-gray-1 hover:text-continental-black"
-              onClick={() => setShowPassword((prev) => !prev)}
-              aria-label={showPassword ? 'Ocultar contrasena' : 'Mostrar contrasena'}
-            >
-              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
-          </div>
+          {formErrors.general && (
+            <Alert variant="destructive">
+              <AlertDescription>{formErrors.general}</AlertDescription>
+            </Alert>
+          )}
+          <Input
+            label="Nombre completo"
+            value={form.nombreCompleto || ''}
+            onChange={(e) => campo('nombreCompleto', { nombreCompleto: e.target.value })}
+            error={formErrors.nombreCompleto}
+          />
+          <Input
+            label="Usuario"
+            value={form.username || ''}
+            onChange={(e) => campo('username', { username: e.target.value })}
+            disabled={!!editUser}
+            error={formErrors.username}
+          />
+          <Input
+            label={editUser ? 'Nueva contraseña (opcional)' : 'Contraseña'}
+            type={showPassword ? 'text' : 'password'}
+            value={form.password || ''}
+            onChange={(e) => campo('password', { password: e.target.value })}
+            placeholder={editUser ? 'Déjala vacía para no cambiarla' : undefined}
+            autoComplete="new-password"
+            className="sin-ojo-nativo"
+            error={formErrors.password}
+            hint="Mínimo 6 caracteres."
+            accesorio={
+              <button
+                type="button"
+                data-icon="true"
+                className="text-continental-gray-1 hover:text-continental-black"
+                onClick={() => setShowPassword((prev) => !prev)}
+                aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                title={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            }
+          />
           <Select
             label="Rol"
             value={form.rolId ? String(form.rolId) : ''}
-            onChange={(v) => setForm((p) => ({ ...p, rolId: v ? Number(v) : undefined }))}
+            onChange={(v) => campo('rolId', { rolId: v ? Number(v) : undefined })}
             options={roles.map((r) => ({ value: String(r.id), label: r.nombre }))}
+            placeholder="Selecciona un rol"
+            error={formErrors.rolId}
           />
           <Select
             label="Area (opcional)"
@@ -376,7 +433,13 @@ export function UsuariosPage() {
             onChange={(v) => setForm((p) => ({ ...p, areaId: v ? Number(v) : undefined }))}
             options={[{ value: '', label: 'Sin area' }, ...areas.map((a) => ({ value: String(a.id), label: a.nombre }))]}
           />
-          <Input label="Email" value={form.email || ''} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} />
+          <Input
+            label="Email"
+            type="email"
+            value={form.email || ''}
+            onChange={(e) => campo('email', { email: e.target.value })}
+            error={formErrors.email}
+          />
           <Input label="Telefono" value={form.telefono || ''} onChange={(e) => setForm((p) => ({ ...p, telefono: e.target.value }))} />
         </div>
         <ModalFooter>

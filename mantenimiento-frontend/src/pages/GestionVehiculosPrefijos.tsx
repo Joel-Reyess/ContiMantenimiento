@@ -1,10 +1,9 @@
 ﻿import { useEffect, useState } from 'react';
-import { Settings, Plus, Loader2, RefreshCcw, ToggleLeft, ToggleRight, Package } from 'lucide-react';
+import { Settings, Plus, Loader2, RefreshCcw, Package } from 'lucide-react';
 import {
   Alert,
   AlertDescription,
   AlertTitle,
-  Badge,
   Button,
   Card,
   Input,
@@ -12,7 +11,9 @@ import {
   ModalFooter,
   Spinner,
   Textarea,
-  Select
+  Select,
+  useConfirm,
+  useToast
 } from '@/components/ui';
 import { catalogosService, vehiculoPrefijoConfigsService } from '@/services';
 import type { VehiculoPrefijoConfig } from '@/interfaces';
@@ -24,6 +25,8 @@ interface CrearPrefijoForm {
 }
 
 export function GestionVehiculosPrefijosPage() {
+  const { confirmar } = useConfirm();
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState<'prefijos'>('prefijos');
   const [prefijos, setPrefijos] = useState<VehiculoPrefijoConfig[]>([]);
   const [tiposVehiculo, setTiposVehiculo] = useState<{ id: number; nombre: string }[]>([]);
@@ -52,10 +55,12 @@ export function GestionVehiculosPrefijosPage() {
     setLoading(true);
     setError('');
     try {
-      // Se limita a 10 resultados por página para mejorar el rendimiento
-      const res = await vehiculoPrefijoConfigsService.getAll({ 
+      // Solo activos: "Desactivar" ya no existe (requerimiento 14.2) y los inactivos que quedan son los que
+      // antes "eliminaba" la versión vieja. Sin paginación en pantalla, así que se traen todos (antes solo 10).
+      const res = await vehiculoPrefijoConfigsService.getAll({
         busqueda: debouncedFiltro,
-        pageSize: 10
+        activo: true,
+        pageSize: 1000
       });
       if (res.success && res.data) {
         setPrefijos(res.data.items || []);
@@ -99,9 +104,15 @@ export function GestionVehiculosPrefijosPage() {
     loadTiposVehiculo();
   }, []);
 
+  // Errores de los formularios: dentro de la ventana activa, no detrás
+  const [formError, setFormError] = useState('');
+  useEffect(() => {
+    if (crearOpen || editarOpen) setFormError('');
+  }, [crearOpen, editarOpen]);
+
   const handleCreate = async () => {
     setCreando(true);
-    setError('');
+    setFormError('');
     try {
       const payload = {
         prefijoCodigo: form.prefijoCodigo.trim(),
@@ -112,14 +123,15 @@ export function GestionVehiculosPrefijosPage() {
       const res = await vehiculoPrefijoConfigsService.create(payload);
       if (res.success) {
         setCrearOpen(false);
+        toast.exito(`Prefijo ${payload.prefijoCodigo} creado`);
         setForm({ prefijoCodigo: '', tipoVehiculoId: 0 });
         loadPrefijos();
       } else {
-        setError(res.message || 'No se pudo crear el prefijo');
+        setFormError(res.message || 'No se pudo crear el prefijo');
       }
     } catch (err) {
       console.error(err);
-      setError('Error al crear el prefijo');
+      setFormError('Error al crear el prefijo');
     } finally {
       setCreando(false);
     }
@@ -128,21 +140,22 @@ export function GestionVehiculosPrefijosPage() {
   const handleUpdate = async () => {
     if (!prefijoEdit) return;
     setEditando(true);
-    setError('');
+    setFormError('');
     try {
       const payload = {
         prefijoCodigo: prefijoEdit.prefijoCodigo.trim(),
         tipoVehiculoId: prefijoEdit.tipoVehiculoId,
         descripcion: prefijoEdit.descripcion?.trim(),
-        activo: prefijoEdit.activo
+        activo: true
       };
       const res = await vehiculoPrefijoConfigsService.update(prefijoEdit.id, payload);
       if (res.success) {
         setEditarOpen(false);
         setPrefijoEdit(null);
+        toast.exito(`Prefijo ${payload.prefijoCodigo} actualizado`);
         loadPrefijos();
       } else {
-        setError(res.message || 'No se pudo actualizar el prefijo');
+        setFormError(res.message || 'No se pudo actualizar el prefijo');
       }
     } catch (err) {
       console.error(err);
@@ -152,36 +165,25 @@ export function GestionVehiculosPrefijosPage() {
     }
   };
 
-  const toggleActivo = async (prefijo: VehiculoPrefijoConfig) => {
-    setAccionando(true);
-    setError('');
-    try {
-      await vehiculoPrefijoConfigsService.update(prefijo.id, { activo: !prefijo.activo });
-      loadPrefijos();
-    } catch (err) {
-      console.error(err);
-      setError('No se pudo actualizar el estado del prefijo');
-    } finally {
-      setAccionando(false);
-    }
-  };
-
   const handleEliminar = async (id: number) => {
-    if (
-      !window.confirm(
-        '¿Eliminar definitivamente este prefijo? Se borrará del sistema y no se puede deshacer.\n\n' +
-          'Si solo quieres dejar de usarlo temporalmente, cancela y usa "Desactivar".'
-      )
-    )
-      return;
+    const prefijo = prefijos.find((p) => p.id === id);
+    const ok = await confirmar({
+      titulo: 'Eliminar prefijo',
+      mensaje: `¿Eliminar el prefijo "${prefijo?.prefijoCodigo ?? id}"? Los vehículos con ese prefijo ya no se detectarán automáticamente. Esta acción no se puede deshacer.`,
+      textoConfirmar: 'Eliminar',
+      tono: 'peligro'
+    });
+    if (!ok) return;
     setAccionando(true);
     setError('');
     try {
-      await vehiculoPrefijoConfigsService.delete(id);
+      const res = await vehiculoPrefijoConfigsService.delete(id);
+      if (res.success === false) toast.error(res.message || 'No se pudo eliminar el prefijo');
+      else toast.exito(`Prefijo ${prefijo?.prefijoCodigo ?? ''} eliminado`);
       loadPrefijos();
     } catch (err) {
       console.error(err);
-      setError('No se pudo eliminar el prefijo');
+      toast.error('No se pudo eliminar el prefijo');
     } finally {
       setAccionando(false);
     }
@@ -277,22 +279,11 @@ export function GestionVehiculosPrefijosPage() {
                       </div>
                     </div>
                     <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:justify-end">
-                      <Badge variant={prefijo.activo ? 'default' : 'outline'}>{prefijo.activo ? 'Activo' : 'Inactivo'}</Badge>
                       <Button size="sm" variant="outline" onClick={() => {
                         setPrefijoEdit(prefijo);
                         setEditarOpen(true);
                       }} disabled={accionando}>
                         Editar
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={accionando}
-                        onClick={() => toggleActivo(prefijo)}
-                        className="flex items-center gap-1 px-2 text-xs"
-                      >
-                        {prefijo.activo ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
-                        {prefijo.activo ? 'Desactivar' : 'Activar'}
                       </Button>
                     </div>
                   </div>
@@ -329,6 +320,9 @@ export function GestionVehiculosPrefijosPage() {
             onChange={(e) => setForm((prev) => ({ ...prev, descripcion: e.target.value }))}
           />
         </div>
+        {formError && (
+          <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formError}</p>
+        )}
         <ModalFooter>
           <Button variant="outline" onClick={() => setCrearOpen(false)}>
             Cancelar
@@ -365,6 +359,9 @@ export function GestionVehiculosPrefijosPage() {
               onChange={(e) => setPrefijoEdit((prev) => ({ ...prev!, descripcion: e.target.value }))}
             />
           </div>
+        )}
+        {formError && (
+          <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formError}</p>
         )}
         <ModalFooter>
           <Button variant="outline" onClick={() => {

@@ -38,7 +38,7 @@ interface AlertProps
 }
 
 const Alert = React.forwardRef<HTMLDivElement, AlertProps>(
-  ({ className, variant = 'default', children, onClose, ...props }, ref) => {
+  ({ className, variant = 'default', children, onClose, style, ...props }, ref) => {
     const Icon = icons[variant || 'default'];
 
     return (
@@ -46,6 +46,8 @@ const Alert = React.forwardRef<HTMLDivElement, AlertProps>(
         ref={ref}
         role="alert"
         className={cn(alertVariants({ variant }), className)}
+        // En línea porque `* { padding: 0 }` de index.css gana a las clases p-* de Tailwind
+        style={{ padding: onClose ? '14px 44px 14px 18px' : '14px 18px', ...style }}
         {...props}
       >
         <Icon className="h-5 w-5 shrink-0 mt-0.5" />

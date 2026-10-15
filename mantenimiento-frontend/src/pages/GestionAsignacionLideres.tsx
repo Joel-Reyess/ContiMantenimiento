@@ -9,7 +9,9 @@ import {
   Modal,
   ModalFooter,
   Spinner,
-  Select
+  Select,
+  useConfirm,
+  useToast
 } from '@/components/ui';
 import { usuariosService, asignacionesService, catalogosService } from '@/services';
 import type { LiderTipoVehiculoAsignacionDto, UserList } from '@/interfaces';
@@ -31,6 +33,8 @@ const matchesRole = (rolNombre: string | undefined, role: RoleKey) => {
 };
 
 export function GestionAsignacionLideresPage() {
+  const { confirmar } = useConfirm();
+  const toast = useToast();
   const [asignaciones, setAsignaciones] = useState<LiderTipoVehiculoAsignacionDto[]>([]);
   const [lideres, setLideres] = useState<UserList[]>([]);
   const [supervisores, setSupervisores] = useState<UserList[]>([]);
@@ -204,13 +208,25 @@ export function GestionAsignacionLideresPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Estas seguro de eliminar esta asignacion?')) return;
+    const ok = await confirmar({
+      titulo: 'Eliminar asignación',
+      mensaje: '¿Eliminar esta asignación de tipo de vehículo? El líder dejará de ver esos vehículos.',
+      textoConfirmar: 'Eliminar',
+      tono: 'peligro'
+    });
+    if (!ok) return;
     setAccionando(true);
     try {
-      await asignacionesService.delete(id);
+      const res = await asignacionesService.delete(id);
+      if (res.success === false) {
+        toast.error(res.message || 'No se pudo eliminar la asignación');
+      } else {
+        toast.exito('Asignación eliminada');
+      }
       loadData();
     } catch (err) {
-      setError('Error al eliminar');
+      console.error(err);
+      toast.error('Error al eliminar la asignación');
     } finally {
       setAccionando(false);
     }

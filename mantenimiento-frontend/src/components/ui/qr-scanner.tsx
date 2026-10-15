@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { useConfirm } from './confirm-dialog';
 import { Camera, ScanLine, Upload, X } from 'lucide-react';
 import { Button } from './button';
 
@@ -8,6 +9,7 @@ interface QrScannerButtonProps {
 }
 
 export function QrScannerButton({ onResult, className }: QrScannerButtonProps) {
+  const { pedirTexto } = useConfirm();
   const [scanning, setScanning] = useState(false);
   const [previewActive, setPreviewActive] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -25,7 +27,13 @@ export function QrScannerButton({ onResult, className }: QrScannerButtonProps) {
   };
 
   const handleManual = async () => {
-    const code = window.prompt('Ingresa el codigo del vehiculo (desde QR):');
+    const code = await pedirTexto({
+      titulo: 'Capturar código',
+      etiqueta: 'Código del vehículo (el que aparece en el QR)',
+      placeholder: 'Ej. 916100000100',
+      requerido: true,
+      textoConfirmar: 'Continuar'
+    });
     if (code) {
       await onResult(code.trim());
     }

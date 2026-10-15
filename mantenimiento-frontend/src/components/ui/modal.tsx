@@ -11,6 +11,13 @@ interface ModalProps {
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
 }
 
+// index.css tiene `* { padding: 0 }` sin capa, que gana a las clases px-*/py-* de Tailwind:
+// por eso los espacios internos de la ventana van en línea. El de la derecha del encabezado
+// deja lugar al botón de cerrar.
+const espacioEncabezado: React.CSSProperties = { padding: '20px 84px 20px 24px' };
+const espacioCuerpo: React.CSSProperties = { padding: '20px 24px 24px' };
+const espacioPie: React.CSSProperties = { padding: '16px 24px' };
+
 const sizeClasses = {
   sm: 'max-w-md',
   md: 'max-w-lg',
@@ -65,6 +72,7 @@ export function Modal({
           <div className="border-b bg-gradient-to-r from-white to-continental-gray-4/30">
             <div
               className="relative flex w-full items-start justify-between gap-4 px-5 py-6 sm:px-12 md:px-14"
+              style={espacioEncabezado}
             >
               <div className="space-y-1">
                 {title && <h2 className="text-xl font-semibold text-continental-black">{title}</h2>}
@@ -83,7 +91,7 @@ export function Modal({
 
         {/* Body */}
         <div className="flex-1 overflow-auto bg-white flex justify-center">
-          <div className="w-full max-w-2xl px-4 py-6 sm:px-12 sm:py-10 md:px-14 space-y-6">
+          <div className="w-full max-w-2xl px-4 py-6 sm:px-12 sm:py-10 md:px-14 space-y-6" style={espacioCuerpo}>
             {children}
           </div>
         </div>
@@ -105,7 +113,10 @@ export function ModalFooter({ children, className }: ModalFooterProps) {
         className
       )}
     >
-      <div className="mx-auto flex w-full max-w-2xl flex-col items-start justify-between gap-4 px-8 py-6 sm:flex-row sm:items-center sm:justify-end sm:px-10 sm:py-6">
+      <div
+        className="mx-auto flex w-full max-w-2xl flex-col items-start justify-between gap-4 px-8 py-6 sm:flex-row sm:items-center sm:justify-end sm:px-10 sm:py-6"
+        style={espacioPie}
+      >
         {children}
       </div>
     </div>

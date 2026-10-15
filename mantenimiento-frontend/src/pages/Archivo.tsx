@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Card, Input, Button, Spinner, Alert, AlertTitle, AlertDescription, Modal, ModalFooter, Textarea, Select, SearchableSelect, type SearchableSelectOption, Badge } from '@/components/ui';
+import { Card, Input, Button, Spinner, Alert, AlertTitle, AlertDescription, Modal, ModalFooter, Textarea, Select, SearchableSelect, type SearchableSelectOption, Badge, useConfirm, useToast } from '@/components/ui';
 import { vehiculosService } from '@/services/vehiculosService';
 import { vehiculoDocumentosService, type VehiculoDocumento } from '@/services/vehiculoDocumentosService';
 import { solicitudCambioService, type SolicitudCambio } from '@/services/solicitudCambioService';
@@ -9,6 +9,8 @@ import { useMemo } from 'react';
 import { useAllowedTipoVehiculo } from '@/hooks/useAllowedTipoVehiculo';
 
 export function ArchivoPage() {
+  const { confirmar, pedirTexto } = useConfirm();
+  const toast = useToast();
   const [vehiculos, setVehiculos] = useState<VehiculoList[]>([]);
   const [vehiculoSeleccionado, setVehiculoSeleccionado] = useState<SearchableSelectOption | null>(null);
   const [docs, setDocs] = useState<VehiculoDocumento[]>([]);
@@ -168,8 +170,14 @@ export function ArchivoPage() {
   };
 
   const handleResponderCambio = async (id: number, aprobado: boolean) => {
-    const comentarios = window.prompt(aprobado ? 'Comentarios de aprobación (opcional):' : 'Motivo del rechazo (obligatorio):');
-    if (!aprobado && !comentarios) return;
+    const comentarios = await pedirTexto({
+      titulo: aprobado ? 'Aprobar solicitud de cambio' : 'Rechazar solicitud de cambio',
+      etiqueta: aprobado ? 'Comentarios de aprobación (opcional)' : 'Motivo del rechazo',
+      requerido: !aprobado,
+      textoConfirmar: aprobado ? 'Aprobar' : 'Rechazar',
+      tono: aprobado ? 'info' : 'peligro'
+    });
+    if (comentarios === null) return;
 
     setProcessingCambioId(id);
     setError('');
@@ -180,13 +188,14 @@ export function ArchivoPage() {
         comentarios: comentarios || undefined
       });
       if (res.success) {
+        toast.exito(aprobado ? 'Solicitud de cambio aprobada' : 'Solicitud de cambio rechazada');
         loadDocs(vehiculoId);
       } else {
-        setError(res.message || 'Error al responder solicitud');
+        toast.error(res.message || 'Error al responder solicitud');
       }
     } catch (err) {
       console.error(err);
-      setError('Error al responder solicitud');
+      toast.error('Error al responder solicitud');
     } finally {
       setProcessingCambioId(null);
     }
@@ -194,7 +203,22 @@ export function ArchivoPage() {
 
   const handleDelete = async (id: number) => {
     if (!vehiculoId) return;
-    await vehiculoDocumentosService.delete(vehiculoId, id);
+    const doc = docs.find((d) => d.id === id);
+    const ok = await confirmar({
+      titulo: 'Eliminar documento',
+      mensaje: `¿Eliminar "${doc?.nombre ?? 'este documento'}" del archivo técnico? Esta acción no se puede deshacer.`,
+      textoConfirmar: 'Eliminar',
+      tono: 'peligro'
+    });
+    if (!ok) return;
+    try {
+      const res = await vehiculoDocumentosService.delete(vehiculoId, id);
+      if (res.success === false) toast.error(res.message || 'No se pudo eliminar el documento');
+      else toast.exito('Documento eliminado');
+    } catch (err) {
+      console.error(err);
+      toast.error('No se pudo eliminar el documento');
+    }
     loadDocs(vehiculoId);
   };
 

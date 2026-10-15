@@ -1540,7 +1540,8 @@ SELECT 'Tabla ' + t.n AS Objeto,
 FROM (VALUES ('OrdenesTrabajoChecklistItems'), ('ReportesFallaChecklistItems'),
              ('VehiculoPrefijoConfigs'), ('LiderTipoVehiculoAsignaciones'),
              ('ImageFaults'), ('VehicleImagePoints'), ('ReportImageFaults'),
-             ('MetasTecnico'), ('SolicitudesActividadAdicional'), ('SolicitudCambios')) t(n)
+             ('MetasTecnico'), ('SolicitudesActividadAdicional'), ('SolicitudCambios'),
+             ('LogAcciones')) t(n)
 UNION ALL
 SELECT 'Columna ' + c.t + '.' + c.n,
        CASE WHEN COL_LENGTH('dbo.' + c.t, c.n) IS NULL THEN '*** FALTA ***' ELSE 'OK' END

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Loader2, Plus, RefreshCcw, Trash2 } from 'lucide-react';
-import { Button, Card, Input, Select } from '@/components/ui';
+import { Button, Card, Input, Select, useConfirm, useToast } from '@/components/ui';
 import { InteractiveVehicleImage } from '@/components/vehiculos/InteractiveVehicleImage';
 import { catalogosService, imageFaultsService, vehicleImagePointsService } from '@/services';
 import type {
@@ -19,6 +19,8 @@ const DEFAULT_RADIUS = 1.8;
 type TabType = 'catalogo' | 'hotspots';
 
 export function FallasImagenPage() {
+  const { confirmar } = useConfirm();
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState<TabType>('catalogo');
   const [tiposVehiculo, setTiposVehiculo] = useState<TipoVehiculoItem[]>([]);
   const [imageFaults, setImageFaults] = useState<ImageFault[]>([]);
@@ -32,6 +34,9 @@ export function FallasImagenPage() {
 
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  // Resultado del editor de puntos: se muestra junto al botón de guardar, donde el usuario está trabajando (13.1)
+  const [pointMsg, setPointMsg] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null);
+  const savingPointRef = useRef(false);
 
   const [selectedTipoVehiculoId, setSelectedTipoVehiculoId] = useState('');
   const [imageKey, setImageKey] = useState('');
@@ -151,11 +156,12 @@ export function FallasImagenPage() {
           id: editingFaultId,
           name: faultName.trim(),
           description: faultDescription.trim() || undefined,
-          active: imageFaults.find((f) => f.id === editingFaultId)?.active ?? true,
+          // "Desactivar" se quitó (13.1.1): al guardar, una falla que estaba oculta vuelve a estar disponible
+          active: true,
         };
         const res = await imageFaultsService.update(payload);
         if (!res.success) throw new Error(res.message || 'No se pudo actualizar la falla.');
-        setMessage('Falla de imagen actualizada.');
+        toast.exito('Falla de imagen actualizada');
       } else {
         const payload: ImageFaultCreateRequest = {
           name: faultName.trim(),
@@ -164,7 +170,7 @@ export function FallasImagenPage() {
         };
         const res = await imageFaultsService.create(payload);
         if (!res.success) throw new Error(res.message || 'No se pudo crear la falla.');
-        setMessage('Falla de imagen creada.');
+        toast.exito('Falla de imagen creada');
       }
       resetFaultForm();
       const faultsRes = await imageFaultsService.getAll(false);
@@ -176,30 +182,20 @@ export function FallasImagenPage() {
     }
   };
 
-  const toggleFaultActive = async (fault: ImageFault) => {
-    const payload: ImageFaultUpdateRequest = {
-      id: fault.id,
-      name: fault.name,
-      description: fault.description,
-      active: !fault.active,
-    };
-    const res = await imageFaultsService.update(payload);
-    if (!res.success) {
-      setError(res.message || 'No se pudo cambiar el estado de la falla.');
-      return;
-    }
-    const faultsRes = await imageFaultsService.getAll(false);
-    if (faultsRes.success && faultsRes.data) setImageFaults(faultsRes.data);
-  };
-
   const handleDeleteFault = async (fault: ImageFault) => {
-    if (!window.confirm(`¿Eliminar la falla "${fault.name}"?`)) return;
+    const ok = await confirmar({
+      titulo: 'Eliminar falla',
+      mensaje: `¿Eliminar la falla "${fault.name}" del catálogo? También se eliminarán sus puntos en las imágenes. Si ya se usó en reportes no se podrá eliminar (para conservar el historial).`,
+      textoConfirmar: 'Eliminar',
+      tono: 'peligro'
+    });
+    if (!ok) return;
     const res = await imageFaultsService.delete(fault.id);
     if (!res.success) {
-      setError(res.message || 'No se pudo eliminar la falla.');
+      toast.error(res.message || 'No se pudo eliminar la falla.');
       return;
     }
-    setMessage('Falla eliminada.');
+    toast.exito(`Falla "${fault.name}" eliminada`);
     const faultsRes = await imageFaultsService.getAll(false);
     if (faultsRes.success && faultsRes.data) setImageFaults(faultsRes.data);
   };
@@ -236,12 +232,14 @@ export function FallasImagenPage() {
   };
 
   const handleSavePoint = async () => {
+    if (savingPointRef.current) return;
+    setPointMsg(null);
     if (!imageKey.trim()) {
-      setError('El ImageKey es obligatorio.');
+      setPointMsg({ tipo: 'error', texto: 'Selecciona el tipo de vehículo.' });
       return;
     }
     if (!selectedFaultId) {
-      setError('Selecciona una falla para guardar el punto.');
+      setPointMsg({ tipo: 'error', texto: 'Selecciona la falla asociada al punto.' });
       return;
     }
 
@@ -249,10 +247,34 @@ export function FallasImagenPage() {
     const y = parsePct(draftYPct);
     const r = parsePct(draftRadiusPct || String(DEFAULT_RADIUS));
     if (x === null || y === null || r === null) {
-      setError('Coordenadas inválidas. Usa valores entre 0 y 100.');
+      setPointMsg({ tipo: 'error', texto: 'Haz clic en la imagen para colocar el punto (o escribe X, Y y radio entre 0 y 100).' });
       return;
     }
 
+    // Duplicados y superposición con los puntos ya guardados en esta imagen (13.1)
+    const otros = vehicleImagePoints.filter((p) => p.id !== editingPointId);
+    const mismaFalla = otros.filter((p) => p.imageFaultId === Number(selectedFaultId));
+    const encimados = otros.filter(
+      (p) => Math.hypot(p.xPct - x, p.yPct - y) < r + (p.radiusPct ?? DEFAULT_RADIUS)
+    );
+    if (mismaFalla.length > 0 || encimados.length > 0) {
+      const nombre = (p: VehicleImagePoint) => p.imageFaultName || `Falla #${p.imageFaultId}`;
+      const ok = await confirmar({
+        titulo: 'Revisa el punto antes de guardar',
+        mensaje: (
+          <div className="space-y-2">
+            {mismaFalla.length > 0 && <p>Esta falla ya tiene {mismaFalla.length} punto(s) en la imagen.</p>}
+            {encimados.length > 0 && <p>El punto se encima con: {encimados.map(nombre).join(', ')}.</p>}
+            <p>¿Guardarlo de todos modos?</p>
+          </div>
+        ),
+        textoConfirmar: 'Guardar de todos modos',
+        tono: 'advertencia'
+      });
+      if (!ok) return;
+    }
+
+    savingPointRef.current = true;
     setSavingPoint(true);
     setError('');
     setMessage('');
@@ -266,11 +288,14 @@ export function FallasImagenPage() {
           yPct: y,
           radiusPct: r,
           imageFaultId: Number(selectedFaultId),
-          active: current?.active ?? true,
+          // Sin "Desactivar" (13.1.1): al guardar, un punto que estaba oculto vuelve a mostrarse en los reportes
+          active: true,
         };
+        if (!current) throw new Error('El punto que estabas editando ya no existe.');
         const res = await vehicleImagePointsService.update(payload);
         if (!res.success) throw new Error(res.message || 'No se pudo actualizar el punto.');
-        setMessage('Punto actualizado.');
+        setPointMsg({ tipo: 'ok', texto: 'Punto actualizado correctamente.' });
+        toast.exito('Punto actualizado');
       } else {
         const payload: VehicleImagePointCreateRequest = {
           imageKey: imageKey.trim(),
@@ -282,42 +307,36 @@ export function FallasImagenPage() {
         };
         const res = await vehicleImagePointsService.create(payload);
         if (!res.success) throw new Error(res.message || 'No se pudo crear el punto.');
-        setMessage('Punto creado.');
+        setPointMsg({ tipo: 'ok', texto: 'Punto guardado correctamente.' });
+        toast.exito('Punto guardado');
       }
       resetPointDraft();
       await loadPoints(imageKey.trim());
     } catch (err: any) {
-      setError(err.message || 'Error al guardar el punto.');
+      setPointMsg({ tipo: 'error', texto: err.message || 'Error al guardar el punto.' });
     } finally {
+      savingPointRef.current = false;
       setSavingPoint(false);
     }
   };
 
-  const togglePointActive = async (point: VehicleImagePoint) => {
-    const payload: VehicleImagePointUpdateRequest = {
-      id: point.id,
-      imageKey: point.imageKey,
-      xPct: point.xPct,
-      yPct: point.yPct,
-      radiusPct: point.radiusPct,
-      imageFaultId: point.imageFaultId,
-      active: !point.active,
-    };
-    const res = await vehicleImagePointsService.update(payload);
-    if (!res.success) {
-      setError(res.message || 'No se pudo cambiar estado del punto.');
-      return;
-    }
-    await loadPoints(point.imageKey);
-  };
-
   const handleDeletePoint = async (point: VehicleImagePoint) => {
-    if (!window.confirm(`¿Eliminar el punto #${point.id}?`)) return;
+    const ok = await confirmar({
+      titulo: 'Eliminar punto',
+      mensaje: `¿Eliminar el punto de "${point.imageFaultName || `Falla #${point.imageFaultId}`}" de la imagen? Esta acción no se puede deshacer.`,
+      textoConfirmar: 'Eliminar',
+      tono: 'peligro'
+    });
+    if (!ok) return;
     const res = await vehicleImagePointsService.delete(point.id);
     if (!res.success) {
-      setError(res.message || 'No se pudo eliminar el punto.');
+      setPointMsg({ tipo: 'error', texto: res.message || 'No se pudo eliminar el punto.' });
+      toast.error(res.message || 'No se pudo eliminar el punto.');
       return;
     }
+    if (editingPointId === point.id) resetPointDraft();
+    setPointMsg({ tipo: 'ok', texto: 'Punto eliminado.' });
+    toast.exito('Punto eliminado');
     await loadPoints(point.imageKey);
   };
 
@@ -431,9 +450,9 @@ export function FallasImagenPage() {
                       <div>
                         <p className="font-medium text-continental-black">{fault.name}</p>
                         <p className="text-xs text-continental-gray-1">{fault.description || 'Sin descripción'}</p>
-                        <p className="text-xs mt-1">
-                          Estado: <span className={fault.active ? 'text-green-700' : 'text-gray-500'}>{fault.active ? 'Activo' : 'Inactivo'}</span>
-                        </p>
+                        {!fault.active && (
+                          <p className="text-xs mt-1 text-amber-700">Oculta en reportes (desactivada antes). Edítala y guarda para mostrarla, o elimínala.</p>
+                        )}
                       </div>
                       <div className="flex gap-1">
                         <Button
@@ -447,10 +466,13 @@ export function FallasImagenPage() {
                         >
                           Editar
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => void toggleFaultActive(fault)}>
-                          {fault.active ? 'Desactivar' : 'Activar'}
-                        </Button>
-                        <Button size="sm" variant="destructive" onClick={() => void handleDeleteFault(fault)}>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          aria-label={`Eliminar falla ${fault.name}`}
+                          title="Eliminar falla"
+                          onClick={() => void handleDeleteFault(fault)}
+                        >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -549,13 +571,28 @@ export function FallasImagenPage() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={resetPointDraft}
+                      onClick={() => {
+                        resetPointDraft();
+                        setPointMsg(null);
+                      }}
                       className="!min-h-10 px-4 py-2 w-full sm:w-auto"
                     >
                       Limpiar
                     </Button>
                   </div>
                 </div>
+
+                {pointMsg && (
+                  <div
+                    role={pointMsg.tipo === 'error' ? 'alert' : 'status'}
+                    className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${
+                      pointMsg.tipo === 'ok' ? 'border-green-200 bg-green-50 text-green-800' : 'border-red-200 bg-red-50 text-red-700'
+                    }`}
+                  >
+                    {pointMsg.tipo === 'error' && <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />}
+                    <span>{pointMsg.texto}</span>
+                  </div>
+                )}
 
                 <div className="rounded-lg border">
                   <div className="flex items-center justify-between border-b px-3 py-2">
@@ -571,7 +608,8 @@ export function FallasImagenPage() {
                           <div>
                             <p className="font-medium text-continental-black">{point.imageFaultName || `Falla #${point.imageFaultId}`}</p>
                             <p className="text-xs text-continental-gray-1">
-                              X: {point.xPct}% · Y: {point.yPct}% · R: {point.radiusPct ?? DEFAULT_RADIUS}% · {point.active ? 'Activo' : 'Inactivo'}
+                              X: {point.xPct}% · Y: {point.yPct}% · R: {point.radiusPct ?? DEFAULT_RADIUS}%
+                              {!point.active && <span className="text-amber-700"> · Oculto (edítalo y guarda para mostrarlo)</span>}
                             </p>
                           </div>
                           <div className="flex gap-1">
@@ -588,10 +626,13 @@ export function FallasImagenPage() {
                             >
                               Editar
                             </Button>
-                            <Button size="sm" variant="outline" onClick={() => void togglePointActive(point)}>
-                              {point.active ? 'Desactivar' : 'Activar'}
-                            </Button>
-                            <Button size="sm" variant="destructive" onClick={() => void handleDeletePoint(point)}>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              aria-label={`Eliminar punto ${point.id}`}
+                              title="Eliminar punto"
+                              onClick={() => void handleDeletePoint(point)}
+                            >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>

@@ -16,7 +16,7 @@ export interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectE
 }
 
 const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
-  ({ className, options, label, error, placeholder, onChange, id, ...props }, ref) => {
+  ({ className, options, label, error, placeholder, onChange, id, style, ...props }, ref) => {
     const selectId = id || React.useId();
 
     const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -41,6 +41,7 @@ const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
               error && 'border-red-500 focus-visible:ring-red-500',
               className
             )}
+            style={error ? { borderColor: '#ef4444', ...style } : style}
             ref={ref}
             onChange={handleChange}
             {...props}
@@ -59,7 +60,7 @@ const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
           <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 opacity-50 pointer-events-none" />
         </div>
         {error && (
-          <p className="mt-1 text-xs text-red-500">{error}</p>
+          <p className="text-xs font-medium" style={{ color: '#dc2626', marginTop: 4, marginBottom: 0 }}>{error}</p>
         )}
       </div>
     );

@@ -207,6 +207,11 @@ public class UsuariosController : ControllerBase
                 .Where(n => n.UsuarioId == id)
                 .ExecuteDeleteAsync();
 
+            // La bitácora se conserva (guarda el nombre); solo se suelta la referencia al usuario
+            await _db.LogAcciones
+                .Where(l => l.UsuarioId == id)
+                .ExecuteUpdateAsync(s => s.SetProperty(l => l.UsuarioId, (int?)null));
+
             // Limpiar relaciones many-to-many para evitar restricciones en UserRoles.
             user.Roles.Clear();
             _db.Users.Remove(user);

@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { tecnicoKPIsService, TecnicoKpi } from '@/services/tecnicoKPIsService';
-import { Card, Button, Input, Badge, Spinner, Alert, AlertDescription, Modal } from '@/components/ui';
+import { Card, Button, Input, Badge, Spinner, Alert, AlertDescription, Modal, useToast } from '@/components/ui';
 import { Users, Target, Clock, CheckCircle, AlertTriangle, Info } from 'lucide-react';
 import { formatDateTime } from '@/lib/utils';
 
 export function TechniciansTab() {
+  const toast = useToast();
   const [kpis, setKpis] = useState<TecnicoKpi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -54,9 +55,12 @@ export function TechniciansTab() {
         setSuccessMsg('Meta actualizada');
         setTimeout(() => setSuccessMsg(''), 3000);
         await loadKPIs();
+      } else {
+        toast.error(res.message || 'No se pudo actualizar la meta');
       }
     } catch (err) {
-      alert('Error al actualizar meta');
+      console.error(err);
+      toast.error('Error al actualizar la meta');
     } finally {
       setUpdatingId(null);
     }

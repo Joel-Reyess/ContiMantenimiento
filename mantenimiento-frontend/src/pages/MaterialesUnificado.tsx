@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Package, Plus, CheckCircle, XCircle, Loader2, RefreshCcw, Search, AlertTriangle, Warehouse, Check, Download, Upload } from 'lucide-react';
+import { Package, Plus, CheckCircle, XCircle, Loader2, RefreshCcw, Search, AlertTriangle, Warehouse, Check, Download, Upload, Trash2 } from 'lucide-react';
 import {
   Alert,
   AlertDescription,
@@ -14,7 +14,9 @@ import {
   type SearchableSelectOption,
   Select,
   Spinner,
-  Textarea
+  Textarea,
+  useConfirm,
+  useToast
 } from '@/components/ui';
 import { refaccionesService } from '@/services/refaccionesService';
 import { ordenesService } from '@/services/ordenesService';
@@ -66,6 +68,8 @@ type OrdenOption = SearchableSelectOption<{
 type RefaccionStockOption = SearchableSelectOption<{ costo?: number; codigo?: string; stock?: number }>;
 
 export function MaterialesUnificadoPage() {
+  const { confirmar, pedirTexto } = useConfirm();
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState<TabType>('stock');
   const [tipoFiltro, setTipoFiltro] = useState<TipoFiltro>('todos');
 
@@ -331,11 +335,14 @@ export function MaterialesUnificadoPage() {
     }
   };
 
-  const doAccion = async (fn: () => Promise<unknown>) => {
+  /** Ejecuta la acción y avisa éxito o error (antes el error de la API se ignoraba) */
+  const doAccion = async (fn: () => Promise<unknown>, mensajeExito: string) => {
     setAccionando(true);
     setErrorSolicitudes('');
     try {
-      await fn();
+      const res = (await fn()) as { success?: boolean; message?: string } | undefined;
+      if (res && res.success === false) toast.error(res.message || 'No se pudo completar la acción');
+      else toast.exito(mensajeExito);
       await loadRefacciones();
     } catch (err) {
       console.error(err);
@@ -345,13 +352,38 @@ export function MaterialesUnificadoPage() {
     }
   };
 
-  const handleAprobar = (id: number) => doAccion(() => refaccionesService.aprobar(id, undefined));
-  const handleRechazar = (id: number) => {
-    const motivo = window.prompt('Motivo de rechazo:');
-    if (!motivo) return;
-    doAccion(() => refaccionesService.rechazar(id, motivo));
+  const eliminarConsumible = async (c: Consumible) => {
+    const ok = await confirmar({
+      titulo: `Eliminar ${c.codigo}`,
+      mensaje: `¿Eliminar "${c.nombre}" del inventario? También se borrará su historial de movimientos. Esta acción no se puede deshacer.`,
+      textoConfirmar: 'Eliminar',
+      tono: 'peligro'
+    });
+    if (!ok) return;
+    try {
+      const res = await consumiblesService.delete(c.id);
+      if (res.success === false) toast.error(res.message || 'No se pudo eliminar el artículo');
+      else toast.exito(res.message || `Artículo ${c.codigo} eliminado`);
+      loadStock();
+    } catch (err) {
+      console.error(err);
+      toast.error('No se pudo eliminar el artículo');
+    }
   };
-  const handleEntregar = (id: number) => doAccion(() => refaccionesService.marcarEntregada(id));
+
+  const handleAprobar = (id: number) => doAccion(() => refaccionesService.aprobar(id, undefined), 'Solicitud aprobada');
+  const handleRechazar = async (id: number) => {
+    const motivo = await pedirTexto({
+      titulo: 'Rechazar solicitud de refacción',
+      etiqueta: 'Motivo de rechazo',
+      requerido: true,
+      textoConfirmar: 'Rechazar',
+      tono: 'peligro'
+    });
+    if (!motivo) return;
+    doAccion(() => refaccionesService.rechazar(id, motivo), 'Solicitud rechazada');
+  };
+  const handleEntregar = (id: number) => doAccion(() => refaccionesService.marcarEntregada(id), 'Marcada como entregada');
 
   const badgeVariant = (estado: string) => {
     if (estado.toLowerCase().includes('pend')) return 'outline';
@@ -522,9 +554,22 @@ export function MaterialesUnificadoPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <Button size="sm" variant="outline" onClick={() => { setShowAdjust(c); setErrorStock(''); }}>
-                            Ajustar
-                          </Button>
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" onClick={() => { setShowAdjust(c); setErrorStock(''); }}>
+                              Ajustar
+                            </Button>
+                            {canImport && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                aria-label={`Eliminar ${c.codigo}`}
+                                className="border-red-300 text-red-700 hover:bg-red-50"
+                                onClick={() => eliminarConsumible(c)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
