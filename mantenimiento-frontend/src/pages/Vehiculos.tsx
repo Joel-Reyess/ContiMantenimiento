@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Truck, Search, Plus, Loader2, RefreshCw, Info, Package, Trash2, CheckCircle2, Download, Upload } from 'lucide-react';
 import { formatDate, getFullImageUrl } from '@/lib/utils';
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, Input, Modal, ModalFooter, Select, Spinner, Textarea } from '@/components/ui';
@@ -51,6 +51,9 @@ export function VehiculosPage() {
   const { allowedTipoIds } = useAllowedTipoVehiculo();
   const [activeTab, setActiveTab] = useState<'general' | 'tuggers'>('general');
   const [filters, setFilters] = useState<FiltersState>({ busqueda: '' });
+  // Filtros con los que se cargó la lista (lo escrito en el buscador sin "Aplicar" no cuenta).
+  // Se reutilizan al recargar después de guardar, para no perder la búsqueda (requerimiento 8.5).
+  const filtrosAplicados = useRef<FiltersState>({ busqueda: '' });
   const [vehiculos, setVehiculos] = useState<VehiculoList[]>([]);
   const [pagination, setPagination] = useState({ page: 1, pageSize: 12, totalPages: 1, totalItems: 0 });
   const [loading, setLoading] = useState(false);
@@ -184,8 +187,12 @@ export function VehiculosPage() {
     };
   }, [form.codigo, createOpen]);
 
-  const loadVehiculos = async (page = 1, f: FiltersState = filters) => {
-    setLoading(true);
+  /**
+   * silencioso: recarga sin spinner, así la lista no se desmonta y el usuario se queda en la misma
+   * posición de la página (se usa al guardar o eliminar).
+   */
+  const loadVehiculos = async (page = 1, f: FiltersState = filtrosAplicados.current, silencioso = false) => {
+    if (!silencioso) setLoading(true);
     setError('');
     setSelectedIds(new Set());
     try {
@@ -207,7 +214,12 @@ export function VehiculosPage() {
       });
       
       if (res.success && res.data) {
-        const paginatedData = res.data; 
+        const paginatedData = res.data;
+        // Si al eliminar se vació la última página, se muestra la anterior
+        if ((paginatedData.items || []).length === 0 && page > 1) {
+          await loadVehiculos(page - 1, f, silencioso);
+          return;
+        }
         let items = paginatedData.items || [];
         
         // Filter by allowed types if necessary
@@ -254,11 +266,15 @@ export function VehiculosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allowedTipoIds, activeTab]);
 
-  const applyFilters = () => loadVehiculos(1);
+  const applyFilters = () => {
+    filtrosAplicados.current = filters;
+    loadVehiculos(1, filters);
+  };
 
   const resetFilters = () => {
     const vacios = { busqueda: '' };
     setFilters(vacios);
+    filtrosAplicados.current = vacios;
     loadVehiculos(1, vacios);
   };
 
@@ -332,7 +348,7 @@ export function VehiculosPage() {
     } else {
       setSuccessMessage(mensaje);
     }
-    loadVehiculos();
+    loadVehiculos(pagination.page, filtrosAplicados.current, true);
   };
 
   const handleCreate = async () => {
@@ -426,7 +442,7 @@ export function VehiculosPage() {
         setSuccessMessage(res.message || 'Vehiculos eliminados correctamente');
         setDeleteTargets(null);
         setEditOpen(false);
-        loadVehiculos();
+        loadVehiculos(pagination.page, filtrosAplicados.current, true);
       } else {
         setDeleteError(res.message || 'No se pudieron eliminar los vehiculos');
       }
@@ -960,7 +976,7 @@ export function VehiculosPage() {
         titulo="vehículos"
         onImportado={(r) => {
           setSuccessMessage(`Importación completada: ${r.nuevos} vehículo(s) nuevo(s) y ${r.actualizados} actualizado(s)`);
-          loadVehiculos();
+          loadVehiculos(pagination.page, filtrosAplicados.current, true);
         }}
       />
     </div>

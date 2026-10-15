@@ -58,7 +58,12 @@ interface ActivityRow {
 function isDuplicateError(res: any): boolean {
   const code = res?.errorCode || (res?.errors && res.errors.length > 0 ? res.errors[0] : null);
   const msg = res?.message || '';
-  return code === 'DuplicateActiveOrder' || msg.toLowerCase().includes('ya tiene una orden de trabajo activa');
+  return (
+    code === 'DuplicateActiveOrder' ||
+    code === 'DuplicateActiveReport' ||
+    msg.toLowerCase().includes('ya tiene una orden de trabajo activa') ||
+    msg.toLowerCase().includes('ya tiene un reporte activo')
+  );
 }
 
 export function ReportarReparacionPage() {
@@ -356,7 +361,7 @@ export function ReportarReparacionPage() {
         <div className="mb-4 flex flex-col gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between">
           <span className="flex items-center gap-2">
             <AlertCircle className="h-4 w-4 shrink-0" />
-            Este contenedor ya tiene una orden de trabajo activa. ¿Guardar el reporte de todos modos?
+            Este contenedor ya tiene una orden de trabajo activa o un reporte pendiente. ¿Guardar el reporte de todos modos?
           </span>
           <div className="flex gap-2">
             <button

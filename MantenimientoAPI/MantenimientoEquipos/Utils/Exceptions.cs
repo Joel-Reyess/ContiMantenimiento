@@ -12,3 +12,22 @@ public class DuplicateActiveOrderException : Exception
         ExistingOrderId = existingOrderId;
     }
 }
+
+/// <summary>
+/// El vehículo ya tiene un reporte de falla pendiente (aún sin orden de trabajo).
+/// Se pide confirmación antes de crear otro (requerimiento 9.1.3).
+/// </summary>
+public class DuplicateActiveReportException : Exception
+{
+    public string ExistingReportFolio { get; }
+    public int ExistingReportId { get; }
+    public DateTime ExistingReportFecha { get; }
+
+    public DuplicateActiveReportException(string existingReportFolio, int existingReportId, DateTime existingReportFecha)
+        : base($"El vehículo ya tiene un reporte activo sin orden de trabajo: {existingReportFolio}")
+    {
+        ExistingReportFolio = existingReportFolio;
+        ExistingReportId = existingReportId;
+        ExistingReportFecha = existingReportFecha;
+    }
+}

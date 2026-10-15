@@ -10,6 +10,7 @@ public class ReporteFallaDto
     public int VehiculoId { get; set; }
     public string? VehiculoCodigo { get; set; }
     public string? VehiculoTipo { get; set; }
+    public int VehiculoTipoId { get; set; }
     public int? CategoriaFallaId { get; set; }
     public string? CategoriaNombre { get; set; }
     public int ReportadoPorId { get; set; }

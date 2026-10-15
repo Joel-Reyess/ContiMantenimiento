@@ -38,7 +38,7 @@ public class RecepcionController : ControllerBase
                 r.FechaReporte,
                 r.VehiculoId,
                 VehiculoCodigo = r.Vehiculo.Codigo,
-                VehiculoTipo = r.Vehiculo.Tipo.ToString(),
+                VehiculoTipo = _db.TiposVehiculo.Where(t => t.Id == (int)r.Vehiculo.Tipo).Select(t => t.Nombre).FirstOrDefault() ?? r.Vehiculo.Tipo.ToString(),
                 ItemsChecklist = r.ItemsChecklist
                     .Select(ic => new {
                         ic.ChecklistItemId,
