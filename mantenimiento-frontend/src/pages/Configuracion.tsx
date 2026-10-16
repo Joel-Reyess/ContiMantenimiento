@@ -1028,10 +1028,9 @@ export function ConfiguracionPage() {
               <p className="text-sm uppercase tracking-[0.25em] text-red-600">Acción destructiva</p>
               <h3 className="text-lg font-semibold text-red-800">Reiniciar los datos del sistema</h3>
               <p className="text-sm text-red-700">
-                Elimina vehículos, reportes, órdenes, evidencias, inventario, refacciones, pagos, órdenes de compra,
-                notificaciones y los usuarios que no son clave (técnicos, supervisores, operadores). Se conserva la configuración:
-                usuarios clave, áreas, tipos de vehículo, prefijos, checklists, fallas visuales y la bitácora.
-                No se podrán recuperar los datos eliminados.
+                Elimina vehículos, reportes, órdenes, evidencias, inventario, refacciones, pagos, órdenes de compra y
+                notificaciones. Se conservan todos los usuarios y la configuración: áreas, tipos de vehículo, prefijos,
+                checklists, fallas visuales y la bitácora. No se podrán recuperar los datos eliminados.
               </p>
             </div>
           </div>
@@ -1069,14 +1068,13 @@ export function ConfiguracionPage() {
         <div className="flex flex-col gap-3">
           <p className="text-sm text-red-700">
             Se borrarán <strong>vehículos, reportes, órdenes, evidencias, inventario y sus movimientos, refacciones, pagos,
-            órdenes de compra, notificaciones e historial</strong>, y los <strong>usuarios que no son clave</strong> (técnicos,
-            supervisores, operadores).
+            órdenes de compra, notificaciones e historial</strong>.
           </p>
           <div className="text-sm text-red-700">
             <strong>Se conservarán:</strong>
             <ul className="list-disc list-inside">
-              <li>Usuarios clave: administradores, SuperUsuario, líderes, Tecnico_demo y la lista fija de usuarios</li>
-              <li>Roles, áreas, tipos de vehículo y prefijos</li>
+              <li>Todos los usuarios, con sus roles y metas</li>
+              <li>Áreas, tipos de vehículo y prefijos</li>
               <li>Checklists, fallas visuales y categorías de falla</li>
               <li>Asignación de líderes</li>
               <li>La bitácora (el reinicio queda registrado en ella)</li>

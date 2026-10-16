@@ -37,11 +37,11 @@ public class AdminController : ControllerBase
 
     /// <summary>
     /// Reinicia los datos operativos del sistema.
-    /// Se conservan: usuarios clave (administradores, líderes y la lista fija), roles, áreas, tipos de
-    /// vehículo, prefijos, checklists, fallas visuales, categorías de falla, la asignación de líderes de
-    /// los usuarios que se quedan y la bitácora (el reinicio mismo queda registrado ahí).
+    /// Se conservan: todos los usuarios con sus roles y metas, áreas, tipos de vehículo, prefijos,
+    /// checklists, fallas visuales, categorías de falla, la asignación de líderes y la bitácora
+    /// (el reinicio mismo queda registrado ahí).
     /// Se eliminan: vehículos, reportes, órdenes, evidencias, inventario, refacciones, pagos, órdenes de
-    /// compra, notificaciones, historial y los demás usuarios (técnicos, supervisores, operadores...).
+    /// compra, notificaciones e historial.
     /// </summary>
     /// <summary>
     /// Bitácora: eliminaciones y reinicios con quién, cuándo y qué (requerimiento 9.3).
@@ -171,56 +171,14 @@ public class AdminController : ControllerBase
             // Los prefijos, categorías de falla, tipos, checklists y fallas visuales son configuración:
             // se conservan (antes se borraban prefijos y categorías aunque la pantalla decía otra cosa)
 
-            // Lista de usuarios a conservar por username
-            var usuariosConservar = new List<string>
-            {
-                "aojeda", "eparedes", "mmartinez", "agalvez", "asierra", "hborges", "eflores", "msalinas"
-            };
+            // Los usuarios ya no se borran: se conservan todos (antes solo administradores, líderes y una lista fija)
 
-            // Roles a conservar
-            var rolesConservar = new List<string> { "Administrador", "SuperUsuario", "Lider", "Tecnico_demo" };
-
-            // Obtener usuarios que NO deben ser borrados
-            var usuariosIdsConservar = await _db.Users
-                .Include(u => u.Roles)
-                .Where(u => usuariosConservar.Contains(u.Username) || u.Roles.Any(r => rolesConservar.Contains(r.Nombre)))
-                .Select(u => u.Id)
-                .ToListAsync();
-
-            var usuariosEliminados = 0;
-            // Si no se encontró a nadie que conservar no se borra ningún usuario (sería quedarse sin acceso)
-            if (usuariosIdsConservar.Any())
-            {
-                // Quitar las referencias de los usuarios que se van (varias FKs son NO ACTION)
-                await _db.Areas
-                    .Where(a => a.SupervisorId.HasValue && !usuariosIdsConservar.Contains(a.SupervisorId.Value))
-                    .ExecuteUpdateAsync(s => s.SetProperty(a => a.SupervisorId, (int?)null));
-                await _db.TiposVehiculo
-                    .Where(t => t.ProveedorId.HasValue && !usuariosIdsConservar.Contains(t.ProveedorId.Value))
-                    .ExecuteUpdateAsync(s => s.SetProperty(t => t.ProveedorId, (int?)null));
-                // La bitácora se conserva: guarda el nombre, solo se suelta la referencia
-                await _db.LogAcciones
-                    .Where(l => l.UsuarioId.HasValue && !usuariosIdsConservar.Contains(l.UsuarioId.Value))
-                    .ExecuteUpdateAsync(s => s.SetProperty(l => l.UsuarioId, (int?)null));
-                await _db.LiderTipoVehiculoAsignaciones
-                    .Where(l => !usuariosIdsConservar.Contains(l.UsuarioId))
-                    .ExecuteDeleteAsync();
-                if (await TablaExisteAsync("MetasTecnico"))
-                    await _db.MetasTecnico.Where(m => !usuariosIdsConservar.Contains(m.UsuarioId)).ExecuteDeleteAsync();
-                // Relación usuario-rol (por si la BD no la tiene en cascada); los ids son enteros de la BD
-                await _db.Database.ExecuteSqlRawAsync(
-                    $"DELETE FROM UserRoles WHERE UserId NOT IN ({string.Join(",", usuariosIdsConservar)})");
-
-                usuariosEliminados = await _db.Users
-                    .Where(u => !usuariosIdsConservar.Contains(u.Id))
-                    .ExecuteDeleteAsync();
-            }
-
-            // Se conservan: Roles, Areas, TiposVehiculo, VehiculoPrefijoConfigs, ChecklistTemplates e Items,
-            // ImageFaults, VehicleImagePoints, CategoriasFalla y LogAcciones.
+            // Se conservan: Users, Roles, MetasTecnico, Areas, TiposVehiculo, VehiculoPrefijoConfigs,
+            // ChecklistTemplates e Items, ImageFaults, VehicleImagePoints, CategoriasFalla,
+            // LiderTipoVehiculoAsignaciones y LogAcciones.
             _eliminacion.Registrar(User.UsuarioId(), User.NombreUsuario(), "Sistema", null,
-                $"Reinicio de datos: {vehiculosAntes} vehículo(s), {reportesAntes} reporte(s), {ordenesAntes} orden(es) " +
-                $"y {usuariosEliminados} usuario(s) eliminados", accion: "Reiniciar");
+                $"Reinicio de datos: {vehiculosAntes} vehículo(s), {reportesAntes} reporte(s) y {ordenesAntes} orden(es) eliminados",
+                accion: "Reiniciar");
             await _db.SaveChangesAsync();
 
             await tx.CommitAsync();
@@ -228,7 +186,7 @@ public class AdminController : ControllerBase
             // Queda en el log de Serilog (Logs/mantenimiento-*.log), que no se borra con el reinicio.
             // No se usa ConfiguracionSistema porque ningún script crea esa tabla y no existe en todas las BD.
             _logger.LogWarning("Reinicio de datos completado. UsuarioId={UserId}", userIdClaim);
-            return Ok(ApiResponse<string>.Ok("Datos operativos reiniciados. Se conservó la configuración (usuarios clave, áreas, tipos, prefijos, checklists y fallas visuales) y la bitácora."));
+            return Ok(ApiResponse<string>.Ok("Datos operativos reiniciados. Se conservaron todos los usuarios, la configuración (áreas, tipos, prefijos, checklists y fallas visuales) y la bitácora."));
         }
         catch (Exception ex)
         {
@@ -243,7 +201,4 @@ public class AdminController : ControllerBase
         var b = SHA256.HashData(Encoding.UTF8.GetBytes(esperada));
         return CryptographicOperations.FixedTimeEquals(a, b);
     }
-
-    private async Task<bool> TablaExisteAsync(string nombre) =>
-        await _db.Database.SqlQuery<int>($"SELECT COUNT(*) AS Value FROM sys.tables WHERE name = {nombre}").SingleAsync() > 0;
 }
