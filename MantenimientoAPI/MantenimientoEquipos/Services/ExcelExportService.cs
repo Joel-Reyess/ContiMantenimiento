@@ -94,28 +94,10 @@ public class ExcelExportService
         {
             case "vehiculos":
             {
-                var tipos = await NombresTiposAsync();
                 var query = _db.Vehiculos.AsNoTracking();
                 if (tiposPermitidos != null && tiposPermitidos.Count > 0)
                     query = query.Where(v => tiposPermitidos.Contains(v.Tipo));
-                var filas = await query
-                    .OrderBy(v => v.Codigo)
-                    .Select(v => new
-                    {
-                        v.Codigo, v.Tipo, Area = v.Area != null ? v.Area.Nombre : null, v.Estado, v.Ubicacion,
-                        v.Marca, v.Modelo, v.NumeroSerie, v.Anio, v.UltimoMantenimiento, v.ProximoMantenimiento,
-                        Reportes = v.Reportes.Count,
-                        Fotos = _db.VehiculoDocumentos.Count(d => d.VehiculoId == v.Id && d.Tipo == VehiculoDocumentoService.TipoFoto),
-                        v.Notas, v.CreatedAt, v.Activo
-                    })
-                    .ToListAsync();
-                // Los encabezados Código/Tipo/Área/Marca/Modelo/Notas coinciden con la plantilla de importación
-                return EscribirHoja(wb, hoja, filas,
-                    new[] { "Código", "Tipo", "Área", "Estado", "Ubicación", "Marca", "Modelo", "Número de serie", "Año",
-                            "Último mantenimiento", "Próximo mantenimiento", "Reportes", "Fotos", "Notas", "Fecha de registro", "Activo" },
-                    v => new object?[] { v.Codigo, tipos.GetValueOrDefault((int)v.Tipo, v.Tipo.ToString()), v.Area, Humanizar(v.Estado),
-                            Humanizar(v.Ubicacion), v.Marca, v.Modelo, v.NumeroSerie, v.Anio, v.UltimoMantenimiento,
-                            v.ProximoMantenimiento, v.Reportes, v.Fotos, v.Notas, v.CreatedAt, v.Activo });
+                return await EscribirVehiculosAsync(wb, hoja, query);
             }
             case "inventario":
             {
@@ -288,6 +270,77 @@ public class ExcelExportService
             default:
                 throw new ArgumentException($"No existe la exportación '{entidad}'");
         }
+    }
+
+    /// <summary>Hoja de vehículos a partir de cualquier consulta (toda la flota o la filtrada)</summary>
+    private async Task<int> EscribirVehiculosAsync(XLWorkbook wb, string hoja, IQueryable<Vehiculo> query)
+    {
+        var tipos = await NombresTiposAsync();
+        var filas = await query
+            .OrderBy(v => v.Codigo)
+            .Select(v => new
+            {
+                v.Codigo, v.Tipo, Area = v.Area != null ? v.Area.Nombre : null, v.Estado, v.Ubicacion,
+                v.Marca, v.Modelo, v.NumeroSerie, v.Anio, v.UltimoMantenimiento, v.ProximoMantenimiento,
+                Reportes = v.Reportes.Count,
+                Fotos = _db.VehiculoDocumentos.Count(d => d.VehiculoId == v.Id && d.Tipo == VehiculoDocumentoService.TipoFoto),
+                v.Notas, v.CreatedAt, v.Activo
+            })
+            .ToListAsync();
+        // Los encabezados Código/Tipo/Área/Marca/Modelo/Notas coinciden con la plantilla de importación
+        return EscribirHoja(wb, hoja, filas,
+            new[] { "Código", "Tipo", "Área", "Estado", "Ubicación", "Marca", "Modelo", "Número de serie", "Año",
+                    "Último mantenimiento", "Próximo mantenimiento", "Reportes", "Fotos", "Notas", "Fecha de registro", "Activo" },
+            v => new object?[] { v.Codigo, tipos.GetValueOrDefault((int)v.Tipo, v.Tipo.ToString()), v.Area, Humanizar(v.Estado),
+                    Humanizar(v.Ubicacion), v.Marca, v.Modelo, v.NumeroSerie, v.Anio, v.UltimoMantenimiento,
+                    v.ProximoMantenimiento, v.Reportes, v.Fotos, v.Notas, v.CreatedAt, v.Activo });
+    }
+
+    /// <summary>
+    /// La flota con los mismos filtros de la pantalla ("lo que estoy viendo"). La hoja "Vehículos" es igual
+    /// a la de la exportación normal (se puede volver a importar) y la hoja "Filtros" dice qué se aplicó.
+    /// </summary>
+    public async Task<(byte[] Archivo, int Vehiculos)> ExportarFlotaFiltradaAsync(FiltroVehiculos filtro, string? generadoPor)
+    {
+        using var wb = new XLWorkbook();
+        var query = VehiculoFiltros.Aplicar(_db, _db.Vehiculos.AsNoTracking(), filtro);
+        var total = await EscribirVehiculosAsync(wb, Hojas["vehiculos"], query);
+
+        var tipos = await NombresTiposAsync();
+        string NombreTipo(TipoVehiculoEnum t) => tipos.GetValueOrDefault((int)t, t.ToString());
+        var area = filtro.AreaId.HasValue
+            ? await _db.Areas.AsNoTracking().Where(a => a.Id == filtro.AreaId.Value).Select(a => a.Nombre).FirstOrDefaultAsync()
+            : null;
+
+        var tipoTexto = filtro.Tipo.HasValue
+            ? NombreTipo(filtro.Tipo.Value)
+            : filtro.ExcluirTipo.HasValue ? $"Todos excepto {NombreTipo(filtro.ExcluirTipo.Value)}" : "Todos";
+        var filtros = new List<(string Filtro, string Valor)>
+        {
+            ("Búsqueda", string.IsNullOrWhiteSpace(filtro.Busqueda) ? "(sin búsqueda)" : filtro.Busqueda.Trim()),
+            ("Tipo", tipoTexto),
+            ("Área", filtro.AreaId.HasValue ? area ?? $"#{filtro.AreaId}" : "Todas"),
+            ("Vehículos", filtro.SoloActivos ? "Solo activos (como en la pantalla)" : "Activos e inactivos")
+        };
+        if (filtro.TiposPermitidos is { Count: > 0 })
+            filtros.Add(("Tipos asignados al usuario", string.Join(", ", filtro.TiposPermitidos.Select(NombreTipo))));
+        filtros.Add(("Vehículos exportados", total.ToString()));
+
+        var ws = wb.Worksheets.Add("Filtros");
+        ws.Cell(1, 1).Value = "Flota filtrada - Sistema de Mantenimiento Continental";
+        ws.Cell(1, 1).Style.Font.SetBold().Font.SetFontSize(14);
+        ws.Cell(2, 1).Value = $"Generado: {DateTime.Now:dd/MM/yyyy HH:mm}" + (generadoPor != null ? $" por {generadoPor}" : "");
+        ws.Cell(4, 1).Value = "Filtro";
+        ws.Cell(4, 2).Value = "Valor";
+        EstiloEncabezado(ws.Range(4, 1, 4, 2));
+        for (var r = 0; r < filtros.Count; r++)
+        {
+            ws.Cell(5 + r, 1).Value = filtros[r].Filtro;
+            ws.Cell(5 + r, 2).Value = filtros[r].Valor;
+        }
+        ws.Columns().AdjustToContents();
+
+        return (Guardar(wb), total);
     }
 
     private async Task<Dictionary<int, string>> NombresTiposAsync() =>

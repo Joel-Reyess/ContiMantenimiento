@@ -35,7 +35,8 @@ public class VehiculosController : ControllerBase
         [FromQuery] UbicacionVehiculoEnum? ubicacion = null,
         [FromQuery] string? busqueda = null,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 10)
+        [FromQuery] int pageSize = 10,
+        [FromQuery] TipoVehiculoEnum? excluirTipo = null)
     {
         List<TipoVehiculoEnum>? tiposPermitidos = null;
         
@@ -49,7 +50,7 @@ public class VehiculosController : ControllerBase
             }
         }
 
-        var vehiculos = await _vehiculoService.GetAllAsync(tipo, estado, areaId, ubicacion, tiposPermitidos, busqueda, page, pageSize);
+        var vehiculos = await _vehiculoService.GetAllAsync(tipo, estado, areaId, ubicacion, tiposPermitidos, busqueda, page, pageSize, excluirTipo);
         return Ok(ApiResponse<PaginatedResponse<VehiculoListDto>>.Ok(vehiculos));
     }
 

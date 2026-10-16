@@ -62,6 +62,16 @@ export const excelService = {
     return descargar(`/excel/exportar/${entidad}`, `ContiMantenimiento - ${entidad}.xlsx`);
   },
 
+  /** La flota con los mismos filtros de la pantalla ("lo que estoy viendo") */
+  exportarFlotaFiltrada(filtros: { busqueda?: string; tipo?: number; areaId?: number; excluirTipo?: number }): Promise<void> {
+    const params = new URLSearchParams();
+    Object.entries(filtros).forEach(([clave, valor]) => {
+      if (valor !== undefined && valor !== null && valor !== '') params.append(clave, String(valor));
+    });
+    const qs = params.toString();
+    return descargar(`/excel/exportar-flota${qs ? `?${qs}` : ''}`, 'ContiMantenimiento - Flota filtrada.xlsx');
+  },
+
   exportarTodo(): Promise<void> {
     return descargar('/excel/exportar-todo', 'ContiMantenimiento - Exportacion completa.xlsx');
   },

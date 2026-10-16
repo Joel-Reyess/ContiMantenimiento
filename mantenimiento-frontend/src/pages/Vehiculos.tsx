@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Truck, Plus, Loader2, RefreshCw, Info, Package, Trash2, CheckCircle2, Download, Upload } from 'lucide-react';
 import { formatDate, getFullImageUrl } from '@/lib/utils';
-import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, Input, Modal, ModalFooter, Select, Spinner, Textarea, SearchInput } from '@/components/ui';
+import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, Input, Modal, ModalFooter, Select, Spinner, Textarea, SearchInput, useToast } from '@/components/ui';
 import { vehiculosService } from '@/services/vehiculosService';
 import { catalogosService } from '@/services/catalogosService';
 import type { Area, ValidacionCodigoVehiculo, VehiculoFoto, VehiculoList } from '@/interfaces';
@@ -82,14 +82,39 @@ export function VehiculosPage() {
   const [successMessage, setSuccessMessage] = useState('');
   const [importOpen, setImportOpen] = useState(false);
   const [exportando, setExportando] = useState(false);
+  // Exportar: "lo que estoy viendo" (filtros aplicados y pestaña) o toda la flota
+  const [exportOpen, setExportOpen] = useState(false);
+  const [alcanceExport, setAlcanceExport] = useState<'vista' | 'todo'>('vista');
+  const [errorExport, setErrorExport] = useState('');
+  const toast = useToast();
 
-  const handleExportar = async () => {
+  /** Lo que se está viendo, igual que lo pide loadVehiculos */
+  const filtrosDeLaVista = () => {
+    const f = filtrosAplicados.current;
+    return {
+      busqueda: f.busqueda?.trim() || undefined,
+      tipo: activeTab === 'tuggers' ? TipoVehiculo.Tugger : f.tipo ? Number(f.tipo) : undefined,
+      areaId: f.areaId ? Number(f.areaId) : undefined,
+      excluirTipo: activeTab === 'general' ? TipoVehiculo.Tugger : undefined
+    };
+  };
+
+  const handleExportar = () => {
+    setAlcanceExport('vista');
+    setErrorExport('');
+    setExportOpen(true);
+  };
+
+  const descargarExport = async () => {
     setExportando(true);
-    setError('');
+    setErrorExport('');
     try {
-      await excelService.exportar('vehiculos');
+      if (alcanceExport === 'todo') await excelService.exportar('vehiculos');
+      else await excelService.exportarFlotaFiltrada(filtrosDeLaVista());
+      toast.exito(alcanceExport === 'todo' ? 'Se descargó toda la flota' : 'Se descargó la flota filtrada');
+      setExportOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo exportar');
+      setErrorExport(err instanceof Error ? err.message : 'No se pudo exportar');
     } finally {
       setExportando(false);
     }
@@ -209,6 +234,8 @@ export function VehiculosPage() {
         busqueda: f.busqueda || undefined,
         tipo: typeFilter,
         areaId: f.areaId ? Number(f.areaId) : undefined,
+        // La pestaña Contenedores excluye Tuggers en el servidor, así el total y las páginas cuadran
+        excluirTipo: activeTab === 'general' ? TipoVehiculo.Tugger : undefined,
         page: page,
         pageSize: 100 // Request more items to handle client-side filtering if needed
       });
@@ -968,6 +995,73 @@ export function VehiculosPage() {
           </Button>
         </ModalFooter>
       </Modal>
+      <Modal
+        isOpen={exportOpen}
+        onClose={() => !exportando && setExportOpen(false)}
+        title="Exportar flota a Excel"
+        description="Elige qué vehículos quieres descargar."
+        size="md"
+      >
+        {(() => {
+          const f = filtrosAplicados.current;
+          const tipoNombre = activeTab === 'tuggers'
+            ? 'Tugger'
+            : f.tipo
+              ? tipoOptions.find((t) => t.value === f.tipo)?.label ?? f.tipo
+              : 'Todos (sin Tuggers)';
+          const areaNombre = f.areaId ? areaFilterOptions.find((o) => o.value === f.areaId)?.label ?? f.areaId : 'Todas';
+          const sinAplicar =
+            (filters.busqueda || '') !== (f.busqueda || '') || (filters.tipo || '') !== (f.tipo || '') || (filters.areaId || '') !== (f.areaId || '');
+          const opcion = (valor: 'vista' | 'todo', titulo: string, contenido: React.ReactNode) => (
+            <button
+              type="button"
+              data-icon="true"
+              aria-pressed={alcanceExport === valor}
+              onClick={() => setAlcanceExport(valor)}
+              className={`w-full rounded-xl border-2 text-left transition ${
+                alcanceExport === valor ? 'border-continental-yellow bg-continental-yellow/10' : 'border-continental-gray-3 hover:border-continental-gray-2'
+              }`}
+              style={{ padding: 16 }}
+            >
+              <span className="block font-semibold text-continental-black">{titulo}</span>
+              <span className="block text-sm text-continental-gray-1">{contenido}</span>
+            </button>
+          );
+          return (
+            <div className="flex flex-col gap-3">
+              {opcion(
+                'vista',
+                `Lo que estoy viendo (${pagination.totalItems} vehículo${pagination.totalItems === 1 ? '' : 's'})`,
+                <>
+                  Pestaña: {activeTab === 'tuggers' ? 'Tuggers' : 'Contenedores'} · Búsqueda: {f.busqueda?.trim() ? `"${f.busqueda.trim()}"` : 'ninguna'} ·
+                  Tipo: {tipoNombre} · Área: {areaNombre}
+                </>
+              )}
+              {opcion('todo', 'Toda la flota', 'Todos los vehículos, incluidos Tuggers e inactivos.')}
+              {sinAplicar && alcanceExport === 'vista' && (
+                <p className="text-sm font-medium" style={{ color: '#b45309', marginBottom: 0 }}>
+                  Tienes cambios en los filtros que no has aplicado; el archivo usa los filtros aplicados. Presiona "Aplicar" para incluirlos.
+                </p>
+              )}
+              {errorExport && (
+                <Alert variant="destructive">
+                  <AlertDescription>{errorExport}</AlertDescription>
+                </Alert>
+              )}
+            </div>
+          );
+        })()}
+        <ModalFooter>
+          <Button variant="outline" onClick={() => setExportOpen(false)} disabled={exportando}>
+            Cancelar
+          </Button>
+          <Button onClick={descargarExport} disabled={exportando} className="flex items-center gap-2">
+            {exportando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Descargar
+          </Button>
+        </ModalFooter>
+      </Modal>
+
       <ExcelImportModal
         isOpen={importOpen}
         onClose={() => setImportOpen(false)}
