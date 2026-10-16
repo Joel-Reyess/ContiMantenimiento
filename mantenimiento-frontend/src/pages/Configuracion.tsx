@@ -319,7 +319,16 @@ export function ConfiguracionPage() {
     const tipo = tiposVehiculo.find((t) => t.id === id);
     const ok = await confirmar({
       titulo: 'Eliminar tipo de vehículo',
-      mensaje: `¿Eliminar el tipo "${tipo?.nombre ?? id}"? Esta acción no se puede deshacer.`,
+      mensaje: (
+        <div className="flex flex-col gap-2">
+          <p>¿Eliminar el tipo "{tipo?.nombre ?? id}"?</p>
+          <p>
+            También se eliminan sus prefijos, su checklist, su asignación de líderes y sus puntos en la imagen de fallas. Si
+            el tipo todavía tiene vehículos no se podrá eliminar.
+          </p>
+          <p>Esta acción no se puede deshacer y quedará registrada en la bitácora.</p>
+        </div>
+      ),
       textoConfirmar: 'Eliminar',
       tono: 'peligro'
     });
@@ -330,7 +339,7 @@ export function ConfiguracionPage() {
     try {
       const res = await catalogosService.deleteTipoVehiculo(id);
       if (res.success) {
-        toast.exito(`Tipo de vehículo "${tipo?.nombre ?? id}" eliminado`);
+        toast.exito(res.message || `Tipo de vehículo "${tipo?.nombre ?? id}" eliminado`);
         loadTiposVehiculo();
       } else {
         toast.error(res.message || 'No se pudo eliminar el tipo de vehículo');

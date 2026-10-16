@@ -26,6 +26,11 @@ export const ordenesCompraService = {
 
   async update(id: number, request: UpdateOrdenCompraRequest): Promise<ApiResponse<OrdenCompra>> {
     return await httpClient.put<OrdenCompra>(`/ordencompra/${id}`, request);
+  },
+
+  /** Elimina la orden de compra; sus pagos vuelven a Aprobado. Solo administradores; queda en la bitácora. */
+  async delete(id: number): Promise<ApiResponse<string>> {
+    return await httpClient.delete<string>(`/ordencompra/${id}`);
   }
 };
 

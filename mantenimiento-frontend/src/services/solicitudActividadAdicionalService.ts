@@ -26,5 +26,10 @@ export const solicitudActividadAdicionalService = {
       aprobado: data.aprobado,
       comentarios: data.comentarios
     });
+  },
+
+  /** Elimina la solicitud de actividad adicional. Solo administradores; queda en la bitácora. */
+  async delete(id: number): Promise<ApiResponse<string>> {
+    return await httpClient.delete<string>(`/solicitudactividadadicional/${id}`);
   }
 };

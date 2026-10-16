@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using MantenimientoEquipos.Middlewares;
+using MantenimientoEquipos.Utils;
 using Microsoft.AspNetCore.Authorization;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.DTOs;
@@ -13,10 +15,22 @@ namespace MantenimientoEquipos.Controllers;
 public class SolicitudActividadAdicionalController : ControllerBase
 {
     private readonly SolicitudActividadAdicionalService _service;
+    private readonly EliminacionService _eliminacion;
 
-    public SolicitudActividadAdicionalController(SolicitudActividadAdicionalService service)
+    public SolicitudActividadAdicionalController(SolicitudActividadAdicionalService service, EliminacionService eliminacion)
     {
         _service = service;
+        _eliminacion = eliminacion;
+    }
+
+    /// <summary>Elimina una solicitud de actividad adicional. Solo administradores; queda en la bitácora.</summary>
+    [HttpDelete("{id:int}")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var mensaje = await _eliminacion.EliminarActividadAdicionalAsync(id, User.UsuarioId(), User.NombreUsuario());
+        if (mensaje == null) return NotFound(ApiResponse<string>.Error("Solicitud no encontrada"));
+        return Ok(ApiResponse<string>.Ok(mensaje, mensaje));
     }
 
     [HttpGet]

@@ -40,5 +40,10 @@ export const solicitudCambioService = {
 
   async responder(data: ResponderSolicitudCambio): Promise<ApiResponse<boolean>> {
     return await httpClient.post<boolean>('/solicitudcambio/responder', data);
+  },
+
+  /** Elimina la solicitud de cambio. Solo administradores; queda en la bitácora. */
+  async delete(id: number): Promise<ApiResponse<string>> {
+    return await httpClient.delete<string>(`/solicitudcambio/${id}`);
   }
 };

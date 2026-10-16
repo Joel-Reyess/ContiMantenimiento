@@ -13,6 +13,12 @@ const MODULOS: Record<string, string> = {
   Area: 'Área',
   Consumible: 'Inventario',
   ChecklistTemplate: 'Checklist',
+  TipoVehiculo: 'Tipo de vehículo',
+  RegistroPago: 'Pago',
+  OrdenCompra: 'Orden de compra',
+  SolicitudRefaccion: 'Solicitud de refacción',
+  SolicitudActividadAdicional: 'Actividad adicional',
+  SolicitudCambio: 'Solicitud de cambio',
   Sistema: 'Sistema'
 };
 

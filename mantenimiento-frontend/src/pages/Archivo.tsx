@@ -9,8 +9,12 @@ import { useMemo } from 'react';
 import { useAllowedTipoVehiculo } from '@/hooks/useAllowedTipoVehiculo';
 
 import { VolverConfiguracion } from '@/components/configuracion/VolverConfiguracion';
+import { useAuth } from '@/contexts/AuthContext';
 export function ArchivoPage() {
   const { confirmar, pedirTexto } = useConfirm();
+  const { hasRole } = useAuth();
+  // Eliminar solicitudes de cambio: solo administradores (el supervisor responde pero no elimina)
+  const canEliminarCambio = hasRole(['SuperUsuario', 'Administrador']);
   const toast = useToast();
   const [vehiculos, setVehiculos] = useState<VehiculoList[]>([]);
   const [vehiculoSeleccionado, setVehiculoSeleccionado] = useState<SearchableSelectOption | null>(null);
@@ -197,6 +201,31 @@ export function ArchivoPage() {
     } catch (err) {
       console.error(err);
       toast.error('Error al responder solicitud');
+    } finally {
+      setProcessingCambioId(null);
+    }
+  };
+
+  const handleEliminarCambio = async (id: number) => {
+    const ok = await confirmar({
+      titulo: `Eliminar solicitud de cambio #${id}`,
+      mensaje: '¿Eliminar esta solicitud de cambio? Esta acción no se puede deshacer y quedará registrada en la bitácora.',
+      textoConfirmar: 'Eliminar',
+      tono: 'peligro'
+    });
+    if (!ok) return;
+    setProcessingCambioId(id);
+    try {
+      const res = await solicitudCambioService.delete(id);
+      if (res.success) {
+        toast.exito(res.message || 'Solicitud de cambio eliminada');
+        loadDocs(vehiculoId);
+      } else {
+        toast.error(res.message || 'No se pudo eliminar la solicitud');
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('Error al eliminar la solicitud');
     } finally {
       setProcessingCambioId(null);
     }
@@ -398,8 +427,9 @@ export function ArchivoPage() {
                       {c.estadoNombre}
                     </Badge>
                   </div>
+                  <div className="flex gap-2">
                   {c.estado === 0 && (
-                    <div className="flex gap-2">
+                    <>
                       <Button 
                         size="sm" 
                         variant="outline" 
@@ -420,8 +450,22 @@ export function ArchivoPage() {
                         <XCircle className="h-4 w-4" />
                         <span>Rechazar</span>
                       </Button>
-                    </div>
+                    </>
                   )}
+                  {canEliminarCambio && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-red-700 border-red-300 hover:bg-red-50 h-9"
+                      onClick={() => void handleEliminarCambio(c.id)}
+                      disabled={processingCambioId === c.id}
+                      aria-label={`Eliminar solicitud de cambio ${c.id}`}
+                      title="Eliminar solicitud"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                  </div>
                 </div>
                 <p className="text-sm text-gray-800">{c.descripcion}</p>
                 <div className="text-xs text-gray-500 flex justify-between pt-2 border-t mt-2">

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Package, Plus, CheckCircle, XCircle, Loader2, RefreshCcw } from 'lucide-react';
+import { Package, Plus, CheckCircle, XCircle, Loader2, RefreshCcw, Trash2 } from 'lucide-react';
 import {
   Alert,
   AlertDescription,
@@ -23,6 +23,7 @@ import { ordenesService } from '@/services/ordenesService';
 import { consumiblesService } from '@/services/consumiblesService';
 import type { SolicitudRefaccion } from '@/services/refaccionesService';
 
+import { useAuth } from '@/contexts/AuthContext';
 const estadoOpciones = [
   { value: '', label: 'Todos los estados' },
   { value: 'Pendiente', label: 'Pendiente' },
@@ -48,7 +49,10 @@ type OrdenOption = SearchableSelectOption<{
 type RefaccionStockOption = SearchableSelectOption<{ costo?: number; codigo?: string; stock?: number }>;
 
 export function RefaccionesPage() {
-  const { pedirTexto } = useConfirm();
+  const { confirmar, pedirTexto } = useConfirm();
+  const { hasRole } = useAuth();
+  // Eliminar solicitudes: solo administradores (estandarización de eliminación)
+  const canEliminarSolicitud = hasRole(['SuperUsuario', 'Administrador']);
   const toast = useToast();
   const [estadoFiltro, setEstadoFiltro] = useState('');
   const [refacciones, setRefacciones] = useState<SolicitudRefaccion[]>([]);
@@ -206,6 +210,17 @@ export function RefaccionesPage() {
     doAccion(() => refaccionesService.aprobar(id, undefined), 'Solicitud aprobada');
   };
 
+  const handleEliminarSolicitud = async (item: { id: number; nombreRefaccion: string; cantidad: number }) => {
+    const ok = await confirmar({
+      titulo: 'Eliminar solicitud de refacción',
+      mensaje: `¿Eliminar la solicitud de ${item.nombreRefaccion} (x${item.cantidad})? Esta acción no se puede deshacer y quedará registrada en la bitácora.`,
+      textoConfirmar: 'Eliminar',
+      tono: 'peligro'
+    });
+    if (!ok) return;
+    doAccion(() => refaccionesService.delete(item.id), `Solicitud de ${item.nombreRefaccion} eliminada`);
+  };
+
   const handleRechazar = async (id: number) => {
     const motivo = await pedirTexto({
       titulo: 'Rechazar solicitud de refacción',
@@ -310,6 +325,19 @@ export function RefaccionesPage() {
                       <Button size="sm" onClick={() => handleEntregar(item.id)} disabled={accionando} className="flex items-center gap-1">
                         <CheckCircle className="h-4 w-4" />
                         Entregar
+                      </Button>
+                    )}
+                    {canEliminarSolicitud && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void handleEliminarSolicitud(item)}
+                        disabled={accionando}
+                        aria-label={`Eliminar solicitud ${item.nombreRefaccion}`}
+                        title="Eliminar solicitud"
+                        className="text-red-700 border-red-300 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     )}
                   </div>

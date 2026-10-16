@@ -1111,6 +1111,32 @@ export function OrdenesPage() {
     }
   };
 
+  /** Eliminar una solicitud de refacción o de actividad adicional de la orden (solo administradores) */
+  const eliminarSolicitudDeOrden = async (tipo: 'refaccion' | 'actividad', id: number, nombre: string) => {
+    const ok = await confirmar({
+      titulo: tipo === 'refaccion' ? 'Eliminar solicitud de refacción' : 'Eliminar actividad adicional',
+      mensaje: `¿Eliminar "${nombre}"? Esta acción no se puede deshacer y quedará registrada en la bitácora.`,
+      textoConfirmar: 'Eliminar',
+      tono: 'peligro'
+    });
+    if (!ok) return;
+    setAccionando(true);
+    try {
+      const res = tipo === 'refaccion' ? await refaccionesService.delete(id) : await solicitudActividadAdicionalService.delete(id);
+      if (!res.success) {
+        toast.error(res.message || 'No se pudo eliminar la solicitud');
+        return;
+      }
+      toast.exito(res.message || 'Solicitud eliminada');
+      await loadOrdenes();
+    } catch (err) {
+      console.error(err);
+      toast.error('Error al eliminar la solicitud');
+    } finally {
+      setAccionando(false);
+    }
+  };
+
   const handleResponderActividadAdicional = async (id: number, aprobado: boolean) => {
     setAccionando(true);
     try {
@@ -2110,11 +2136,27 @@ export function OrdenesPage() {
                 <div className="space-y-2">
                   {detalle.solicitudesRefaccion.map((s) => (
                     <div key={s.id} className="rounded-lg border border-continental-gray-3/60 p-3 bg-white shadow-sm">
-                      <div className="flex justify-between text-sm">
+                      <div className="flex justify-between items-center gap-2 text-sm">
                         <span className="font-semibold text-continental-black">{s.nombreRefaccion}</span>
-                        <Badge variant={s.estado === 'Pendiente' ? 'outline' : s.estado === 'Aprobada' ? 'default' : 'destructive'}>
-                          {s.estado}
-                        </Badge>
+                        <div className="flex items-center gap-1">
+                          <Badge variant={s.estado === 'Pendiente' ? 'outline' : s.estado === 'Aprobada' ? 'default' : 'destructive'}>
+                            {s.estado}
+                          </Badge>
+                          {canEliminar && (
+                            <button
+                              type="button"
+                              data-icon="true"
+                              onClick={() => void eliminarSolicitudDeOrden('refaccion', s.id, s.nombreRefaccion)}
+                              disabled={accionando}
+                              aria-label={`Eliminar solicitud ${s.nombreRefaccion}`}
+                              title="Eliminar solicitud"
+                              className="rounded text-red-600 hover:bg-red-50"
+                              style={{ padding: 4 }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <p className="text-xs text-continental-gray-1 mt-1">
                         Cantidad: {s.cantidad} {s.numeroParte ? `| Parte: ${s.numeroParte}` : ''}
@@ -2142,11 +2184,27 @@ export function OrdenesPage() {
                     <div key={s.id} className="rounded-lg border border-continental-gray-3/60 p-3 bg-white shadow-sm">
                       <div className="flex justify-between items-start gap-2">
                         <div className="flex-1 min-w-0">
-                          <div className="flex justify-between">
+                          <div className="flex justify-between items-center gap-2">
                             <span className="text-sm font-semibold text-continental-black truncate">{s.descripcion}</span>
-                            <Badge variant={s.estado === 'Pendiente' ? 'outline' : s.estado === 'Aprobada' ? 'default' : 'destructive'}>
-                              {s.estado}
-                            </Badge>
+                            <div className="flex items-center gap-1">
+                              <Badge variant={s.estado === 'Pendiente' ? 'outline' : s.estado === 'Aprobada' ? 'default' : 'destructive'}>
+                                {s.estado}
+                              </Badge>
+                              {canEliminar && (
+                                <button
+                                  type="button"
+                                  data-icon="true"
+                                  onClick={() => void eliminarSolicitudDeOrden('actividad', s.id, s.descripcion)}
+                                  disabled={accionando}
+                                  aria-label={`Eliminar actividad ${s.descripcion}`}
+                                  title="Eliminar actividad"
+                                  className="rounded text-red-600 hover:bg-red-50"
+                              style={{ padding: 4 }}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              )}
+                            </div>
                           </div>
                           {s.justificacion && <p className="text-xs text-continental-gray-1 mt-1">{s.justificacion}</p>}
                           

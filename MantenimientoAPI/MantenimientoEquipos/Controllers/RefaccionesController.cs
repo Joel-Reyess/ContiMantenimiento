@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using MantenimientoEquipos.Middlewares;
+using MantenimientoEquipos.Utils;
 using Microsoft.AspNetCore.Authorization;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.DTOs;
@@ -13,10 +15,22 @@ namespace MantenimientoEquipos.Controllers;
 public class RefaccionesController : ControllerBase
 {
     private readonly SolicitudRefaccionService _refaccionService;
+    private readonly EliminacionService _eliminacion;
 
-    public RefaccionesController(SolicitudRefaccionService refaccionService)
+    public RefaccionesController(SolicitudRefaccionService refaccionService, EliminacionService eliminacion)
     {
         _refaccionService = refaccionService;
+        _eliminacion = eliminacion;
+    }
+
+    /// <summary>Elimina una solicitud de refacción. Solo administradores; queda en la bitácora.</summary>
+    [HttpDelete("{id:int}")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var mensaje = await _eliminacion.EliminarSolicitudRefaccionAsync(id, User.UsuarioId(), User.NombreUsuario());
+        if (mensaje == null) return NotFound(ApiResponse<string>.Error("Solicitud no encontrada"));
+        return Ok(ApiResponse<string>.Ok(mensaje, mensaje));
     }
 
     /// <summary>

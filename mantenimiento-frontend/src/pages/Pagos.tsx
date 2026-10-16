@@ -1,6 +1,6 @@
 ﻿import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { DollarSign, RefreshCcw, CheckCircle, XCircle, Plus, Loader2, Printer, Save, FileText } from 'lucide-react';
+import { DollarSign, RefreshCcw, CheckCircle, XCircle, Plus, Loader2, Printer, Save, FileText, Trash2 } from 'lucide-react';
 import {
   Alert,
   AlertDescription,
@@ -796,6 +796,50 @@ export function PagosPage() {
     doAccion(() => pagosService.revertir(id), 'Pago regresado a Pendiente');
   };
 
+  /** Eliminar pago (solo administradores). Uno que ya está en una orden de compra se libera eliminando la OC. */
+  const handleEliminar = async (pago: RegistroPago) => {
+    if (pago.ordenCompraId) {
+      toast.aviso(
+        `Este pago está en una orden de compra${pago.ordenCompraFolio ? ` (${pago.ordenCompraFolio})` : ''}. Elimina primero esa orden de compra en "Órdenes de compra": sus pagos vuelven a quedar aprobados.`
+      );
+      return false;
+    }
+    const monto = `$${Number(pago.montoTotal || 0).toFixed(2)}`;
+    const ok = await confirmar({
+      titulo: 'Eliminar pago',
+      mensaje: (
+        <div className="flex flex-col gap-2">
+          <p>
+            ¿Eliminar el pago de {pago.tecnicoNombre ?? 'este técnico'} por {monto}
+            {pago.ordenTrabajoFolio ? ` (orden ${pago.ordenTrabajoFolio})` : ''}?
+          </p>
+          {pago.estado === EstadoPago.Pagado && <p className="font-semibold text-red-700">Este pago ya está marcado como pagado.</p>}
+          <p>Esta acción no se puede deshacer. Quedará registrado quién la realizó y cuándo.</p>
+        </div>
+      ),
+      textoConfirmar: 'Eliminar',
+      tono: 'peligro'
+    });
+    if (!ok) return false;
+    setAccionando(true);
+    try {
+      const res = await pagosService.delete(pago.id);
+      if (!res.success) {
+        toast.error(res.message || 'No se pudo eliminar el pago');
+        return false;
+      }
+      toast.exito(res.message || 'Pago eliminado');
+      await loadPagos();
+      return true;
+    } catch (err) {
+      console.error(err);
+      toast.error('Error al eliminar el pago');
+      return false;
+    } finally {
+      setAccionando(false);
+    }
+  };
+
   const handlePagarDetalle = async () => {
     if (!detallePago) return;
     setPagando(true);
@@ -1061,6 +1105,19 @@ export function PagosPage() {
                       <Button size="sm" variant="outline" onClick={() => handleRevertir(pago.id)} disabled={accionando} className="flex items-center gap-1 text-orange-600 border-orange-200 hover:bg-orange-50">
                         <Undo className="h-4 w-4" />
                         Revertir
+                      </Button>
+                    )}
+                    {canRevert && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void handleEliminar(pago)}
+                        disabled={accionando}
+                        aria-label={`Eliminar pago ${pago.id}`}
+                        title="Eliminar pago"
+                        className="text-red-700 border-red-300 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     )}
                   </div>
