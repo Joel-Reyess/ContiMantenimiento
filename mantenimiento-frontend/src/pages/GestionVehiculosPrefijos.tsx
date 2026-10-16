@@ -20,6 +20,7 @@ import { catalogosService, vehiculoPrefijoConfigsService } from '@/services';
 import type { VehiculoPrefijoConfig } from '@/interfaces';
 
 import { VolverConfiguracion } from '@/components/configuracion/VolverConfiguracion';
+import { ExcelCatalogoBotones } from '@/components/excel/ExcelCatalogoBotones';
 interface CrearPrefijoForm {
   prefijoCodigo: string;
   tipoVehiculoId: number;
@@ -206,11 +207,12 @@ export function GestionVehiculosPrefijosPage() {
             <h1 className="text-3xl font-semibold text-continental-black">Gestion de prefijos de vehiculos</h1>
             <p className="text-continental-gray-1">Administra las configuraciones de prefijos para autodeteccion de tipos de vehiculo.</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={loadPrefijos} className="flex items-center gap-2">
               <RefreshCcw className="h-4 w-4" />
               Actualizar
             </Button>
+            <ExcelCatalogoBotones entidad="prefijos" titulo="prefijos" onImportado={() => void loadPrefijos()} />
             <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => setCrearOpen(true)}>
               <Plus className="h-4 w-4" />
               Nuevo prefijo

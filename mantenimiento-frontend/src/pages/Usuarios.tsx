@@ -22,6 +22,7 @@ import type { UserList, UserCreateRequest, UserUpdateRequest } from '@/interface
 import { useAuth } from '@/contexts/AuthContext';
 
 import { VolverConfiguracion } from '@/components/configuracion/VolverConfiguracion';
+import { ExcelCatalogoBotones } from '@/components/excel/ExcelCatalogoBotones';
 const estadoOpciones = [
   { value: '', label: 'Todos' },
   { value: 'true', label: 'Activos' },
@@ -288,24 +289,29 @@ export function UsuariosPage() {
           <h1 className="text-3xl font-semibold text-continental-black">Gestion de usuarios</h1>
           <p className="text-continental-gray-1">Listado basico de roles y estado.</p>
         </div>
-        <div className="flex gap-2">
-          <div style={{ minWidth: 280 }}>
-            <SearchInput
-              placeholder="Buscar por nombre o numero"
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-              onBuscar={loadUsuarios}
-            />
-          </div>
-          <Select options={estadoOpciones} value={activo} onChange={(value) => setActivo(value)} />
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" onClick={loadUsuarios} className="flex items-center gap-2">
             <RefreshCcw className="h-4 w-4" />
             Actualizar
           </Button>
+          <ExcelCatalogoBotones entidad="usuarios" titulo="usuarios" onImportado={() => void loadUsuarios()} />
           <Button onClick={openCreate} className="flex items-center gap-2 bg-continental-gradient text-white">
             <Plus className="h-4 w-4" />
             Nuevo
           </Button>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <div style={{ width: 320, maxWidth: '100%' }}>
+          <SearchInput
+            placeholder="Buscar por nombre o numero"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            onBuscar={loadUsuarios}
+          />
+        </div>
+        <div style={{ width: 180 }}>
+          <Select options={estadoOpciones} value={activo} onChange={(value) => setActivo(value)} />
         </div>
       </div>
 

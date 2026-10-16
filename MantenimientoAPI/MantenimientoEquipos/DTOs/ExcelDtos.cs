@@ -23,4 +23,16 @@ public class ExcelImportResultDto
     /// <summary>Primeros errores encontrados (máximo 500)</summary>
     public List<ExcelImportErrorDto> Errores { get; set; } = new();
     public bool Aplicado { get; set; }
+    /// <summary>
+    /// Usuarios: contraseñas temporales generadas para las altas sin contraseña.
+    /// Solo se llena al aplicar y es la única vez que se pueden ver.
+    /// </summary>
+    public List<ExcelCredencialDto> Credenciales { get; set; } = new();
+}
+
+public class ExcelCredencialDto
+{
+    public required string Usuario { get; set; }
+    public required string Nombre { get; set; }
+    public required string Contrasena { get; set; }
 }

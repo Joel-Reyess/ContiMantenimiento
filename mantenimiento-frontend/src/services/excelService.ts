@@ -4,12 +4,19 @@ import type { ApiResponse } from '@/interfaces';
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 /** Módulos que se pueden importar (los que se exportan son más; ver ExcelExportService en el backend) */
-export type EntidadImportable = 'vehiculos' | 'inventario';
+export type EntidadImportable = 'vehiculos' | 'inventario' | 'areas' | 'prefijos' | 'usuarios';
 
 export interface ExcelImportError {
   fila: number;
   columna?: string;
   mensaje: string;
+}
+
+/** Contraseña temporal de un usuario dado de alta por importación (solo llega una vez, al aplicar) */
+export interface ExcelCredencial {
+  usuario: string;
+  nombre: string;
+  contrasena: string;
 }
 
 export interface ExcelImportResult {
@@ -21,6 +28,7 @@ export interface ExcelImportResult {
   totalErrores: number;
   errores: ExcelImportError[];
   aplicado: boolean;
+  credenciales?: ExcelCredencial[];
 }
 
 /** Descarga un archivo del backend (con el token) y lo guarda con el nombre que manda el servidor */

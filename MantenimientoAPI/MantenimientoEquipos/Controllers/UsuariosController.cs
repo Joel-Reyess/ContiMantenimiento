@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Cryptography;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.Models.Enums;
 using MantenimientoEquipos.DTOs;
@@ -16,22 +15,10 @@ namespace MantenimientoEquipos.Controllers;
 public class UsuariosController : ControllerBase
 {
     private readonly MantenimientoDbContext _db;
-    private const string TempPasswordChars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
 
     public UsuariosController(MantenimientoDbContext db)
     {
         _db = db;
-    }
-
-    private static string GenerateTemporaryPassword(int length = 10)
-    {
-        var chars = new char[length];
-        for (var i = 0; i < length; i++)
-        {
-            chars[i] = TempPasswordChars[RandomNumberGenerator.GetInt32(TempPasswordChars.Length)];
-        }
-
-        return $"Temp-{new string(chars)}";
     }
 
     [HttpGet]
@@ -119,7 +106,7 @@ public class UsuariosController : ControllerBase
             return NotFound(ApiResponse<string>.Error("Usuario no encontrado"));
 
         // Generar contraseña temporal
-        var passwordTemporal = GenerateTemporaryPassword();
+        var passwordTemporal = PasswordHasher.GenerarTemporal();
         
         var salt = PasswordHasher.GenerateSalt();
         var hash = PasswordHasher.HashPassword(passwordTemporal, salt);

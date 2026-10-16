@@ -23,6 +23,7 @@ import type { Area } from '@/interfaces';
 import type { TipoVehiculoItem } from '@/services/catalogosService';
 import { ChecklistsPorTipo } from '@/components/configuracion/ChecklistsPorTipo';
 import { Bitacora } from '@/components/configuracion/Bitacora';
+import { ExcelCatalogoBotones } from '@/components/excel/ExcelCatalogoBotones';
 import { useAuth } from '@/contexts/AuthContext';
 import { excelService } from '@/services/excelService';
 
@@ -59,7 +60,7 @@ const MODULOS: { titulo: string; descripcion: string; ruta: string; icono: React
   { titulo: 'Archivo técnico (planos)', descripcion: 'Planos y documentos técnicos de los vehículos.', ruta: '/archivo', icono: <FileText className="h-7 w-7" /> },
   { titulo: 'Programación preventiva', descripcion: 'Cada cuántos meses se da mantenimiento preventivo por tipo.', ruta: '/configuracion/preventivos', icono: <Calendar className="h-7 w-7" /> },
   { titulo: 'Asignación de líderes', descripcion: 'Qué líder atiende cada tipo de vehículo.', ruta: '/asignacion-lideres', icono: <UserCheck className="h-7 w-7" /> },
-  { titulo: 'Bitácora', descripcion: 'Quién eliminó o reinició qué y cuándo.', ruta: '/configuracion/bitacora', icono: <History className="h-7 w-7" /> },
+  { titulo: 'Bitácora', descripcion: 'Quién eliminó, importó o reinició qué y cuándo.', ruta: '/configuracion/bitacora', icono: <History className="h-7 w-7" /> },
   { titulo: 'Respaldo y reinicio de datos', descripcion: 'Exportar todo a Excel y reiniciar los datos con la clave maestra.', ruta: '/configuracion/datos', icono: <Database className="h-7 w-7" />, soloReset: true }
 ];
 
@@ -636,17 +637,18 @@ export function ConfiguracionPage() {
       )}
 
       {activeTab === "areas" && (
-        <div className="space-y-3 mt-4">
+        <div className="flex flex-col gap-3 mt-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <MapPin className="h-5 w-5 text-continental-yellow" />
               <h2 className="text-xl font-semibold text-continental-black">Catálogo de áreas</h2>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={loadAreas} className="flex items-center gap-2">
                 <RefreshCcw className="h-4 w-4" />
                 Actualizar
               </Button>
+              <ExcelCatalogoBotones entidad="areas" titulo="áreas" onImportado={() => void loadAreas()} />
               <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => setCrearOpen(true)}>
                 <Plus className="h-4 w-4" />
                 Nueva área

@@ -11,6 +11,8 @@ const MODULOS: Record<string, string> = {
   OrdenTrabajo: 'Orden de trabajo',
   Vehiculo: 'Vehículo',
   Area: 'Área',
+  Prefijo: 'Prefijo',
+  Usuario: 'Usuario',
   Consumible: 'Inventario',
   ChecklistTemplate: 'Checklist',
   TipoVehiculo: 'Tipo de vehículo',
@@ -24,6 +26,7 @@ const MODULOS: Record<string, string> = {
 
 const ACCIONES: Record<string, string> = {
   Eliminar: 'Eliminación',
+  Importar: 'Importación',
   Reiniciar: 'Reinicio de datos'
 };
 
@@ -37,7 +40,7 @@ const fechaLocal = (iso: string) =>
 const limiteDia = (fecha: string, fin: boolean) => new Date(`${fecha}T${fin ? '23:59:59.999' : '00:00:00'}`).toISOString();
 
 /**
- * Bitácora: quién eliminó o reinició qué y cuándo (requerimiento 9.3). Solo lectura.
+ * Bitácora: quién eliminó, importó o reinició qué y cuándo (requerimiento 9.3). Solo lectura.
  */
 export function Bitacora() {
   const [registros, setRegistros] = useState<RegistroBitacora[]>([]);
@@ -119,7 +122,7 @@ export function Bitacora() {
           <div>
             <h2 className="text-xl font-semibold text-continental-black">Bitácora</h2>
             <p className="text-sm text-continental-gray-1">
-              Quién eliminó o reinició qué y cuándo. Las eliminaciones no se pueden deshacer; aquí queda la constancia.
+              Quién eliminó, importó desde Excel o reinició qué y cuándo. Las eliminaciones no se pueden deshacer; aquí queda la constancia.
             </p>
           </div>
         </div>
@@ -192,7 +195,7 @@ export function Bitacora() {
                   <td style={celda} className="whitespace-nowrap text-continental-gray-1">{fechaLocal(r.fecha)}</td>
                   <td style={celda} className="text-continental-black">{r.usuario || 'Desconocido'}</td>
                   <td style={celda}>
-                    <Badge variant={r.accion === 'Reiniciar' ? 'destructive' : 'secondary'}>{ACCIONES[r.accion] ?? r.accion}</Badge>
+                    <Badge variant={r.accion === 'Reiniciar' ? 'destructive' : r.accion === 'Importar' ? 'info' : 'secondary'}>{ACCIONES[r.accion] ?? r.accion}</Badge>
                   </td>
                   <td style={celda} className="whitespace-nowrap text-continental-black">{MODULOS[r.entidad] ?? r.entidad}</td>
                   <td style={celda} className="text-continental-black">{r.descripcion}</td>
