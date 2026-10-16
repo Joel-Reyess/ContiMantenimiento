@@ -56,6 +56,39 @@ public class ExcelController : ControllerBase
         return File(bytes, ExcelExportService.ContentType, NombreArchivo(ExcelExportService.Hojas[entidad]));
     }
 
+    /// <summary>
+    /// La flota con los filtros de la pantalla ("lo que estoy viendo"): búsqueda, tipo, área y pestaña
+    /// (excluirTipo = Tugger en la pestaña Contenedores). Mismos filtros que el listado (VehiculoFiltros).
+    /// </summary>
+    [HttpGet("exportar-flota")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
+    public async Task<IActionResult> ExportarFlotaFiltrada(
+        [FromQuery] string? busqueda = null,
+        [FromQuery] TipoVehiculoEnum? tipo = null,
+        [FromQuery] int? areaId = null,
+        [FromQuery] TipoVehiculoEnum? excluirTipo = null)
+    {
+        var esAdmin = User.IsInRole("SuperUsuario") || User.IsInRole("Administrador");
+        List<TipoVehiculoEnum>? tiposPermitidos = null;
+        if (!esAdmin)
+        {
+            var asignaciones = await _asignacionService.GetByUsuarioIdAsync(UserId());
+            if (asignaciones.Any()) tiposPermitidos = asignaciones.Select(a => a.TipoVehiculo).ToList();
+        }
+
+        var filtro = new FiltroVehiculos
+        {
+            Busqueda = busqueda,
+            Tipo = tipo,
+            AreaId = areaId,
+            ExcluirTipo = excluirTipo,
+            TiposPermitidos = tiposPermitidos
+        };
+        var (archivo, _) = await _exportService.ExportarFlotaFiltradaAsync(filtro,
+            User.FindFirst("NombreCompleto")?.Value ?? User.FindFirst(ClaimTypes.Name)?.Value);
+        return File(archivo, ExcelExportService.ContentType, NombreArchivo("Flota filtrada"));
+    }
+
     /// <summary>Un solo libro con todos los módulos (una hoja por módulo)</summary>
     [HttpGet("exportar-todo")]
     [RolesAllowed("SuperUsuario", "Administrador")]

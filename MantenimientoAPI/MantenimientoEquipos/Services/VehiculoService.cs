@@ -36,47 +36,22 @@ public class VehiculoService
         List<TipoVehiculoEnum>? tiposPermitidos = null,
         string? busqueda = null,
         int page = 1,
-        int pageSize = 10)
+        int pageSize = 10,
+        TipoVehiculoEnum? excluirTipo = null)
     {
-        // Iniciamos la query incluyendo las tablas relacionadas para búsqueda y mapeo
-        var query = _db.Vehiculos
-            .Include(v => v.Area)
-            .Include(v => v.Reportes)
-            .Where(v => v.Activo);
-
-        if (tiposPermitidos != null && tiposPermitidos.Any())
-        {
-            query = query.Where(v => tiposPermitidos.Contains(v.Tipo));
-        }
-
-        if (tipo.HasValue)
-            query = query.Where(v => v.Tipo == tipo.Value);
-
-        if (estado.HasValue)
-            query = query.Where(v => v.Estado == estado.Value);
-
-        if (areaId.HasValue)
-            query = query.Where(v => v.AreaId == areaId.Value);
-
-        if (ubicacion.HasValue)
-            query = query.Where(v => v.Ubicacion == ubicacion.Value);
-
-        if (!string.IsNullOrEmpty(busqueda))
-        {
-            var term = busqueda.Trim().ToLower();
-            
-            // Unimos con TiposVehiculo y Areas directamente en la query para una búsqueda robusta en SQL (insensible a mayúsculas)
-            query = from v in query
-                    join tv in _db.TiposVehiculo on (int)v.Tipo equals tv.Id into tvJoin
-                    from tv in tvJoin.DefaultIfEmpty()
-                    where v.Codigo.ToLower().Contains(term) ||
-                          (v.Marca != null && v.Marca.ToLower().Contains(term)) ||
-                          (v.Modelo != null && v.Modelo.ToLower().Contains(term)) ||
-                          (v.NumeroSerie != null && v.NumeroSerie.ToLower().Contains(term)) ||
-                          (v.Area != null && v.Area.Nombre.ToLower().Contains(term)) ||
-                          (tv != null && tv.Nombre.ToLower().Contains(term))
-                    select v;
-        }
+        // Los filtros viven en VehiculoFiltros: la exportación a Excel de "lo que estoy viendo" usa los mismos
+        var query = VehiculoFiltros.Aplicar(_db,
+            _db.Vehiculos.Include(v => v.Area).Include(v => v.Reportes),
+            new FiltroVehiculos
+            {
+                Tipo = tipo,
+                Estado = estado,
+                AreaId = areaId,
+                Ubicacion = ubicacion,
+                TiposPermitidos = tiposPermitidos,
+                Busqueda = busqueda,
+                ExcluirTipo = excluirTipo
+            });
 
         var totalItems = await query.CountAsync();
         var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);

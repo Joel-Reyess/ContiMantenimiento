@@ -16,6 +16,8 @@ export interface VehiculoFilters {
   areaId?: number;
   busqueda?: string;
   soloActivos?: boolean;
+  /** La pestaña "Contenedores" deja fuera a los Tuggers */
+  excluirTipo?: number;
   page?: number;
   pageSize?: number;
 }
@@ -53,6 +55,7 @@ export const vehiculosService = {
       if (filters.areaId !== undefined) params.append('areaId', filters.areaId.toString());
       if (filters.busqueda) params.append('busqueda', filters.busqueda);
       if (filters.soloActivos !== undefined) params.append('soloActivos', filters.soloActivos.toString());
+      if (filters.excluirTipo !== undefined) params.append('excluirTipo', filters.excluirTipo.toString());
       if (filters.page !== undefined) params.append('page', filters.page.toString());
       if (filters.pageSize !== undefined) params.append('pageSize', filters.pageSize.toString());
     }
