@@ -6,6 +6,7 @@ using MantenimientoEquipos.Middlewares;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.Models.Enums;
 using MantenimientoEquipos.Services;
+using MantenimientoEquipos.Utils;
 
 namespace MantenimientoEquipos.Controllers;
 
@@ -112,6 +113,7 @@ public class ExcelController : ControllerBase
 
     /// <summary>
     /// Valida el archivo y, con aplicar=true, guarda los cambios si no hubo ningún error.
+    /// Entidades: vehiculos, inventario, areas, prefijos y usuarios.
     /// </summary>
     [HttpPost("importar/{entidad}")]
     [RolesAllowed("SuperUsuario", "Administrador")]
@@ -129,9 +131,10 @@ public class ExcelController : ControllerBase
         try
         {
             using var stream = archivo.OpenReadStream();
-            var resultado = await _importService.ImportarAsync(entidad, stream, aplicar, UserId());
+            var resultado = await _importService.ImportarAsync(entidad, stream, aplicar, UserId(), User.NombreUsuario(), archivo.FileName);
             var mensaje = resultado.Aplicado
                 ? $"Importación aplicada: {resultado.Nuevos} nuevo(s), {resultado.Actualizados} actualizado(s)"
+                    + (resultado.Credenciales.Count > 0 ? $"; se generaron {resultado.Credenciales.Count} contraseña(s) temporal(es)" : "")
                 : resultado.TotalErrores > 0
                     ? $"Se encontraron {resultado.TotalErrores} error(es); no se guardó nada"
                     : "Archivo válido";
