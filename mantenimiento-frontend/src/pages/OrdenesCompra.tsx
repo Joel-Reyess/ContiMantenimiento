@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Modal, ModalFooter, useToast } from '@/components/ui';
+import { Button, Card, Modal, ModalFooter, useConfirm, useToast } from '@/components/ui';
 import { ordenesCompraService } from '@/services/ordenesCompraService';
 import { refaccionesService } from '@/services/refaccionesService';
 import type { OrdenCompra, SolicitudRefaccion } from '@/interfaces';
-import { FileText, RefreshCcw, Eye, Package } from 'lucide-react';
+import { FileText, RefreshCcw, Eye, Package, Trash2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 export function OrdenesCompraPage() {
   const toast = useToast();
   const { hasRole } = useAuth();
   const isSupervisor = hasRole(['Supervisor', 'SuperUsuario', 'Administrador']);
+  const canEliminar = hasRole(['SuperUsuario', 'Administrador']);
+  const { confirmar } = useConfirm();
+  const [eliminandoId, setEliminandoId] = useState<number | null>(null);
 
   const [ordenes, setOrdenes] = useState<OrdenCompra[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,6 +38,37 @@ export function OrdenesCompraPage() {
       setError('Error de conexión');
     } finally {
       setLoading(false);
+    }
+  };
+
+  /** Eliminar OC (solo administradores): sus pagos quedan sin orden de compra y vuelven a "Aprobado" */
+  const eliminarOrden = async (orden: { id: number; folio: string }) => {
+    const ok = await confirmar({
+      titulo: `Eliminar orden de compra ${orden.folio}`,
+      mensaje: (
+        <div className="flex flex-col gap-2">
+          <p>Los pagos incluidos quedarán sin orden de compra y volverán al estado "Aprobado", para poder incluirlos en otra.</p>
+          <p>Esta acción no se puede deshacer. Quedará registrado quién la realizó y cuándo.</p>
+        </div>
+      ),
+      textoConfirmar: 'Eliminar',
+      tono: 'peligro'
+    });
+    if (!ok) return;
+    setEliminandoId(orden.id);
+    try {
+      const res = await ordenesCompraService.delete(orden.id);
+      if (!res.success) {
+        toast.error(res.message || 'No se pudo eliminar la orden de compra');
+        return;
+      }
+      toast.exito(res.message || `Orden de compra ${orden.folio} eliminada`);
+      await loadOrdenes();
+    } catch (err) {
+      console.error(err);
+      toast.error('Error al eliminar la orden de compra');
+    } finally {
+      setEliminandoId(null);
     }
   };
 
@@ -152,6 +186,19 @@ export function OrdenesCompraPage() {
                 <Button variant="ghost" size="sm" onClick={() => { setDetalleOrden(orden); setDetalleOpen(true); }}>
                   <Eye className="h-4 w-4 mr-1" /> Ver Detalle
                 </Button>
+                {canEliminar && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void eliminarOrden(orden)}
+                    disabled={eliminandoId === orden.id}
+                    aria-label={`Eliminar orden de compra ${orden.folio}`}
+                    title="Eliminar orden de compra"
+                    className="text-red-700 border-red-300 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </Card>
           ))}

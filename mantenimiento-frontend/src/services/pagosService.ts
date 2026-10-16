@@ -117,6 +117,11 @@ export const pagosService = {
     const endpoint = `/pagos/resumen-tecnicos${queryString ? `?${queryString}` : ''}`;
 
     return await httpClient.get(endpoint);
+  },
+
+  /** Elimina el pago (si está en una orden de compra, la API pide eliminar primero la OC). Solo administradores; queda en la bitácora. */
+  async delete(id: number): Promise<ApiResponse<string>> {
+    return await httpClient.delete<string>(`/pagos/${id}`);
   }
 };
 

@@ -83,6 +83,8 @@ export function MaterialesUnificadoPage() {
   const [savingStock, setSavingStock] = useState(false);
   const [errorStock, setErrorStock] = useState('');
   const { hasRole } = useAuth();
+  // Eliminar solicitudes: solo administradores (estandarización de eliminación)
+  const canEliminarSolicitud = hasRole(['SuperUsuario', 'Administrador']);
   const canImport = hasRole(['SuperUsuario', 'Administrador']);
   const [importOpen, setImportOpen] = useState(false);
   const [exportando, setExportando] = useState(false);
@@ -372,6 +374,17 @@ export function MaterialesUnificadoPage() {
   };
 
   const handleAprobar = (id: number) => doAccion(() => refaccionesService.aprobar(id, undefined), 'Solicitud aprobada');
+  const handleEliminarSolicitud = async (item: { id: number; nombreRefaccion: string; cantidad: number }) => {
+    const ok = await confirmar({
+      titulo: 'Eliminar solicitud de refacción',
+      mensaje: `¿Eliminar la solicitud de ${item.nombreRefaccion} (x${item.cantidad})? Esta acción no se puede deshacer y quedará registrada en la bitácora.`,
+      textoConfirmar: 'Eliminar',
+      tono: 'peligro'
+    });
+    if (!ok) return;
+    doAccion(() => refaccionesService.delete(item.id), `Solicitud de ${item.nombreRefaccion} eliminada`);
+  };
+
   const handleRechazar = async (id: number) => {
     const motivo = await pedirTexto({
       titulo: 'Rechazar solicitud de refacción',
@@ -655,6 +668,19 @@ export function MaterialesUnificadoPage() {
                           <Button size="sm" onClick={() => handleEntregar(item.id)} disabled={accionando} className="flex items-center gap-1">
                             <CheckCircle className="h-4 w-4" />
                             Entregar
+                          </Button>
+                        )}
+                        {canEliminarSolicitud && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => void handleEliminarSolicitud(item)}
+                            disabled={accionando}
+                            aria-label={`Eliminar solicitud ${item.nombreRefaccion}`}
+                            title="Eliminar solicitud"
+                            className="text-red-700 border-red-300 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         )}
                       </div>

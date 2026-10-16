@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using MantenimientoEquipos.Utils;
+using MantenimientoEquipos.Services;
 using MantenimientoEquipos.Middlewares;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
@@ -14,10 +16,12 @@ namespace MantenimientoEquipos.Controllers
     public class SolicitudCambioController : ControllerBase
     {
         private readonly MantenimientoDbContext _context;
+        private readonly EliminacionService _eliminacion;
 
-        public SolicitudCambioController(MantenimientoDbContext context)
+        public SolicitudCambioController(MantenimientoDbContext context, EliminacionService eliminacion)
         {
             _context = context;
+            _eliminacion = eliminacion;
         }
 
         private int GetUserId()
@@ -29,6 +33,16 @@ namespace MantenimientoEquipos.Controllers
                 return userId;
             }
             return 0; // Fallback or throw
+        }
+
+        /// <summary>Elimina una solicitud de cambio de un vehículo. Solo administradores; queda en la bitácora.</summary>
+        [HttpDelete("{id:int}")]
+        [RolesAllowed("SuperUsuario", "Administrador")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            var mensaje = await _eliminacion.EliminarSolicitudCambioAsync(id, User.UsuarioId(), User.NombreUsuario());
+            if (mensaje == null) return NotFound(ApiResponse<string>.Error("Solicitud no encontrada"));
+            return Ok(ApiResponse<string>.Ok(mensaje, mensaje));
         }
 
         [HttpGet]

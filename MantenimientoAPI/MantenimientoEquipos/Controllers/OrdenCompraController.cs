@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MantenimientoEquipos.Utils;
+using MantenimientoEquipos.Services;
 using Microsoft.EntityFrameworkCore;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.Models.Enums;
@@ -13,10 +15,12 @@ namespace MantenimientoEquipos.Controllers;
 public class OrdenCompraController : ControllerBase
 {
     private readonly MantenimientoDbContext _db;
+    private readonly EliminacionService _eliminacion;
 
-    public OrdenCompraController(MantenimientoDbContext db)
+    public OrdenCompraController(MantenimientoDbContext db, EliminacionService eliminacion)
     {
         _db = db;
+        _eliminacion = eliminacion;
     }
 
     public class CreateOrdenCompraRequest
@@ -97,6 +101,16 @@ public class OrdenCompraController : ControllerBase
 
         await _db.SaveChangesAsync();
         return Ok(ApiResponse<OrdenCompra>.Ok(ordenCompra, "Orden de compra actualizada correctamente."));
+    }
+
+    /// <summary>Elimina la orden de compra; sus pagos vuelven a Aprobado y sin OC. Solo administradores; queda en la bitácora.</summary>
+    [HttpDelete("{id:int}")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var mensaje = await _eliminacion.EliminarOrdenCompraAsync(id, User.UsuarioId(), User.NombreUsuario());
+        if (mensaje == null) return NotFound(ApiResponse<string>.Error("Orden de compra no encontrada."));
+        return Ok(ApiResponse<string>.Ok(mensaje, mensaje));
     }
 
     [HttpGet]

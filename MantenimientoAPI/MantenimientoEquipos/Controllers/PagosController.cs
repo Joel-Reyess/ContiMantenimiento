@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MantenimientoEquipos.Utils;
+using MantenimientoEquipos.Services;
 using Microsoft.EntityFrameworkCore;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.Models.Enums;
@@ -13,10 +15,12 @@ namespace MantenimientoEquipos.Controllers;
 public class PagosController : ControllerBase
 {
     private readonly MantenimientoDbContext _db;
+    private readonly EliminacionService _eliminacion;
 
-    public PagosController(MantenimientoDbContext db)
+    public PagosController(MantenimientoDbContext db, EliminacionService eliminacion)
     {
         _db = db;
+        _eliminacion = eliminacion;
     }
 
     private object MapDto(RegistroPago p) => new
@@ -34,8 +38,27 @@ public class PagosController : ControllerBase
         p.FechaRegistro,
         p.FechaAprobacion,
         p.FechaPago,
-        p.Notas
+        p.Notas,
+        // Para saber en la pantalla si el pago ya está en una orden de compra (no se puede eliminar suelto)
+        p.OrdenCompraId
     };
+
+    /// <summary>Elimina un pago (si está en una orden de compra, primero hay que eliminar la OC). Solo administradores; queda en la bitácora.</summary>
+    [HttpDelete("{id:int}")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        try
+        {
+            var mensaje = await _eliminacion.EliminarPagoAsync(id, User.UsuarioId(), User.NombreUsuario());
+            if (mensaje == null) return NotFound(ApiResponse<string>.Error("Pago no encontrado"));
+            return Ok(ApiResponse<string>.Ok(mensaje, mensaje));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ApiResponse<string>.Error(ex.Message));
+        }
+    }
 
     [HttpGet]
     [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]

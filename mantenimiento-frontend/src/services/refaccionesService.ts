@@ -113,6 +113,11 @@ export const refaccionesService = {
 
   async getConteoPendientes(): Promise<ApiResponse<{ count: number }>> {
     return await httpClient.get<{ count: number }>('/refacciones/conteo-pendientes');
+  },
+
+  /** Elimina la solicitud de refacción. Solo administradores; queda en la bitácora. */
+  async delete(id: number): Promise<ApiResponse<string>> {
+    return await httpClient.delete<string>(`/refacciones/${id}`);
   }
 };
 

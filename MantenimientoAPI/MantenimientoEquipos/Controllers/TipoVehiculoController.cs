@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using MantenimientoEquipos.Utils;
+using MantenimientoEquipos.Services;
 using MantenimientoEquipos.Middlewares;
 using Microsoft.AspNetCore.Authorization;
 using MantenimientoEquipos.Models;
@@ -13,10 +15,12 @@ namespace MantenimientoEquipos.Controllers
     public class TipoVehiculoController : ControllerBase
     {
         private readonly ITipoVehiculoRepository _tipoVehiculoRepository;
+        private readonly EliminacionService _eliminacion;
 
-        public TipoVehiculoController(ITipoVehiculoRepository tipoVehiculoRepository)
+        public TipoVehiculoController(ITipoVehiculoRepository tipoVehiculoRepository, EliminacionService eliminacion)
         {
             _tipoVehiculoRepository = tipoVehiculoRepository;
+            _eliminacion = eliminacion;
         }
 
         [HttpGet]
@@ -162,14 +166,18 @@ namespace MantenimientoEquipos.Controllers
         [RolesAllowed("SuperUsuario", "Administrador")]
         public async Task<ActionResult<ApiResponse<object>>> Delete(int id)
         {
-            var tipo = await _tipoVehiculoRepository.GetByIdAsync(id);
-            if (tipo == null)
+            // Eliminación real (antes solo se marcaba inactivo y el tipo seguía apareciendo)
+            try
             {
-                return NotFound(ApiResponse<object>.Error("Tipo de vehículo no encontrado"));
+                var mensaje = await _eliminacion.EliminarTipoVehiculoAsync(id, User.UsuarioId(), User.NombreUsuario());
+                if (mensaje == null)
+                    return NotFound(ApiResponse<object>.Error("Tipo de vehículo no encontrado"));
+                return Ok(ApiResponse<object>.Ok(null, mensaje));
             }
-
-            await _tipoVehiculoRepository.DeleteAsync(id);
-            return Ok(ApiResponse<object>.Ok(null, "Tipo de vehículo eliminado exitosamente"));
+            catch (InvalidOperationException ex)
+            {
+                return Conflict(ApiResponse<object>.Error(ex.Message));
+            }
         }
 
         [HttpPost("{id}/imagen")]
