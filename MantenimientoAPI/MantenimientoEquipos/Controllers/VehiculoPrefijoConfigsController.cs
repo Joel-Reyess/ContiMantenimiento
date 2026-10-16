@@ -1,10 +1,14 @@
 using Microsoft.AspNetCore.Mvc;
+using MantenimientoEquipos.Middlewares;
+using Microsoft.AspNetCore.Authorization;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.Services;
 
 namespace MantenimientoEquipos.Controllers;
 
 [ApiController]
+
+[Authorize] // Antes no pedía sesión: cualquiera podía crear o borrar prefijos
 [Route("api/[controller]")]
 public class VehiculoPrefijoConfigsController : ControllerBase
 {
@@ -36,6 +40,7 @@ public class VehiculoPrefijoConfigsController : ControllerBase
     }
 
     [HttpPost]
+    [RolesAllowed("SuperUsuario", "Administrador")]
     public async Task<ActionResult<VehiculoPrefijoConfig>> Create(VehiculoPrefijoConfig config)
     {
         try
@@ -50,6 +55,7 @@ public class VehiculoPrefijoConfigsController : ControllerBase
     }
 
     [HttpPut("{id}")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
     public async Task<ActionResult<VehiculoPrefijoConfig>> Update(int id, VehiculoPrefijoConfig config)
     {
         try
@@ -66,6 +72,7 @@ public class VehiculoPrefijoConfigsController : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
     public async Task<IActionResult> Delete(int id)
     {
         var success = await _service.DeleteAsync(id);

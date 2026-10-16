@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using MantenimientoEquipos.Middlewares;
+using Microsoft.AspNetCore.Authorization;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.DTOs;
 using MantenimientoEquipos.Repositories;
@@ -6,6 +8,7 @@ using MantenimientoEquipos.Repositories;
 namespace MantenimientoEquipos.Controllers
 {
     [ApiController]
+    [Authorize] // Antes no pedía sesión: cualquiera podía crear, editar o borrar tipos
     [Route("api/[controller]")]
     public class TipoVehiculoController : ControllerBase
     {
@@ -72,6 +75,7 @@ namespace MantenimientoEquipos.Controllers
         }
 
         [HttpPut("{id}")]
+        [RolesAllowed("SuperUsuario", "Administrador")]
         public async Task<IActionResult> UpdateTipoVehiculo(int id, TipoVehiculoDto tipoDto)
         {
             if (id != tipoDto.Id)
@@ -116,6 +120,7 @@ namespace MantenimientoEquipos.Controllers
         }
 
         [HttpPost]
+        [RolesAllowed("SuperUsuario", "Administrador")]
         public async Task<ActionResult<ApiResponse<TipoVehiculoDto>>> Create(TipoVehiculoDto tipoDto)
         {
             var validacionPreventivo = ValidarProgramacionPreventiva(tipoDto);
@@ -154,6 +159,7 @@ namespace MantenimientoEquipos.Controllers
         }
 
         [HttpDelete("{id}")]
+        [RolesAllowed("SuperUsuario", "Administrador")]
         public async Task<ActionResult<ApiResponse<object>>> Delete(int id)
         {
             var tipo = await _tipoVehiculoRepository.GetByIdAsync(id);
@@ -167,6 +173,7 @@ namespace MantenimientoEquipos.Controllers
         }
 
         [HttpPost("{id}/imagen")]
+        [RolesAllowed("SuperUsuario", "Administrador")]
         public async Task<ActionResult<ApiResponse<object>>> UploadImagen(int id, IFormFile file)
         {
             var tipo = await _tipoVehiculoRepository.GetByIdAsync(id);
@@ -213,6 +220,7 @@ namespace MantenimientoEquipos.Controllers
         }
 
         [HttpPost("{id}/imagen-fallas")]
+        [RolesAllowed("SuperUsuario", "Administrador")]
         public async Task<ActionResult<ApiResponse<object>>> UploadImagenFallas(int id, IFormFile file)
         {
             var tipo = await _tipoVehiculoRepository.GetByIdAsync(id);

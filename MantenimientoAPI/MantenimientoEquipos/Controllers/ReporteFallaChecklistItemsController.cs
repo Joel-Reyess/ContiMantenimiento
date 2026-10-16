@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using MantenimientoEquipos.Middlewares;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.DTOs;
@@ -7,6 +9,8 @@ using MantenimientoEquipos.Services;
 namespace MantenimientoEquipos.Controllers;
 
 [ApiController]
+
+[Authorize]
 [Route("api/[controller]")]
 public class ReporteFallaChecklistItemsController : ControllerBase
 {
@@ -35,6 +39,7 @@ public class ReporteFallaChecklistItemsController : ControllerBase
     }
 
     [HttpPost]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
     public async Task<ActionResult<ReporteFallaChecklistItem>> Create(int reporteFallaId, [FromBody] ReporteFallaChecklistItemCreateRequest request)
     {
         try
@@ -54,6 +59,7 @@ public class ReporteFallaChecklistItemsController : ControllerBase
     }
 
     [HttpPut("{id}")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
     public async Task<ActionResult> Update(int id, [FromBody] ReporteFallaChecklistItemUpdateRequest request)
     {
         try
@@ -72,6 +78,7 @@ public class ReporteFallaChecklistItemsController : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
     public async Task<ActionResult> Delete(int id)
     {
         try
