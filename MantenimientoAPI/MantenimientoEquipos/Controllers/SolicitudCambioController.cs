@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using MantenimientoEquipos.Middlewares;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.DTOs;
@@ -7,6 +9,7 @@ using System.Security.Claims;
 namespace MantenimientoEquipos.Controllers
 {
     [ApiController]
+    [Authorize]
     [Route("api/[controller]")]
     public class SolicitudCambioController : ControllerBase
     {
@@ -103,6 +106,7 @@ namespace MantenimientoEquipos.Controllers
         }
 
         [HttpPost("responder")]
+        [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
         public async Task<ActionResult<ApiResponse<bool>>> Responder(AprobarSolicitudCambioDto dto)
         {
             var userId = GetUserId();

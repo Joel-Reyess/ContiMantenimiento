@@ -136,13 +136,13 @@ public class EliminacionService
     /// Deja constancia de quién eliminó qué y cuándo (requerimiento 9.3). Se guarda también el nombre,
     /// por si después se elimina el usuario.
     /// </summary>
-    public void Registrar(int? usuarioId, string? nombreUsuario, string entidad, int? entidadId, string descripcion)
+    public void Registrar(int? usuarioId, string? nombreUsuario, string entidad, int? entidadId, string descripcion, string accion = "Eliminar")
     {
         _db.LogAcciones.Add(new LogAccion
         {
             UsuarioId = usuarioId,
             NombreUsuario = nombreUsuario,
-            Accion = "Eliminar",
+            Accion = accion,
             Entidad = entidad,
             EntidadId = entidadId,
             Descripcion = descripcion.Length > 1000 ? descripcion[..1000] : descripcion,

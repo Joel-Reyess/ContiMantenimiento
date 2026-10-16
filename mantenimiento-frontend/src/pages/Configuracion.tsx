@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState, type ReactNode } from 'react';
-import { Settings, Plus, Loader2, RefreshCcw, ListChecks, Trash2, Package, Users, AlertTriangle, Calendar, FileText, Download, FileSpreadsheet, MapPin, Truck, Tag, UserCheck, Database, ArrowLeft } from 'lucide-react';
+import { Settings, Plus, Loader2, RefreshCcw, ListChecks, Trash2, Package, Users, AlertTriangle, Calendar, FileText, Download, FileSpreadsheet, MapPin, Truck, Tag, UserCheck, Database, ArrowLeft, History } from 'lucide-react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getFullImageUrl } from '@/lib/utils';
 import {
@@ -22,6 +22,7 @@ import { catalogosService, usuariosService, adminService, dashboardService } fro
 import type { Area } from '@/interfaces';
 import type { TipoVehiculoItem } from '@/services/catalogosService';
 import { ChecklistsPorTipo } from '@/components/configuracion/ChecklistsPorTipo';
+import { Bitacora } from '@/components/configuracion/Bitacora';
 import { useAuth } from '@/contexts/AuthContext';
 import { excelService } from '@/services/excelService';
 
@@ -45,8 +46,8 @@ interface ProgramacionPreventiva {
   estado: string;
 }
 
-type Seccion = 'areas' | 'checklists' | 'tipos' | 'preventivos' | 'datos';
-const SECCIONES_INTERNAS: Seccion[] = ['areas', 'checklists', 'tipos', 'preventivos', 'datos'];
+type Seccion = 'areas' | 'checklists' | 'tipos' | 'preventivos' | 'datos' | 'bitacora';
+const SECCIONES_INTERNAS: Seccion[] = ['areas', 'checklists', 'tipos', 'preventivos', 'datos', 'bitacora'];
 
 const MODULOS: { titulo: string; descripcion: string; ruta: string; icono: ReactNode; soloReset?: boolean }[] = [
   { titulo: 'Gestión de usuarios', descripcion: 'Usuarios, roles, contraseñas y acceso.', ruta: '/usuarios', icono: <Users className="h-7 w-7" /> },
@@ -58,6 +59,7 @@ const MODULOS: { titulo: string; descripcion: string; ruta: string; icono: React
   { titulo: 'Archivo técnico (planos)', descripcion: 'Planos y documentos técnicos de los vehículos.', ruta: '/archivo', icono: <FileText className="h-7 w-7" /> },
   { titulo: 'Programación preventiva', descripcion: 'Cada cuántos meses se da mantenimiento preventivo por tipo.', ruta: '/configuracion/preventivos', icono: <Calendar className="h-7 w-7" /> },
   { titulo: 'Asignación de líderes', descripcion: 'Qué líder atiende cada tipo de vehículo.', ruta: '/asignacion-lideres', icono: <UserCheck className="h-7 w-7" /> },
+  { titulo: 'Bitácora', descripcion: 'Quién eliminó o reinició qué y cuándo.', ruta: '/configuracion/bitacora', icono: <History className="h-7 w-7" /> },
   { titulo: 'Respaldo y reinicio de datos', descripcion: 'Exportar todo a Excel y reiniciar los datos con la clave maestra.', ruta: '/configuracion/datos', icono: <Database className="h-7 w-7" />, soloReset: true }
 ];
 
@@ -963,6 +965,8 @@ export function ConfiguracionPage() {
 
       {activeTab === 'checklists' && <ChecklistsPorTipo />}
 
+      {activeTab === 'bitacora' && <Bitacora />}
+
       {activeTab === 'datos' && (
         <div className="flex items-center gap-2">
           <Database className="h-5 w-5 text-continental-yellow" />
@@ -1024,8 +1028,9 @@ export function ConfiguracionPage() {
               <p className="text-sm uppercase tracking-[0.25em] text-red-600">Acción destructiva</p>
               <h3 className="text-lg font-semibold text-red-800">Reiniciar los datos del sistema</h3>
               <p className="text-sm text-red-700">
-                Esta operación eliminará vehículos, órdenes, reportes, evidencias, consumibles, refacciones, pagos,
-                notificaciones y registros. Se conservarán únicamente usuarios/roles, áreas, prefijos de vehículo y plantillas/items de checklist.
+                Elimina vehículos, reportes, órdenes, evidencias, inventario, refacciones, pagos, órdenes de compra,
+                notificaciones y los usuarios que no son clave (técnicos, supervisores, operadores). Se conserva la configuración:
+                usuarios clave, áreas, tipos de vehículo, prefijos, checklists, fallas visuales y la bitácora.
                 No se podrán recuperar los datos eliminados.
               </p>
             </div>
@@ -1061,19 +1066,22 @@ export function ConfiguracionPage() {
         title="Reiniciar los datos del sistema"
         description="Esta acción elimina la información operativa y no se puede deshacer."
       >
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           <p className="text-sm text-red-700">
-            Se borrarán <strong>vehículos, órdenes, reportes, evidencias, consumibles, refacciones, pagos, notificaciones, logs y usuarios no esenciales</strong>.
+            Se borrarán <strong>vehículos, reportes, órdenes, evidencias, inventario y sus movimientos, refacciones, pagos,
+            órdenes de compra, notificaciones e historial</strong>, y los <strong>usuarios que no son clave</strong> (técnicos,
+            supervisores, operadores).
           </p>
-          <p className="text-sm text-red-700">
-            <strong>Se conservarán únicamente:</strong>
-            <ul className="list-disc list-inside ml-2">
-              <li>Usuarios clave (Admin, SuperUsuario, Líder, Tecnico_demo y lista específica)</li>
-              <li>Roles y Permisos</li>
-              <li>Áreas</li>
-              <li>Plantillas de checklist</li>
+          <div className="text-sm text-red-700">
+            <strong>Se conservarán:</strong>
+            <ul className="list-disc list-inside">
+              <li>Usuarios clave: administradores, SuperUsuario, líderes, Tecnico_demo y la lista fija de usuarios</li>
+              <li>Roles, áreas, tipos de vehículo y prefijos</li>
+              <li>Checklists, fallas visuales y categorías de falla</li>
+              <li>Asignación de líderes</li>
+              <li>La bitácora (el reinicio queda registrado en ella)</li>
             </ul>
-          </p>
+          </div>
           <Alert variant="destructive">
             <AlertTitle>Operación irreversible</AlertTitle>
             <AlertDescription>Confirma solo si tienes respaldo y entiendes el impacto.</AlertDescription>
