@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.Models.Enums;
 using MantenimientoEquipos.DTOs;
+using MantenimientoEquipos.Utils;
 
 namespace MantenimientoEquipos.Services;
 
@@ -394,14 +395,11 @@ public class ChecklistService
             throw new ArgumentException("Vehículo no encontrado");
 
         // Crear una orden de trabajo de tipo inspección
-        var hoy = DateTime.Today;
-        var secuencia = await _db.OrdenesTrabajo
-            .Where(o => o.FechaCreacion.Date == hoy)
-            .CountAsync() + 1;
+        var folio = await FolioGenerator.SiguienteAsync(_db.OrdenesTrabajo.Select(o => o.Folio), "INS", "yyMMdd", 3);
 
         var orden = new OrdenTrabajo
         {
-            Folio = $"INS-{hoy:yyMMdd}-{secuencia:D3}",
+            Folio = folio,
             VehiculoId = vehiculoId,
             TecnicoAsignadoId = userId,
             CreadoPorId = userId,

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using MantenimientoEquipos.DTOs;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.Models.Enums;
@@ -101,6 +102,11 @@ public class ReportesController : ControllerBase
         {
             return BadRequest(ApiResponse<string>.Error(ex.Message));
         }
+        catch (DbUpdateException)
+        {
+            // Dos reportes guardados en el mismo instante con el mismo folio: se explica en vez de un error 500
+            return Conflict(ApiResponse<string>.Error("No se pudo guardar el reporte porque otro se registró al mismo tiempo. Inténtalo de nuevo."));
+        }
     }
 
     /// <summary>
@@ -170,6 +176,10 @@ public class ReportesController : ControllerBase
         catch (ArgumentException ex)
         {
             return BadRequest(ApiResponse<string>.Error(ex.Message));
+        }
+        catch (DbUpdateException)
+        {
+            return Conflict(ApiResponse<string>.Error("No se pudo guardar el reporte porque otro se registró al mismo tiempo. Inténtalo de nuevo."));
         }
     }
 

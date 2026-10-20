@@ -30,15 +30,30 @@ class HttpClient {
 
     const contentType = response.headers.get('content-type');
 
-    if (contentType?.includes('application/json')) {
+    // "json" cubre también application/problem+json (errores de validación automáticos de ASP.NET)
+    if (contentType?.includes('json')) {
       const data = await response.json();
+      if (!response.ok && data && typeof data === 'object' && data.success === undefined) {
+        // Formato de ASP.NET: { title, errors: { Campo: ["mensaje"] } } -> mensaje legible en vez de "Error 400"
+        const errores = data.errors && typeof data.errors === 'object'
+          ? (Object.values(data.errors) as unknown[]).flat().filter((e): e is string => typeof e === 'string')
+          : [];
+        return {
+          success: false,
+          message: errores.length > 0 ? errores.join(' ') : (data.message || data.title || `Error ${response.status}`),
+          errors: errores,
+          data: null as T
+        };
+      }
       return data as ApiResponse<T>;
     }
 
     if (!response.ok) {
       return {
         success: false,
-        message: `Error ${response.status}: ${response.statusText}`,
+        message: response.status === 403
+          ? 'No tienes permiso para realizar esta acción.'
+          : `Error ${response.status}: ${response.statusText}`,
         data: null as T
       };
     }

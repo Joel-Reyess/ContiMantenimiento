@@ -28,6 +28,7 @@ public class DuplicateActiveReportException : Exception
     {
         ExistingReportFolio = existingReportFolio;
         ExistingReportId = existingReportId;
-        ExistingReportFecha = existingReportFecha;
+        // La BD guarda UTC sin "Kind": marcarla para que se envíe con "Z" y la pantalla muestre el día local correcto
+        ExistingReportFecha = DateTime.SpecifyKind(existingReportFecha, DateTimeKind.Utc);
     }
 }

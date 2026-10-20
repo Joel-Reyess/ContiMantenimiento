@@ -26,7 +26,10 @@ public class VehiculoPrefijoConfigService
 
         if (!string.IsNullOrEmpty(busqueda))
         {
-            query = query.Where(vp => vp.PrefijoCodigo.Contains(busqueda) || (vp.Descripcion != null && vp.Descripcion.Contains(busqueda)));
+            // También por nombre del tipo, como dice el campo de búsqueda de la pantalla
+            query = query.Where(vp => vp.PrefijoCodigo.Contains(busqueda)
+                || (vp.Descripcion != null && vp.Descripcion.Contains(busqueda))
+                || (vp.TipoVehiculo != null && vp.TipoVehiculo.Nombre.Contains(busqueda)));
         }
 
         var totalItems = await query.CountAsync();

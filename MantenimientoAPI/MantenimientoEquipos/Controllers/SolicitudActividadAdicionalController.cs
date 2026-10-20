@@ -68,6 +68,7 @@ public class SolicitudActividadAdicionalController : ControllerBase
     }
 
     [HttpPost("{id}/responder")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")] // Antes cualquiera con sesión (incluso el técnico) podía aprobar
     public async Task<IActionResult> Responder(int id, [FromBody] ResponderSolicitudActividadDto request)
     {
         var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);

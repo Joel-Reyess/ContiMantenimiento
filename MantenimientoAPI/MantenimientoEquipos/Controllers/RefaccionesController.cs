@@ -111,6 +111,7 @@ public class RefaccionesController : ControllerBase
     /// Aprueba una solicitud de refacción
     /// </summary>
     [HttpPost("{id}/aprobar")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")] // Antes cualquiera con sesión (incluso el técnico) podía aprobar
     public async Task<IActionResult> Aprobar(int id, [FromBody] AprobarRefaccionRequest? request = null)
     {
         var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
@@ -126,6 +127,7 @@ public class RefaccionesController : ControllerBase
     /// Rechaza una solicitud de refacción
     /// </summary>
     [HttpPost("{id}/rechazar")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")] // Antes cualquiera con sesión (incluso el técnico) podía aprobar
     public async Task<IActionResult> Rechazar(int id, [FromBody] RechazarRefaccionRequest request)
     {
         var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
@@ -141,6 +143,7 @@ public class RefaccionesController : ControllerBase
     /// Marca una solicitud como entregada
     /// </summary>
     [HttpPost("{id}/entregar")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")] // Antes cualquiera con sesión (incluso el técnico) podía aprobar
     public async Task<IActionResult> MarcarEntregada(int id)
     {
         var result = await _refaccionService.MarcarEntregadaAsync(id);

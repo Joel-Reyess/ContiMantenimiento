@@ -249,14 +249,11 @@ public class ReporteFallaService
 
         var imageFaultsToProcess = await ValidateImageFaultSelectionsAsync(request.ImageFaults);
 
-        var hoy = DateTime.Today;
-        var secuencia = await _db.ReportesFalla
-            .Where(r => r.FechaReporte.Date == hoy)
-            .CountAsync() + 1;
+        var folio = await FolioGenerator.SiguienteAsync(_db.ReportesFalla.Select(r => r.Folio), "RF");
 
         var reporte = new ReporteFalla
         {
-            Folio = FolioGenerator.GenerarFolioReporte(secuencia),
+            Folio = folio,
             VehiculoId = vehiculo.Id,
             CategoriaFallaId = request.CategoriaFallaId,
             ReportadoPorId = userId,
@@ -319,10 +316,7 @@ public class ReporteFallaService
     private async Task VerificarReporteOrdenActivaAsync(int vehiculoId)
     {
         var ordenActiva = await _db.OrdenesTrabajo
-            .Where(o => o.VehiculoId == vehiculoId &&
-                        (o.Estado == EstadoOrdenTrabajoEnum.Pendiente ||
-                         o.Estado == EstadoOrdenTrabajoEnum.Asignada ||
-                         o.Estado == EstadoOrdenTrabajoEnum.EnProceso))
+            .Where(o => o.VehiculoId == vehiculoId && OrdenTrabajoService.EstadosOrdenActiva.Contains(o.Estado))
             .FirstOrDefaultAsync();
         if (ordenActiva != null)
             throw new DuplicateActiveOrderException(ordenActiva.Folio, ordenActiva.Id);
@@ -379,14 +373,11 @@ public class ReporteFallaService
 
         var imageFaultsToProcess = await ValidateImageFaultSelectionsAsync(request.ImageFaults);
 
-        var hoy = DateTime.Today;
-        var secuencia = await _db.ReportesFalla
-            .Where(r => r.FechaReporte.Date == hoy)
-            .CountAsync() + 1;
+        var folio = await FolioGenerator.SiguienteAsync(_db.ReportesFalla.Select(r => r.Folio), "RF");
 
         var reporte = new ReporteFalla
         {
-            Folio = FolioGenerator.GenerarFolioReporte(secuencia),
+            Folio = folio,
             VehiculoId = vehiculo.Id,
             CategoriaFallaId = request.CategoriaFallaId,
             ReportadoPorId = userId,

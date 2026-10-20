@@ -154,6 +154,8 @@ const prefijoConfigCacheRef = useRef(new Map<string, { tipoId?: number; template
 const templatesCacheRef = useRef(new Map<string, ChecklistItem[]>());
 const templateByIdCacheRef = useRef(new Map<number, ChecklistItem[]>());
 const checklistReqSeqRef = useRef(0);
+// Propio del aviso "Determinando checklist por prefijo...": loadChecklistItems sube checklistReqSeqRef y el aviso se quedaba fijo
+const prefijoReqSeqRef = useRef(0);
 
   const buildImageKey = useCallback((tipoVehiculoId?: number | null) => {
     if (!tipoVehiculoId || Number.isNaN(Number(tipoVehiculoId))) return '';
@@ -397,6 +399,8 @@ const checklistReqSeqRef = useRef(0);
   }, []);
 
   const resetForm = () => {
+    prefijoReqSeqRef.current++;
+    setLoadingPrefijo(false);
     setStep('scan');
     setVehiculoSeleccionado(null);
     setCodigoVehiculo('');
@@ -563,6 +567,7 @@ const candidatePrefijos = Array.from(
 
     setLoadingPrefijo(true);
     const reqSeq = ++checklistReqSeqRef.current;
+    const prefijoSeq = ++prefijoReqSeqRef.current;
     try {
 let config: { tipoId?: number; templateId?: number } | undefined;
 
@@ -643,7 +648,7 @@ if (reqSeq !== checklistReqSeqRef.current) return;
       setSelectedChecklistItems([]);
       setError('No se pudo determinar checklist por prefijo.');
     } finally {
-      if (reqSeq === checklistReqSeqRef.current) setLoadingPrefijo(false);
+      if (prefijoSeq === prefijoReqSeqRef.current) setLoadingPrefijo(false);
     }
   };
 
@@ -1192,7 +1197,13 @@ if (reqSeq !== checklistReqSeqRef.current) return;
 
         <div className="sticky top-0 bg-white px-6 py-4 border-b flex items-center justify-between" style={{ paddingLeft: '3.5rem', paddingRight: '3.5rem' }}>
           <h2 className="text-xl font-semibold text-gray-800">Reportar Falla</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full">
+          {/* Bloqueada mientras se envía: si se cerraba, la respuesta tardía dejaba avisos del reporte anterior */}
+          <button
+            onClick={onClose}
+            disabled={isSubmitting}
+            aria-label="Cerrar"
+            className="p-2 hover:bg-gray-100 rounded-full disabled:opacity-40 disabled:cursor-not-allowed"
+          >
             <X className="h-5 w-5" />
           </button>
         </div>

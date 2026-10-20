@@ -1,26 +1,38 @@
 import { useEffect, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Button, Card, Modal, ModalFooter, useConfirm, useToast } from '@/components/ui';
 import { ordenesCompraService } from '@/services/ordenesCompraService';
-import { refaccionesService } from '@/services/refaccionesService';
-import type { OrdenCompra, SolicitudRefaccion } from '@/interfaces';
-import { FileText, RefreshCcw, Eye, Package, Trash2 } from 'lucide-react';
+import type { OrdenCompra } from '@/interfaces';
+import { FileText, RefreshCcw, Eye, Receipt, Trash2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
+const moneda = (n: number | undefined) =>
+  (n ?? 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+
+const colorEstado: Record<string, string> = {
+  Activa: 'bg-blue-100 text-blue-800',
+  Completada: 'bg-green-100 text-green-800',
+  Cancelada: 'bg-gray-100 text-gray-800'
+};
+
+/**
+ * Órdenes de compra. Una OC agrupa pagos aprobados de un mismo proveedor y se genera en
+ * Control de pagos (seleccionando los pagos). Aquí se consultan, se marcan como completadas y se eliminan.
+ */
 export function OrdenesCompraPage() {
   const toast = useToast();
+  const navigate = useNavigate();
+  const { id: idRuta } = useParams();
   const { hasRole } = useAuth();
   const isSupervisor = hasRole(['Supervisor', 'SuperUsuario', 'Administrador']);
-  const canEliminar = hasRole(['SuperUsuario', 'Administrador']);
+  const esAdmin = hasRole(['SuperUsuario', 'Administrador']);
   const { confirmar } = useConfirm();
   const [eliminandoId, setEliminandoId] = useState<number | null>(null);
+  const [actualizando, setActualizando] = useState(false);
 
   const [ordenes, setOrdenes] = useState<OrdenCompra[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [createOpen, setCreateOpen] = useState(false);
-  const [selectedSolicitudes, setSelectedSolicitudes] = useState<number[]>([]);
-  const [solicitudesPendientes, setSolicitudesPendientes] = useState<SolicitudRefaccion[]>([]);
-  const [detalleOpen, setDetalleOpen] = useState(false);
   const [detalleOrden, setDetalleOrden] = useState<OrdenCompra | null>(null);
 
   const loadOrdenes = async () => {
@@ -30,6 +42,12 @@ export function OrdenesCompraPage() {
       const res = await ordenesCompraService.getAll();
       if (res.success && res.data) {
         setOrdenes(res.data);
+        // Enlace directo desde Control de pagos (/ordenes-compra/:id): abrir su detalle
+        if (idRuta) {
+          const orden = res.data.find((o) => o.id === Number(idRuta));
+          if (orden) setDetalleOrden(orden);
+          else setError(`La orden de compra #${idRuta} ya no existe.`);
+        }
       } else {
         setError(res.message || 'Error al cargar órdenes de compra');
       }
@@ -39,6 +57,16 @@ export function OrdenesCompraPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    loadOrdenes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idRuta]);
+
+  const cerrarDetalle = () => {
+    setDetalleOrden(null);
+    if (idRuta) navigate('/ordenes-compra', { replace: true });
   };
 
   /** Eliminar OC (solo administradores): sus pagos quedan sin orden de compra y vuelven a "Aprobado" */
@@ -63,6 +91,7 @@ export function OrdenesCompraPage() {
         return;
       }
       toast.exito(res.message || `Orden de compra ${orden.folio} eliminada`);
+      if (detalleOrden?.id === orden.id) cerrarDetalle();
       await loadOrdenes();
     } catch (err) {
       console.error(err);
@@ -72,79 +101,42 @@ export function OrdenesCompraPage() {
     }
   };
 
-  const loadSolicitudes = async () => {
+  const marcarCompletada = async (orden: OrdenCompra) => {
+    setActualizando(true);
     try {
-      const res = await refaccionesService.getPendientes();
-      if (res.success && res.data) {
-        // Filtrar solo las que están Aprobadas y no tienen orden de compra asignada
-        const aprobadas = res.data.filter((s: SolicitudRefaccion) => s.estado === 'Aprobada' && !(s as any).ordenCompraId);
-        setSolicitudesPendientes(aprobadas);
+      const res = await ordenesCompraService.update(orden.id, { estado: 'Completada' });
+      if (!res.success) {
+        toast.error(res.message || 'No se pudo actualizar la orden de compra');
+        return;
       }
+      toast.exito(`Orden de compra ${orden.folio} completada`);
+      if (res.data) setDetalleOrden(res.data);
+      await loadOrdenes();
     } catch (err) {
       console.error(err);
-    }
-  };
-
-  useEffect(() => {
-    loadOrdenes();
-  }, []);
-
-  useEffect(() => {
-    if (createOpen) {
-      loadSolicitudes();
-    }
-  }, [createOpen]);
-
-  const [errorCrear, setErrorCrear] = useState('');
-
-  const handleCreate = async () => {
-    if (selectedSolicitudes.length === 0) return;
-    setErrorCrear('');
-    try {
-      const res = await (ordenesCompraService as any).create({
-        solicitudRefaccionIds: selectedSolicitudes
-      });
-      if (res.success) {
-        setCreateOpen(false);
-        setSelectedSolicitudes([]);
-        toast.exito(`Orden de compra ${res.data?.folio ?? ''} generada`);
-        loadOrdenes();
-      } else {
-        setErrorCrear(res.message || 'No se pudo generar la orden de compra');
-      }
-    } catch (err) {
-      console.error(err);
-      setErrorCrear('Error de conexión. Inténtalo de nuevo.');
-    }
-  };
-
-  const handleUpdateEstado = async (id: number, nuevoEstado: string) => {
-    try {
-      await (ordenesCompraService as any).updateEstado(id, nuevoEstado);
-      loadOrdenes();
-      if (detalleOrden && detalleOrden.id === id) {
-        setDetalleOrden({ ...detalleOrden, estado: nuevoEstado });
-      }
-    } catch (err) {
-      console.error(err);
+      toast.error('Error al actualizar la orden de compra');
+    } finally {
+      setActualizando(false);
     }
   };
 
   return (
-    <div className="dashboard-wrapper space-y-4">
-      <div className="flex justify-between items-center">
+    <div className="dashboard-wrapper flex flex-col gap-4">
+      <div className="flex flex-wrap justify-between items-center gap-3">
         <div>
           <h1 className="text-2xl font-bold text-continental-black">Órdenes de Compra</h1>
-          <p className="text-continental-gray-1">Gestiona las compras de refacciones aprobadas</p>
+          <p className="text-continental-gray-1">Pagos aprobados agrupados por proveedor</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={loadOrdenes} className="flex items-center gap-2">
             <RefreshCcw className="h-4 w-4" /> Actualizar
           </Button>
-          {isSupervisor && (
-            <Button onClick={() => setCreateOpen(true)} className="flex items-center gap-2 bg-continental-gradient text-white">
-              <FileText className="h-4 w-4" /> Generar Orden
-            </Button>
+          {esAdmin && (
+            <Link to="/pagos">
+              <Button className="flex items-center gap-2 bg-continental-gradient text-white">
+                <FileText className="h-4 w-4" /> Generar desde Control de pagos
+              </Button>
+            </Link>
           )}
         </div>
       </div>
@@ -156,37 +148,31 @@ export function OrdenesCompraPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {ordenes.map((orden) => (
-            <Card key={orden.id} className="p-4 space-y-3 border-l-4 border-l-continental-blue hover:shadow-md transition-shadow">
-              <div className="flex justify-between items-start">
+            <Card key={orden.id} className="flex flex-col gap-3 border-l-4 border-l-continental-blue hover:shadow-md transition-shadow" style={{ padding: 16 }}>
+              <div className="flex justify-between items-start gap-2">
                 <div>
                   <p className="font-bold text-lg">{orden.folio}</p>
                   <p className="text-sm text-gray-500">{new Date(orden.fechaRegistro).toLocaleDateString()}</p>
                 </div>
-                <div className={`px-2 py-1 rounded text-xs font-semibold ${
-                  orden.estado === 'Pendiente' ? 'bg-yellow-100 text-yellow-800' :
-                  orden.estado === 'Aprobada' ? 'bg-blue-100 text-blue-800' :
-                  orden.estado === 'Enviada' ? 'bg-purple-100 text-purple-800' :
-                  orden.estado === 'Recibida' ? 'bg-green-100 text-green-800' :
-                  'bg-gray-100 text-gray-800'
-                }`}>
+                <span className={`rounded text-xs font-semibold ${colorEstado[orden.estado] ?? 'bg-gray-100 text-gray-800'}`} style={{ padding: '2px 8px' }}>
                   {orden.estado}
-                </div>
+                </span>
               </div>
-              
-              <div className="space-y-1 text-sm">
-                <p><strong>Proveedor:</strong> {orden.proveedor?.nombreCompleto || orden.proveedor || 'No asignado'}</p>
-                <p><strong>Costo Total:</strong> ${orden.total?.toFixed(2) || '0.00'}</p>
-                <p><strong>Items:</strong> {orden.solicitudes?.length || 0}</p>
+
+              <div className="flex flex-col gap-1 text-sm">
+                <p><strong>Proveedor:</strong> {orden.proveedorNombre || 'No asignado'}</p>
+                <p><strong>Total:</strong> {moneda(orden.total)}</p>
+                <p><strong>Pagos:</strong> {orden.pagos?.length ?? 0}</p>
                 {orden.numeroExterno && (
                   <p className="text-continental-blue font-medium">Ref. Ext: {orden.numeroExterno}</p>
                 )}
               </div>
 
-              <div className="pt-2 flex justify-end gap-2">
-                <Button variant="ghost" size="sm" onClick={() => { setDetalleOrden(orden); setDetalleOpen(true); }}>
+              <div className="flex justify-end gap-2" style={{ paddingTop: 8 }}>
+                <Button variant="ghost" size="sm" onClick={() => setDetalleOrden(orden)}>
                   <Eye className="h-4 w-4 mr-1" /> Ver Detalle
                 </Button>
-                {canEliminar && (
+                {esAdmin && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -204,57 +190,15 @@ export function OrdenesCompraPage() {
           ))}
           {ordenes.length === 0 && (
             <div className="col-span-full text-center py-12 text-gray-500 bg-gray-50 rounded-lg border border-dashed border-gray-300">
-              No hay órdenes de compra registradas.
+              No hay órdenes de compra registradas. Se generan en Control de pagos, seleccionando pagos aprobados.
             </div>
           )}
         </div>
       )}
 
-      {/* Modal Crear Orden */}
-      <Modal isOpen={createOpen} onClose={() => setCreateOpen(false)} title="Generar Orden de Compra">
-        <div className="space-y-4 max-h-[60vh] overflow-y-auto p-1">
-          <p className="text-sm text-gray-600">Selecciona las solicitudes aprobadas para incluir en la orden.</p>
-          
-          {solicitudesPendientes.length === 0 ? (
-            <p className="text-center py-4 text-gray-500 italic">No hay solicitudes aprobadas pendientes.</p>
-          ) : (
-            <div className="space-y-2">
-              {solicitudesPendientes.map(sol => (
-                <label key={sol.id} className="flex items-start gap-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="mt-1"
-                    checked={selectedSolicitudes.includes(sol.id)}
-                    onChange={(e) => {
-                      if (e.target.checked) setSelectedSolicitudes(prev => [...prev, sol.id]);
-                      else setSelectedSolicitudes(prev => prev.filter(id => id !== sol.id));
-                    }}
-                  />
-                  <div className="flex-1 text-sm">
-                    <p className="font-semibold">{sol.nombreRefaccion} (x{sol.cantidad})</p>
-                    <p className="text-gray-500 text-xs">
-                      {sol.ordenTrabajoFolio ? `OT: ${sol.ordenTrabajoFolio}` : 'Sin OT'} - {sol.solicitadoPorNombre}
-                    </p>
-                    {sol.costoEstimado && <p className="text-xs font-medium text-green-600">Est: ${sol.costoEstimado}</p>}
-                  </div>
-                </label>
-              ))}
-            </div>
-          )}
-          {errorCrear && (
-            <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errorCrear}</p>
-          )}
-        </div>
-        <ModalFooter>
-          <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancelar</Button>
-          <Button onClick={handleCreate} disabled={selectedSolicitudes.length === 0}>Generar Orden ({selectedSolicitudes.length})</Button>
-        </ModalFooter>
-      </Modal>
-
-      {/* Modal Detalle */}
-      <Modal isOpen={detalleOpen && !!detalleOrden} onClose={() => setDetalleOpen(false)} title={`Orden ${detalleOrden?.folio}`}>
+      <Modal isOpen={!!detalleOrden} onClose={cerrarDetalle} title={`Orden ${detalleOrden?.folio ?? ''}`}>
         {detalleOrden && (
-          <div className="space-y-4">
+          <div className="flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="text-gray-500">Estado</p>
@@ -265,12 +209,8 @@ export function OrdenesCompraPage() {
                 <p className="font-semibold">{new Date(detalleOrden.fechaRegistro).toLocaleString()}</p>
               </div>
               <div>
-                <p className="text-gray-500">Creado por</p>
-                <p className="font-semibold">{detalleOrden.creadoPorNombre || 'Sistema'}</p>
-              </div>
-              <div>
                 <p className="text-gray-500">Proveedor</p>
-                <p className="font-semibold">{detalleOrden.proveedor?.nombreCompleto || detalleOrden.proveedor || 'N/D'}</p>
+                <p className="font-semibold">{detalleOrden.proveedorNombre || 'N/D'}</p>
               </div>
               <div>
                 <p className="text-gray-500"># Externo</p>
@@ -278,43 +218,37 @@ export function OrdenesCompraPage() {
               </div>
             </div>
 
-            <div className="border-t pt-4">
-              <h4 className="font-semibold mb-2 flex items-center gap-2">
-                <Package className="h-4 w-4" /> Items solicitados
+            <div className="border-t" style={{ paddingTop: 16 }}>
+              <h4 className="font-semibold flex items-center gap-2" style={{ marginBottom: 8 }}>
+                <Receipt className="h-4 w-4" /> Pagos incluidos ({detalleOrden.pagos?.length ?? 0})
               </h4>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {detalleOrden.solicitudes?.map((item: any, idx: number) => (
-                  <div key={idx} className="p-2 bg-gray-50 rounded text-sm flex justify-between">
-                    <span>{item.cantidad}x {item.nombreRefaccion}</span>
-                    {item.costoReal && <span className="font-medium">${item.costoReal}</span>}
+              <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+                {(detalleOrden.pagos ?? []).map((p) => (
+                  <div key={p.id} className="bg-gray-50 rounded text-sm flex justify-between gap-2" style={{ padding: 8 }}>
+                    <span>
+                      <Link to={`/ordenes/${p.ordenTrabajoId}`} className="text-continental-blue hover:underline">
+                        {p.ordenTrabajoFolio || `Orden #${p.ordenTrabajoId}`}
+                      </Link>
+                      {p.tecnicoNombre ? ` · ${p.tecnicoNombre}` : ''}
+                    </span>
+                    <span className="font-medium">{moneda(p.montoTotal)}</span>
                   </div>
                 ))}
+                {(detalleOrden.pagos ?? []).length === 0 && (
+                  <p className="text-sm text-gray-500">Esta orden ya no tiene pagos.</p>
+                )}
               </div>
+              <p className="text-sm font-semibold text-right" style={{ marginTop: 8 }}>Total: {moneda(detalleOrden.total)}</p>
             </div>
-
-            {isSupervisor && detalleOrden.estado !== 'Recibida' && (
-              <div className="border-t pt-4 flex gap-2 justify-end">
-                {detalleOrden.estado === 'Pendiente' && (
-                  <Button size="sm" onClick={() => handleUpdateEstado(detalleOrden.id, 'Aprobada')}>
-                    Aprobar
-                  </Button>
-                )}
-                {detalleOrden.estado === 'Aprobada' && (
-                  <Button size="sm" onClick={() => handleUpdateEstado(detalleOrden.id, 'Enviada')}>
-                    Marcar Enviada
-                  </Button>
-                )}
-                {detalleOrden.estado === 'Enviada' && (
-                  <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={() => handleUpdateEstado(detalleOrden.id, 'Recibida')}>
-                    Marcar Recibida
-                  </Button>
-                )}
-              </div>
-            )}
           </div>
         )}
         <ModalFooter>
-          <Button variant="outline" onClick={() => setDetalleOpen(false)}>Cerrar</Button>
+          {detalleOrden && isSupervisor && detalleOrden.estado === 'Activa' && (
+            <Button onClick={() => void marcarCompletada(detalleOrden)} disabled={actualizando}>
+              Marcar como completada
+            </Button>
+          )}
+          <Button variant="outline" onClick={cerrarDetalle}>Cerrar</Button>
         </ModalFooter>
       </Modal>
     </div>

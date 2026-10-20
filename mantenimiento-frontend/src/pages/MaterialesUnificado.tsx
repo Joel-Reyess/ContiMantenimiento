@@ -568,9 +568,12 @@ export function MaterialesUnificadoPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex gap-2">
-                            <Button size="sm" variant="outline" onClick={() => { setShowAdjust(c); setErrorStock(''); }}>
-                              Ajustar
-                            </Button>
+                            {/* Ajustar stock: el servidor solo lo permite a administradores (al supervisor le daba 403) */}
+                            {canImport && (
+                              <Button size="sm" variant="outline" onClick={() => { setShowAdjust(c); setErrorStock(''); }}>
+                                Ajustar
+                              </Button>
+                            )}
                             {canImport && (
                               <Button
                                 size="sm"

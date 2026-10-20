@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.Models.Enums;
 using MantenimientoEquipos.DTOs;
@@ -149,6 +150,12 @@ public class OrdenesController : ControllerBase
         catch (InvalidOperationException ex)
         {
             return BadRequest(ApiResponse<string>.Error(ex.Message));
+        }
+        catch (DbUpdateException)
+        {
+            // Dos altas al mismo tiempo (otro usuario ya creó la orden de este reporte, o el mismo folio): la BD lo
+            // impide con sus índices únicos; se explica en vez de devolver un error 500
+            return Conflict(ApiResponse<string>.Error("No se pudo crear la orden porque otra se registró al mismo tiempo (quizá para este mismo reporte). Actualiza la página para verla."));
         }
     }
 

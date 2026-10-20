@@ -286,7 +286,8 @@ public class DashboardService
             .GroupBy(x => x.Vehiculo.Tipo)
             .Select(g => new EstadoPorTipoDto
             {
-                Tipo = g.Key.ToString(),
+                // Nombre del catálogo (1.1): con el nombre del enum, un tipo renombrado salía con el nombre viejo
+                Tipo = nombreTipo(g.Key),
                 Total = g.Count(),
                 Operativos = g.Count(x => x.EsPiso),
                 EnMantenimiento = g.Count(x => x.EsTaller),
@@ -381,6 +382,7 @@ public class DashboardService
 
     public async Task<List<VehiculoEnTallerDto>> GetVehiculosEnTallerAsync()
     {
+        var nombreTipo = await NombresTipoAsync();
         var ahoraUtc = DateTime.UtcNow;
 
         var ordenesEnTaller = await _db.OrdenesTrabajo
@@ -413,7 +415,7 @@ public class DashboardService
             {
                 VehiculoId = o.VehiculoId,
                 Codigo = o.VehiculoCodigo,
-                Tipo = o.VehiculoTipo.ToString(),
+                Tipo = nombreTipo(o.VehiculoTipo),
                 TipoMantenimiento = o.TipoMantenimiento,
                 TecnicoNombre = o.TecnicoNombre,
                 FechaIngreso = o.FechaIngreso,
