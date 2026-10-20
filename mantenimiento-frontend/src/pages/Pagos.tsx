@@ -72,6 +72,8 @@ export function PagosPage() {
   const [pagos, setPagos] = useState<RegistroPago[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // Error de la ventana abierta (nuevo pago / detalle): se muestra dentro de ella, no en el banner de la página (queda detrás)
+  const [errorVentana, setErrorVentana] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [creando, setCreando] = useState(false);
   const [accionando, setAccionando] = useState(false);
@@ -395,6 +397,7 @@ export function PagosPage() {
   };
 
   const abrirDetallePago = async (pago: RegistroPago) => {
+    setErrorVentana('');
     setDetallePago(pago);
     setDetalleOpen(true);
     setFormDetalle({
@@ -406,7 +409,7 @@ export function PagosPage() {
   const guardarDetalle = async () => {
     if (!detallePago) return;
     setGuardandoDetalle(true);
-    setError('');
+    setErrorVentana('');
     try {
       const payload = {
         montoManoObra: Number(costoCalculado.checklist || 0),
@@ -422,12 +425,13 @@ export function PagosPage() {
           montoRefacciones: payload.montoRefacciones || 0,
           notas: payload.notas
         });
+        toast.exito('Pago actualizado');
       } else {
-        setError(res.message || 'No se pudo actualizar el pago');
+        setErrorVentana(res.message || 'No se pudo actualizar el pago');
       }
     } catch (err) {
       console.error('Error al actualizar pago', err);
-      setError('No se pudo actualizar el pago');
+      setErrorVentana('No se pudo actualizar el pago');
     } finally {
       setGuardandoDetalle(false);
     }
@@ -708,14 +712,14 @@ export function PagosPage() {
 
   const handleCreate = async () => {
     setCreando(true);
-    setError('');
+    setErrorVentana('');
     try {
       if (!form.ordenTrabajoId || !form.tecnicoId) {
-        setError('Selecciona la orden y el tecnico desde la lista');
+        setErrorVentana('Selecciona la orden y el técnico desde la lista.');
         return;
       }
       if (ordenYaTienePago) {
-        setError('Ya existe un pago para esta orden, no se puede duplicar.');
+        setErrorVentana('Ya existe un pago para esta orden, no se puede duplicar.');
         return;
       }
 
@@ -734,13 +738,14 @@ export function PagosPage() {
       if (res.success) {
         setCreateOpen(false);
         resetCrearForm();
+        toast.exito('Pago registrado');
         loadPagos();
       } else {
-        setError(res.message || 'No se pudo crear el pago');
+        setErrorVentana(res.message || 'No se pudo crear el pago');
       }
     } catch (err) {
       console.error(err);
-      setError('Error al crear el pago');
+      setErrorVentana('Error al crear el pago');
     } finally {
       setCreando(false);
     }
@@ -843,18 +848,19 @@ export function PagosPage() {
   const handlePagarDetalle = async () => {
     if (!detallePago) return;
     setPagando(true);
-    setError('');
+    setErrorVentana('');
     try {
       const res = await pagosService.marcarPagado(detallePago.id);
       if (res.success) {
         await loadPagos();
         setDetallePago({ ...detallePago, estado: EstadoPago.Pagado, fechaPago: new Date().toISOString() });
+        toast.exito('Pago marcado como pagado');
       } else {
-        setError(res.message || 'No se pudo marcar como pagado');
+        setErrorVentana(res.message || 'No se pudo marcar como pagado');
       }
     } catch (err) {
       console.error('Error al marcar pagado', err);
-      setError('No se pudo marcar como pagado');
+      setErrorVentana('No se pudo marcar como pagado');
     } finally {
       setPagando(false);
     }
@@ -961,7 +967,7 @@ export function PagosPage() {
               Ver Órdenes de Compra
             </Button>
           </Link>
-          <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => setCreateOpen(true)}>
+          <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => { setErrorVentana(''); setCreateOpen(true); }}>
             <Plus className="h-4 w-4" />
             Nuevo pago
           </Button>
@@ -1002,7 +1008,7 @@ export function PagosPage() {
           <p className="text-lg font-semibold text-continental-black">No hay pagos</p>
           <p className="text-continental-gray-1">Aun no se han registrado pagos.</p>
           <div className="flex justify-center gap-2">
-            <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => setCreateOpen(true)}>
+            <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => { setErrorVentana(''); setCreateOpen(true); }}>
               <Plus className="h-4 w-4" />
               Registrar pago
             </Button>
@@ -1175,6 +1181,11 @@ export function PagosPage() {
         description="Captura un pago ligado a una orden de trabajo."
       >
         <div className="space-y-3">
+          {errorVentana && (
+            <Alert variant="destructive">
+              <AlertDescription>{errorVentana}</AlertDescription>
+            </Alert>
+          )}
           <SearchableSelect
             label="Orden de trabajo"
             placeholder="Buscar por folio, Vehiculo o texto"
@@ -1298,6 +1309,11 @@ export function PagosPage() {
       >
         {detallePago ? (
           <div className="space-y-3">
+            {errorVentana && (
+              <Alert variant="destructive">
+                <AlertDescription>{errorVentana}</AlertDescription>
+              </Alert>
+            )}
             {isAdmin && (
               <Card className="p-3 bg-continental-bg border border-continental-gray-3/60 text-sm space-y-1">
                 <p className="font-semibold text-continental-black">Desglose calculado</p>

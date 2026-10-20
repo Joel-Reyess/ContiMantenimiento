@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, LoadingCard, Card, Modal, ModalFooter } from '@/components/ui';
+import { Button, LoadingCard, Card, Modal, ModalFooter, useToast } from '@/components/ui';
 import { ordenesService, entregaService } from '@/services';
 import { CheckCircle, PenLine, AlertCircle, ShieldCheck, Info } from 'lucide-react';
 import type { OrdenTrabajo } from '@/interfaces';
@@ -17,6 +17,7 @@ interface OrdenItem {
 }
 
 export function EntregasPage() {
+  const toast = useToast();
   const { hasRole, user } = useAuth();
   const { allowedTipoIds } = useAllowedTipoVehiculo();
   const [items, setItems] = useState<OrdenItem[]>([]);
@@ -125,7 +126,9 @@ export function EntregasPage() {
         return false;
       }
 
-      setMessage("Entrega registrada.");
+      // La ventana se cierra enseguida: el aviso va en un toast (el mensaje de la ventana ya no se veía)
+      toast.exito(`Entrega registrada (${det.folio})`);
+      setMessage("");
       setSelected(null);
       setObs("");
       setFirmaLider("");

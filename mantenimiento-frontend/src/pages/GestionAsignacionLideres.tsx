@@ -164,14 +164,17 @@ export function GestionAsignacionLideresPage() {
     loadData();
   }, []);
 
+  // Error de la ventana: dentro de ella (antes iba al banner de la página, detrás de la ventana)
+  const [errorVentana, setErrorVentana] = useState('');
+
   const handleSave = async () => {
     if (form.usuarioId === 0 || form.tiposVehiculo.length === 0) {
-      setError('Seleccione un usuario y al menos un tipo de vehiculo');
+      setErrorVentana('Selecciona un usuario y al menos un tipo de vehículo.');
       return;
     }
 
     setCreando(true);
-    setError('');
+    setErrorVentana('');
     try {
       const actuales = asignacionesPorUsuario.get(form.usuarioId) || [];
       const actualesIds = new Set(actuales.map((a) => Number(a.tipoVehiculo)));
@@ -187,22 +190,30 @@ export function GestionAsignacionLideresPage() {
         }));
         const res = await asignacionesService.createBatch(payload);
         if (!res.success) {
-          setError(res.message || 'No se pudo crear la asignacion');
+          setErrorVentana(res.message || 'No se pudo crear la asignación');
           return;
         }
       }
 
       if (paraEliminar.length > 0) {
-        await Promise.all(paraEliminar.map((a) => asignacionesService.delete(a.id)));
+        // Revisar cada respuesta: antes se cerraba la ventana aunque no se quitara la asignación
+        const resultados = await Promise.all(paraEliminar.map((a) => asignacionesService.delete(a.id)));
+        const fallo = resultados.find((r) => !r.success);
+        if (fallo) {
+          setErrorVentana(fallo.message || 'No se pudo quitar alguno de los tipos');
+          loadData();
+          return;
+        }
       }
 
+      toast.exito(editandoUsuarioId ? 'Asignaciones actualizadas' : 'Asignación creada');
       setCrearOpen(false);
       setEditandoUsuarioId(null);
       setForm({ usuarioId: 0, tiposVehiculo: [] });
       loadData();
     } catch (err) {
       console.error(err);
-      setError('Error al crear la asignacion');
+      setErrorVentana('Error al guardar la asignación');
     } finally {
       setCreando(false);
     }
@@ -247,6 +258,7 @@ export function GestionAsignacionLideresPage() {
       setForm({ usuarioId: 0, tiposVehiculo: [] });
       setEditandoUsuarioId(null);
     }
+    setErrorVentana('');
     setCrearOpen(true);
   };
 
@@ -362,6 +374,11 @@ export function GestionAsignacionLideresPage() {
         description="Selecciona un usuario y varios tipos de vehiculo."
       >
         <div className="space-y-4">
+          {errorVentana && (
+            <Alert variant="destructive">
+              <AlertDescription>{errorVentana}</AlertDescription>
+            </Alert>
+          )}
           <div className="flex gap-2">
             <Button
               variant={formRole === 'Lider' ? 'default' : 'outline'}

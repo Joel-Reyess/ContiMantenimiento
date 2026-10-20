@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { dashboardService, VehiculoEnTaller } from '@/services/dashboardService';
 import { vehiculosService } from '@/services/vehiculosService';
 import { catalogosService, TipoVehiculoItem } from '@/services/catalogosService';
-import { Card, Badge, Alert, AlertTitle, AlertDescription, Button, Input, Modal, ModalFooter } from '@/components/ui';
+import { Card, Badge, Alert, AlertTitle, AlertDescription, Button, Input, Modal, ModalFooter, useToast } from '@/components/ui';
 import { AlertTriangle, CheckCircle, Clock, Calendar, ListOrdered, AlertCircle, Edit, Loader2, Settings } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
@@ -15,6 +15,7 @@ interface VehiculoPreventivo {
 }
 
 export function WorkshopTab() {
+  const toast = useToast();
   const [vehiculos, setVehiculos] = useState<VehiculoEnTaller[]>([]);
   const [preventivos, setPreventivos] = useState<VehiculoPreventivo[]>([]);
   const [tiposVehiculo, setTiposVehiculo] = useState<TipoVehiculoItem[]>([]);
@@ -77,12 +78,21 @@ export function WorkshopTab() {
     }
   };
 
+  // Error de la ventana "Editar objetivo mensual" (antes solo iba a la consola)
+  const [errorObjetivo, setErrorObjetivo] = useState('');
+
   const handleUpdateTipo = async () => {
     if (!editingTipo) return;
+    if (editingTipo.maxInWorkshop !== undefined && (Number.isNaN(editingTipo.maxInWorkshop) || editingTipo.maxInWorkshop < 0)) {
+      setErrorObjetivo('El objetivo debe ser 0 o un número positivo.');
+      return;
+    }
+    setErrorObjetivo('');
     setAccionando(true);
     try {
       const res = await catalogosService.updateTipoVehiculo(editingTipo.id, editingTipo);
       if (res.success) {
+        toast.exito(`Objetivo de ${editingTipo.nombre} actualizado`);
         setEditingTipo(null);
         // Reload types to update the view
         const tiposRes = await catalogosService.getTiposVehiculo();
@@ -90,10 +100,11 @@ export function WorkshopTab() {
           setTiposVehiculo(tiposRes.data);
         }
       } else {
-        console.error('Error al actualizar tipo de vehiculo');
+        setErrorObjetivo(res.message || 'No se pudo guardar el objetivo');
       }
     } catch (err) {
       console.error(err);
+      setErrorObjetivo('No se pudo guardar el objetivo. Revisa tu conexión.');
     } finally {
       setAccionando(false);
     }
@@ -430,6 +441,8 @@ export function WorkshopTab() {
           <Input
             label="Objetivo mensual 2026 para reparar (dejar en blanco o 0 para sin objetivo)"
             type="number"
+            min="0"
+            error={errorObjetivo || undefined}
             value={editingTipo?.maxInWorkshop?.toString() || ''}
             onChange={(e) => {
               const val = e.target.value ? parseInt(e.target.value) : undefined;

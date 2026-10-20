@@ -69,6 +69,7 @@ export function FallasImagenPage() {
   }, [selectedTipo, imageVersion]);
 
   const resetFaultForm = () => {
+    setFaultNameError('');
     setFaultName('');
     setFaultDescription('');
     setEditingFaultId(null);
@@ -143,11 +144,15 @@ export function FallasImagenPage() {
     void loadPoints(imageKey);
   }, [imageKey]);
 
+  // Error bajo el campo "Nombre" del catálogo de fallas (antes salía en el aviso de arriba de la página)
+  const [faultNameError, setFaultNameError] = useState('');
+
   const handleSaveFault = async () => {
     if (!faultName.trim()) {
-      setError('El nombre de la falla es obligatorio.');
+      setFaultNameError('Escribe el nombre de la falla.');
       return;
     }
+    setFaultNameError('');
     setSavingFault(true);
     setError('');
     setMessage('');
@@ -177,7 +182,10 @@ export function FallasImagenPage() {
       const faultsRes = await imageFaultsService.getAll(false);
       if (faultsRes.success && faultsRes.data) setImageFaults(faultsRes.data);
     } catch (err: any) {
-      setError(err.message || 'Error al guardar la falla.');
+      // Junto al formulario: "ya existe" va bajo el nombre; el resto en un aviso visible
+      const mensaje = err.message || 'Error al guardar la falla.';
+      if (/existe|duplicad|repetid/i.test(mensaje)) setFaultNameError(mensaje);
+      else toast.error(mensaje);
     } finally {
       setSavingFault(false);
     }
@@ -343,7 +351,7 @@ export function FallasImagenPage() {
 
   const handleUploadImageFallas = async () => {
     if (!selectedTipo || !fallbackImageUpload) {
-      setError('Selecciona tipo de vehículo y archivo de imagen.');
+      toast.error('Selecciona el tipo de vehículo y el archivo de imagen.');
       return;
     }
 
@@ -354,12 +362,12 @@ export function FallasImagenPage() {
       const res = await catalogosService.uploadImagenFallasTipoVehiculo(selectedTipo.id, fallbackImageUpload);
       if (!res.success) throw new Error(res.message || 'No se pudo subir imagen de fallas.');
 
-      setMessage('Imagen de fallas subida correctamente.');
+      toast.exito('Imagen de fallas subida correctamente');
       setFallbackImageUpload(null);
       setImageVersion(Date.now());
       await loadInitialData();
     } catch (err: any) {
-      setError(err.message || 'Error al subir imagen de fallas.');
+      toast.error(err.message || 'Error al subir imagen de fallas.');
     } finally {
       setUploadingImage(false);
     }
@@ -426,7 +434,15 @@ export function FallasImagenPage() {
             <Card className="p-5 space-y-4">
               <h2 className="text-lg font-semibold text-continental-black">Catálogo de fallas</h2>
 
-              <Input label="Nombre" value={faultName} onChange={(e) => setFaultName(e.target.value)} />
+              <Input
+                label="Nombre"
+                value={faultName}
+                onChange={(e) => {
+                  setFaultName(e.target.value);
+                  if (faultNameError) setFaultNameError('');
+                }}
+                error={faultNameError || undefined}
+              />
               <Input
                 label="Descripción"
                 value={faultDescription}

@@ -101,7 +101,13 @@ export function RequestActivityModal({ isOpen, onClose, onSuccess, ordenTrabajoI
         });
       });
 
-      await Promise.all(promises);
+      // Revisar cada respuesta: antes se mostraba "enviado" aunque el servidor rechazara alguna
+      const resultados = await Promise.all(promises);
+      const fallidas = resultados.filter((r) => r && !r.success);
+      if (fallidas.length > 0) {
+        setError(fallidas[0]?.message || `No se pudieron enviar ${fallidas.length} solicitud(es).`);
+        return;
+      }
 
       setSuccess(true);
       setTimeout(() => {

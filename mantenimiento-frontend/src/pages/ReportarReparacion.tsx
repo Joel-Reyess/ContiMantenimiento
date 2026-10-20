@@ -10,7 +10,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { InteractiveVehicleImage } from '@/components/vehiculos/InteractiveVehicleImage';
-import { useConfirm } from '@/components/ui';
+import { useConfirm, useToast } from '@/components/ui';
 import { catalogosService, vehicleImagePointsService, reportesService } from '@/services';
 import type { TipoVehiculoItem } from '@/services/catalogosService';
 import type { VehicleImagePoint, ReporteFallaCreateRequest, ReportImageFaultCreateRequest } from '@/interfaces';
@@ -76,6 +76,7 @@ const NOMBRE_PRIORIDAD: Record<number, string> = {
 
 export function ReportarReparacionPage() {
   const { confirmar } = useConfirm();
+  const toast = useToast();
   const [tipos, setTipos] = useState<TipoVehiculoItem[]>([]);
   const [selectedTipoId, setSelectedTipoId] = useState<number | null>(null);
   const [points, setPoints] = useState<VehicleImagePoint[]>([]);
@@ -305,10 +306,10 @@ export function ReportarReparacionPage() {
     try {
       const res = await reportesService.createWithAutoChecklist(reporteData, force);
       if (res.success && res.data?.id) {
-        setSuccess(
-          `Reporte creado (folio interno #${res.data.id}) para ${code}. ` +
-            `Total estimado: ${formatCurrency(total)} MXN.`
-        );
+        const folio = (res.data as { folio?: string }).folio ?? `#${res.data.id}`;
+        setSuccess(`Reporte ${folio} creado para ${code}. Total estimado: ${formatCurrency(total)} MXN.`);
+        // Aviso visible aunque el mensaje de arriba quede fuera de la pantalla
+        toast.exito(`Reporte ${folio} creado`);
         setSelectedPointIds([]);
         setDuplicateWarning(false);
         window.dispatchEvent(new CustomEvent('notifications:refresh'));
@@ -316,13 +317,16 @@ export function ReportarReparacionPage() {
         setDuplicateWarning(true);
       } else {
         setError(res.message || 'No se pudo crear el reporte.');
+        toast.error(res.message || 'No se pudo crear el reporte.');
       }
     } catch (err: any) {
       const resData = err?.response?.data || err;
       if (isDuplicateError(resData)) {
         setDuplicateWarning(true);
       } else {
-        setError(resData?.message || err?.message || 'No se pudo crear el reporte. Revisa tu conexión.');
+        const mensaje = resData?.message || err?.message || 'No se pudo crear el reporte. Revisa tu conexión.';
+        setError(mensaje);
+        toast.error(mensaje);
       }
     } finally {
       setSaving(false);

@@ -114,15 +114,17 @@ export function UsuariosPage() {
     setAccionando(true);
     setError('');
     try {
-      if (estaActivo) {
-        await usuariosService.desactivar(id);
-      } else {
-        await usuariosService.activar(id);
+      // Revisar la respuesta: antes un error del servidor no se mostraba y el éxito tampoco
+      const res = estaActivo ? await usuariosService.desactivar(id) : await usuariosService.activar(id);
+      if (res && res.success === false) {
+        toast.error(res.message || 'No se pudo actualizar el estado del usuario');
+        return;
       }
+      toast.exito(estaActivo ? 'Usuario desactivado' : 'Usuario activado');
       await loadUsuarios();
     } catch (err) {
       console.error(err);
-      setError('No se pudo actualizar el estado del usuario');
+      toast.error('No se pudo actualizar el estado del usuario');
     } finally {
       setAccionando(false);
     }

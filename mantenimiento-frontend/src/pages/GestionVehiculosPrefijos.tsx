@@ -167,7 +167,7 @@ export function GestionVehiculosPrefijosPage() {
       }
     } catch (err) {
       console.error(err);
-      setError('Error al actualizar el prefijo');
+      setFormError('Error al actualizar el prefijo');
     } finally {
       setEditando(false);
     }

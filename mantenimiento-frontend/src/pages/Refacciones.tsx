@@ -148,14 +148,21 @@ export function RefaccionesPage() {
     });
   }, []);
 
+  // Error de la ventana "Nueva solicitud": dentro de ella (antes iba al banner de la página, detrás)
+  const [errorVentana, setErrorVentana] = useState('');
+
   const handleCreate = async () => {
+    setErrorVentana('');
+    if (!form.ordenTrabajoId) {
+      setErrorVentana('Selecciona una orden de trabajo.');
+      return;
+    }
+    if (!(refaccionSeleccionada?.label || form.nombreRefaccion).trim()) {
+      setErrorVentana('Elige una refacción de la lista o escribe su nombre.');
+      return;
+    }
     setCreando(true);
-    setError('');
     try {
-      if (!form.ordenTrabajoId) {
-        setError('Selecciona una orden de trabajo');
-        return;
-      }
       const costoEstimadoAuto = refaccionSeleccionada?.meta?.costo;
       const payload = {
         ordenTrabajoId: Number(form.ordenTrabajoId),
@@ -177,13 +184,14 @@ export function RefaccionesPage() {
         });
         setOrdenSeleccionada(null);
         setRefaccionSeleccionada(null);
+        toast.exito(`Solicitud de ${payload.nombreRefaccion} enviada`);
         loadRefacciones();
       } else {
-        setError(res.message || 'No se pudo crear la solicitud');
+        setErrorVentana(res.message || 'No se pudo crear la solicitud');
       }
     } catch (err) {
       console.error(err);
-      setError('Error al crear la solicitud de refaccion');
+      setErrorVentana('Error al crear la solicitud de refacción');
     } finally {
       setCreando(false);
     }
@@ -258,7 +266,7 @@ export function RefaccionesPage() {
             <RefreshCcw className="h-4 w-4" />
             Actualizar
           </Button>
-          <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => setCreateOpen(true)}>
+          <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => { setErrorVentana(''); setCreateOpen(true); }}>
             <Plus className="h-4 w-4" />
             Nueva solicitud
           </Button>
@@ -279,7 +287,7 @@ export function RefaccionesPage() {
           <p className="text-lg font-semibold text-continental-black">No hay solicitudes</p>
           <p className="text-continental-gray-1">Aun no se han solicitado refacciones.</p>
           <div className="flex justify-center gap-2">
-            <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => setCreateOpen(true)}>
+            <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => { setErrorVentana(''); setCreateOpen(true); }}>
               <Plus className="h-4 w-4" />
               Crear solicitud
             </Button>
@@ -366,6 +374,11 @@ export function RefaccionesPage() {
         description="Solicita una refaccion ligada a una orden de trabajo."
       >
         <div className="space-y-3">
+          {errorVentana && (
+            <Alert variant="destructive">
+              <AlertDescription>{errorVentana}</AlertDescription>
+            </Alert>
+          )}
           <SearchableSelect
             label="Orden de trabajo"
             placeholder="Buscar por folio, vehiculo o texto"
