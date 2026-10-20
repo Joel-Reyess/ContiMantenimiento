@@ -246,12 +246,9 @@ export function MaintenanceChecklistModal({
         setError(response.message || 'Error al guardar checklist');
       }
     } catch (err) {
-      console.log('Checklist guardado (modo desarrollo)');
-      setSuccess(true);
-      setTimeout(() => {
-        onSuccess?.();
-        onClose();
-      }, 1500);
+      // Antes aquí se mostraba "guardado" aunque no se hubiera podido conectar
+      console.error(err);
+      setError('No se pudo conectar para guardar el checklist. Inténtalo de nuevo.');
     } finally {
       setIsSubmitting(false);
     }

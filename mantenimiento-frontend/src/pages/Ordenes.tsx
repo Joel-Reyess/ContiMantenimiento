@@ -122,6 +122,8 @@ const resolveChecklistKey = (tipo?: string) => {
   return 'general';
 };
 
+const MOTIVO_OBLIGATORIO = 'Escribe el motivo de la cancelación.';
+
 export function OrdenesPage() {
   const { confirmar } = useConfirm();
   const toast = useToast();
@@ -820,12 +822,13 @@ export function OrdenesPage() {
       });
       
       if (res.success) {
+        toast.exito(aprobado ? 'Orden aprobada' : 'Orden rechazada');
         await loadOrdenes();
       } else {
-        setError(res.message || 'Error al aprobar');
+        toast.error(res.message || 'Error al aprobar');
       }
     } catch (err) {
-      setError('Error de conexión');
+      toast.error('Error de conexión');
     } finally {
       setAccionando(false);
     }
@@ -850,39 +853,56 @@ export function OrdenesPage() {
     setLimpiezas((n) => n + 1);
   };
 
-  const doAccion = async (fn: () => Promise<unknown>) => {
+  /** Error de la ventana abierta (iniciar, cancelar, validar, refacciones): se muestra dentro de ella */
+  const [errorVentana, setErrorVentana] = useState('');
+
+  /**
+   * Ejecuta una acción de la orden y devuelve si salió bien. El error va dentro de la ventana activa
+   * (alFallar) o en un aviso visible; antes iba al banner de la página, que quedaba detrás de la
+   * ventana y además ocultaba el detalle de la orden. Al salir bien muestra el aviso de éxito.
+   */
+  const doAccion = async (
+    fn: () => Promise<unknown>,
+    opciones: { exito?: string; alFallar?: (mensaje: string) => void } = {}
+  ): Promise<boolean> => {
+    const fallar = (mensaje: string) => (opciones.alFallar ? opciones.alFallar(mensaje) : toast.error(mensaje));
     setAccionando(true);
-    setError('');
     try {
-       const result = await fn();
+      const result = await fn();
       if (result && typeof result === 'object' && 'success' in (result as any)) {
         const r = result as any;
         if (!r.success) {
-          setError(r.message || 'No se pudo completar la accion');
-          return;
+          fallar(r.message || 'No se pudo completar la acción');
+          return false;
         }
       }
-      if (result === false) return;
+      if (result === false) return false;
+      if (opciones.exito) toast.exito(opciones.exito);
       await loadOrdenes();
+      return true;
     } catch (err) {
       console.error(err);
-      setError('No se pudo completar la accion');
+      fallar('No se pudo completar la acción. Revisa tu conexión e inténtalo de nuevo.');
+      return false;
     } finally {
       setAccionando(false);
     }
   };
 
-  const handleIniciar = (id: number, diag?: string) => {
-    doAccion(() => ordenesService.iniciarTrabajo(id, diag ? { diagnostico: diag } : {}));
-  };
+  const handleIniciar = (id: number, diag?: string) =>
+    doAccion(() => ordenesService.iniciarTrabajo(id, diag ? { diagnostico: diag } : {}), {
+      exito: 'Orden iniciada',
+      alFallar: setErrorVentana
+    });
 
-  const handleValidar = (id: number, aprobado: boolean, observaciones?: string) => {
-    doAccion(() => ordenesService.validarOrden(id, { aprobado, observaciones }));
-  };
+  const handleValidar = (id: number, aprobado: boolean, observaciones?: string) =>
+    doAccion(() => ordenesService.validarOrden(id, { aprobado, observaciones }), {
+      exito: aprobado ? 'Orden validada' : 'Orden devuelta',
+      alFallar: setErrorVentana
+    });
 
-  const handleCancelar = (id: number, motivo: string) => {
-    doAccion(() => ordenesService.cancelarOrden(id, motivo));
-  };
+  const handleCancelar = (id: number, motivo: string) =>
+    doAccion(() => ordenesService.cancelarOrden(id, motivo), { exito: 'Orden cancelada', alFallar: setErrorVentana });
 
   const generarReporteOrden = () => {
     if (!detalle) return;
@@ -1156,12 +1176,13 @@ export function OrdenesPage() {
         comentarios: aprobado ? 'Aprobada por supervisor' : 'Rechazada por supervisor'
       });
       if (res.success) {
+        toast.exito(aprobado ? 'Actividad aprobada' : 'Actividad rechazada');
         await loadOrdenes();
       } else {
-        setError(res.message || 'Error al responder a la solicitud');
+        toast.error(res.message || 'Error al responder a la solicitud');
       }
     } catch (err) {
-      setError('Error de conexión');
+      toast.error('Error de conexión');
     } finally {
       setAccionando(false);
     }
@@ -1216,9 +1237,15 @@ export function OrdenesPage() {
             'proceso'
           );
           if (res.success) {
+            toast.exito('Evidencia guardada');
             await loadOrdenes();
             stopGeneralCamera();
+          } else {
+            toast.error(res.message || 'No se pudo subir la foto');
           }
+        } catch (err) {
+          console.error(err);
+          toast.error('No se pudo subir la foto. Revisa tu conexión.');
         } finally {
           setAccionando(false);
         }
@@ -1249,7 +1276,11 @@ export function OrdenesPage() {
             `Evidencia ítem: ${item.pregunta}`,
             'checklist'
           );
-          if (res.success && res.data) {
+          if (!res.success || !res.data) {
+            toast.error(res.message || 'No se pudo subir la foto');
+            return;
+          }
+          {
             const newUrl = res.data.urlImagen;
             updateChecklistRespuesta(item.id, { fotoUrl: newUrl });
             
@@ -1272,15 +1303,21 @@ export function OrdenesPage() {
             }
 
             if (metaId) {
-              await ordenTrabajoChecklistItemService.update(metaId, {
+              const upd = await ordenTrabajoChecklistItemService.update(metaId, {
                 fotoUrl: newUrl,
                 tipo: tipoItem
               });
+              if (!upd.success) {
+                toast.error(upd.message || 'La foto se subió, pero no se pudo ligar al punto del checklist');
+                return;
+              }
             }
+            toast.exito('Evidencia guardada');
             stopGeneralCamera();
           }
         } catch (err) {
           console.error('Error al subir foto de checklist', err);
+          toast.error('No se pudo subir la foto. Revisa tu conexión.');
         } finally {
           setUploadingItemMap(prev => ({...prev, [item.id]: false}));
         }
@@ -2184,7 +2221,7 @@ export function OrdenesPage() {
                 <p className="text-sm text-continental-gray-2 italic">Sin refacciones solicitadas.</p>
               )}
               {hasRole(['Administrador', 'SuperUsuario', 'Supervisor', 'Tecnico']) && (
-                <Button variant="outline" size="sm" className="w-full" onClick={() => setShowRefModal(true)}>
+                <Button variant="outline" size="sm" className="w-full" onClick={() => { setErrorVentana(''); setShowRefModal(true); }}>
                   <Package className="h-4 w-4 mr-2" /> Solicitar Refacciones
                 </Button>
               )}
@@ -2396,6 +2433,7 @@ export function OrdenesPage() {
             {detalle.estado === EstadoOrdenTrabajo.Pendiente && (
               <Button
                 onClick={() => {
+                  setErrorVentana('');
                   setShowIniciar(true);
                   setDiagInicio(detalle.diagnostico || '');
                 }}
@@ -2437,6 +2475,7 @@ export function OrdenesPage() {
               <Button
                 variant="ghost"
                 onClick={() => {
+                  setErrorVentana('');
                   setShowCancelar(true);
                   setMotivoCancelar('');
                 }}
@@ -2609,6 +2648,11 @@ export function OrdenesPage() {
               </label>
             </div>
           </div>
+          {errorVentana && (
+            <Alert variant="destructive">
+              <AlertDescription>{errorVentana}</AlertDescription>
+            </Alert>
+          )}
           <Textarea
             label="Observaciones (opcional)"
             placeholder="Notas para el tecnico/supervisor"
@@ -2621,10 +2665,10 @@ export function OrdenesPage() {
             Cancelar
           </Button>
           <Button
-            onClick={() => {
+            onClick={async () => {
               if (!detalle) return;
-              setShowValidar(false);
-              handleValidar(detalle.id, validarDecision === 'aprobar', validarObs || undefined);
+              setErrorVentana('');
+              if (await handleValidar(detalle.id, validarDecision === 'aprobar', validarObs || undefined)) setShowValidar(false);
             }}
             disabled={accionando}
           >
@@ -2754,7 +2798,7 @@ export function OrdenesPage() {
             Cancelar
           </Button>
             <Button
-              onClick={() => {
+              onClick={async () => {
                 if (!detalle) return;
                 setCompError('');
 
@@ -2776,7 +2820,7 @@ export function OrdenesPage() {
                   setCompError('No puedes completar la orden: hay refacciones pendientes de entrega.');
                   return;
                 }
-                setShowCompletar(false);
+                setCompError('');
 
                 // Generar descripción automática basada en el checklist para el backend
                 const itemsOk = checklistItems
@@ -2790,7 +2834,7 @@ export function OrdenesPage() {
                 const horas = Number(compHoras) || 1; // Default a 1 si estaba vacío
                 const consumosValidos = consumos.filter((c) => c.consumibleId && Number(c.cantidad) > 0);
 
-              doAccion(async () => {
+              const completada = await doAccion(async () => {
                 if (compEvidFile) {
                   const evRes = await ordenesService.uploadEvidencia(
                     detalle.id,
@@ -2799,26 +2843,35 @@ export function OrdenesPage() {
                     'despues'
                   );
                   if (!evRes.success) {
-                    setError(evRes.message || 'No se pudo subir la evidencia');
-                    // Continuar con el cierre aunque la evidencia falle
+                    // Continuar con el cierre aunque la evidencia falle, pero avisarlo
+                    toast.error(`La evidencia no se pudo subir: ${evRes.message || 'error desconocido'}`);
                   }
                 }
-                await ordenesService.completarTrabajo(detalle.id, {
+                const res = await ordenesService.completarTrabajo(detalle.id, {
                   trabajoRealizado: descripcionAutomatica,
                   horasTrabajadas: horas
                 });
+                if (!res.success) return res;
+                const sinRegistrar: string[] = [];
                 for (const c of consumosValidos) {
                   try {
-                    await consumiblesService.registrarConsumo(c.consumibleId!, {
+                    const r = await consumiblesService.registrarConsumo(c.consumibleId!, {
                       ordenTrabajoId: detalle.id,
                       cantidad: Number(c.cantidad),
                       comentario: `Consumo OT ${detalle.folio}`
                     });
+                    if (r && (r as { success?: boolean }).success === false) sinRegistrar.push(String(c.consumibleId));
                   } catch (err) {
                     console.error('No se pudo registrar consumo', err);
+                    sinRegistrar.push(String(c.consumibleId));
                   }
                 }
-              });
+                if (sinRegistrar.length > 0) {
+                  toast.error(`La orden se completó, pero no se registró el consumo de ${sinRegistrar.length} material(es). Regístralo en Inventario.`);
+                }
+                return res;
+              }, { exito: 'Trabajo completado', alFallar: setCompError });
+              if (completada) setShowCompletar(false);
             }}
             disabled={accionando}
           >
@@ -2835,6 +2888,11 @@ export function OrdenesPage() {
       description="Agrega una o varias refacciones para esta orden."
     >
       <div className="space-y-3">
+        {errorVentana && (
+          <Alert variant="destructive">
+            <AlertDescription>{errorVentana}</AlertDescription>
+          </Alert>
+        )}
         {refItems.map((item, idx) => (
           <div key={idx} className="border rounded-lg p-3 space-y-2">
                       <div className="flex justify-between items-center">
@@ -2895,7 +2953,7 @@ export function OrdenesPage() {
             Cancelar
           </Button>
           <Button
-            onClick={() => {
+            onClick={async () => {
               if (!detalle) return;
               const payloadItems = refItems
                 .map((it) => ({
@@ -2906,18 +2964,21 @@ export function OrdenesPage() {
                 }))
                 .filter((it) => it.nombreRefaccion.length > 0);
               if (payloadItems.length === 0) {
-                setError('Captura al menos una refaccion');
+                setErrorVentana('Captura al menos una refacción (elige una de la lista o escribe su nombre).');
                 return;
               }
-              doAccion(async () => {
-                if (payloadItems.length === 1) {
-                  await refaccionesService.create(payloadItems[0]);
-                } else {
-                  await refaccionesService.createBatch({ solicitudes: payloadItems });
-                }
+              setErrorVentana('');
+              const enviadas = await doAccion(
+                () =>
+                  payloadItems.length === 1
+                    ? refaccionesService.create(payloadItems[0])
+                    : refaccionesService.createBatch({ solicitudes: payloadItems }),
+                { exito: payloadItems.length === 1 ? 'Solicitud de refacción enviada' : `${payloadItems.length} solicitudes de refacción enviadas`, alFallar: setErrorVentana }
+              );
+              if (enviadas) {
                 setShowRefModal(false);
                 setRefItems([{ nombre: '', cantidad: '1', justificacion: '' }]);
-              });
+              }
             }}
             disabled={accionando}
             className="flex items-center gap-2"
@@ -2939,6 +3000,11 @@ export function OrdenesPage() {
           <p className="text-sm text-continental-gray-1">
             Folio: <span className="font-semibold text-continental-black">{detalle?.folio}</span>
           </p>
+          {errorVentana && (
+            <Alert variant="destructive">
+              <AlertDescription>{errorVentana}</AlertDescription>
+            </Alert>
+          )}
           <Textarea
             label="Diagnostico inicial (opcional)"
             placeholder="Notas breves del estado al iniciar"
@@ -2951,10 +3017,10 @@ export function OrdenesPage() {
             Cancelar
           </Button>
           <Button
-            onClick={() => {
+            onClick={async () => {
               if (!detalle) return;
-              setShowIniciar(false);
-              handleIniciar(detalle.id, diagInicio || undefined);
+              setErrorVentana('');
+              if (await handleIniciar(detalle.id, diagInicio || undefined)) setShowIniciar(false);
             }}
             disabled={accionando}
           >
@@ -2975,11 +3041,20 @@ export function OrdenesPage() {
           <p className="text-sm text-continental-gray-1">
             Folio: <span className="font-semibold text-continental-black">{detalle?.folio}</span>
           </p>
+          {errorVentana && errorVentana !== MOTIVO_OBLIGATORIO && (
+            <Alert variant="destructive">
+              <AlertDescription>{errorVentana}</AlertDescription>
+            </Alert>
+          )}
           <Textarea
             label="Motivo"
             placeholder="Describe el motivo de cancelacion"
             value={motivoCancelar}
-            onChange={(e) => setMotivoCancelar(e.target.value)}
+            onChange={(e) => {
+              setMotivoCancelar(e.target.value);
+              if (errorVentana === MOTIVO_OBLIGATORIO) setErrorVentana('');
+            }}
+            error={errorVentana === MOTIVO_OBLIGATORIO ? MOTIVO_OBLIGATORIO : undefined}
           />
         </div>
         <ModalFooter>
@@ -2987,12 +3062,16 @@ export function OrdenesPage() {
             Volver
           </Button>
           <Button
-            onClick={() => {
-              if (!detalle || !motivoCancelar.trim()) return;
-              setShowCancelar(false);
-              handleCancelar(detalle.id, motivoCancelar.trim());
+            onClick={async () => {
+              if (!detalle) return;
+              if (!motivoCancelar.trim()) {
+                setErrorVentana(MOTIVO_OBLIGATORIO);
+                return;
+              }
+              setErrorVentana('');
+              if (await handleCancelar(detalle.id, motivoCancelar.trim())) setShowCancelar(false);
             }}
-            disabled={accionando || !motivoCancelar.trim()}
+            disabled={accionando}
           >
             {accionando ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Cancelar orden'}
           </Button>

@@ -370,10 +370,13 @@ export function VehiculosPage() {
 
   const terminarGuardado = (mensaje: string, fallidas: string[]) => {
     resetFormState();
+    // Además del aviso de arriba, un toast: al conservar la página y la posición (8.5) el de arriba puede quedar fuera de la vista
     if (fallidas.length > 0) {
       setError(`${mensaje}, pero no se pudieron subir estas fotos: ${fallidas.join(', ')}`);
+      toast.error(`${mensaje}, pero no se pudieron subir ${fallidas.length} foto(s)`);
     } else {
       setSuccessMessage(mensaje);
+      toast.exito(mensaje);
     }
     loadVehiculos(pagination.page, filtrosAplicados.current, true);
   };
@@ -467,6 +470,7 @@ export function VehiculosPage() {
       const res = await vehiculosService.deleteMany(deleteTargets.map((v) => v.id));
       if (res.success) {
         setSuccessMessage(res.message || 'Vehiculos eliminados correctamente');
+        toast.exito(res.message || 'Vehículos eliminados correctamente');
         setDeleteTargets(null);
         setEditOpen(false);
         loadVehiculos(pagination.page, filtrosAplicados.current, true);
@@ -1069,6 +1073,7 @@ export function VehiculosPage() {
         titulo="vehículos"
         onImportado={(r) => {
           setSuccessMessage(`Importación completada: ${r.nuevos} vehículo(s) nuevo(s) y ${r.actualizados} actualizado(s)`);
+          toast.exito(`Importación completada: ${r.nuevos} nuevo(s) y ${r.actualizados} actualizado(s)`);
           loadVehiculos(pagination.page, filtrosAplicados.current, true);
         }}
       />

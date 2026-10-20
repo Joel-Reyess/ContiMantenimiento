@@ -27,6 +27,8 @@ export function ArchivoPage() {
   
   // Upload State
   const [showUpload, setShowUpload] = useState(false);
+  // Errores de las ventanas "Subir documento" y "Solicitar cambio": dentro de la ventana, bajo su campo
+  const [erroresVentana, setErroresVentana] = useState<{ general?: string; nombre?: string; archivo?: string; cambio?: string }>({});
   const [file, setFile] = useState<File | null>(null);
   const [nombre, setNombre] = useState('');
   const [tipo, setTipo] = useState('Plano');
@@ -115,16 +117,13 @@ export function ArchivoPage() {
   const handleUpload = async () => {
     const nombreTipo = (tipo || '').toLowerCase();
     const archivoOpcional = tiposArchivoOpcional.includes(nombreTipo);
-    if (!vehiculoId || !nombre.trim()) {
-      setError('Selecciona vehiculo y nombre');
-      return;
-    }
-    if (!archivoOpcional && !file) {
-      setError('Selecciona un archivo para este tipo de documento');
-      return;
-    }
+    const errores: typeof erroresVentana = {};
+    if (!vehiculoId) errores.general = 'Selecciona primero el vehículo.';
+    if (!nombre.trim()) errores.nombre = 'Escribe el nombre del documento.';
+    if (!archivoOpcional && !file) errores.archivo = 'Selecciona un archivo para este tipo de documento.';
+    setErroresVentana(errores);
+    if (Object.keys(errores).length > 0 || !vehiculoId) return;
     setSaving(true);
-    setError('');
     try {
       const res = await vehiculoDocumentosService.upload(
         { vehiculoId, nombre: nombre.trim(), tipo: tipo || undefined, descripcion: descripcion.trim() || undefined },
@@ -132,16 +131,17 @@ export function ArchivoPage() {
       );
       if (res.success) {
         setShowUpload(false);
+        toast.exito(`Documento "${nombre.trim()}" guardado`);
         setFile(null);
         setNombre('');
         setTipo('Plano');
         setDescripcion('');
         loadDocs(vehiculoId);
       } else {
-        setError(res.message || 'No se pudo subir el archivo');
+        setErroresVentana({ general: res.message || 'No se pudo subir el archivo' });
       }
     } catch (err) {
-      setError('No se pudo subir el archivo');
+      setErroresVentana({ general: 'No se pudo subir el archivo' });
     } finally {
       setSaving(false);
     }
@@ -149,11 +149,11 @@ export function ArchivoPage() {
 
   const handleCreateCambio = async () => {
     if (!vehiculoId || !cambioDesc.trim()) {
-      setError('Captura una descripcion');
+      setErroresVentana(vehiculoId ? { cambio: 'Describe el cambio que necesitas.' } : { general: 'Selecciona primero el vehículo.' });
       return;
     }
     setSendingCambio(true);
-    setError('');
+    setErroresVentana({});
     try {
       const res = await solicitudCambioService.create({
         vehiculoId,
@@ -162,13 +162,14 @@ export function ArchivoPage() {
       if (res.success) {
         setShowCambioModal(false);
         setCambioDesc('');
+        toast.exito('Solicitud de cambio enviada');
         loadDocs(vehiculoId);
       } else {
-        setError(res.message || 'Error al crear solicitud');
+        setErroresVentana({ general: res.message || 'Error al crear solicitud' });
       }
     } catch (err) {
       console.error(err);
-      setError('Error al crear solicitud');
+      setErroresVentana({ general: 'Error al crear solicitud' });
     } finally {
       setSendingCambio(false);
     }
@@ -338,7 +339,7 @@ export function ArchivoPage() {
           {activeTab === 'docs' && (
             <Button
               className="flex items-center gap-2"
-              onClick={() => setShowUpload(true)}
+              onClick={() => { setErroresVentana({}); setShowUpload(true); }}
             >
               <Upload className="h-4 w-4" />
               Subir documento
@@ -347,7 +348,7 @@ export function ArchivoPage() {
           {activeTab === 'requests' && (
             <Button
               className="flex items-center gap-2"
-              onClick={() => setShowCambioModal(true)}
+              onClick={() => { setErroresVentana({}); setShowCambioModal(true); }}
             >
               <Plus className="h-4 w-4" />
               Solicitar Cambio
@@ -485,7 +486,12 @@ export function ArchivoPage() {
 
       <Modal isOpen={showUpload} onClose={() => setShowUpload(false)} title="Subir documento" description="Planos o documentos del contenedor.">
         <div className="space-y-3">
-          <Input label="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} />
+          {erroresVentana.general && (
+            <Alert variant="destructive">
+              <AlertDescription>{erroresVentana.general}</AlertDescription>
+            </Alert>
+          )}
+          <Input label="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} error={erroresVentana.nombre} />
           <Select
             label="Tipo"
             value={tipo}
@@ -509,6 +515,7 @@ export function ArchivoPage() {
               {tiposArchivoOpcional.includes((tipo || '').toLowerCase()) ? ' — opcional' : ''}
             </p>
             <input type="file" accept="image/*,application/pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+            {erroresVentana.archivo && <p className="text-xs" style={{ color: '#dc2626' }}>{erroresVentana.archivo}</p>}
           </div>
         </div>
         <ModalFooter>
@@ -523,11 +530,17 @@ export function ArchivoPage() {
 
       <Modal isOpen={showCambioModal} onClose={() => setShowCambioModal(false)} title="Solicitar Cambio" description="Describe los cambios requeridos para los planos.">
         <div className="space-y-3">
+          {erroresVentana.general && (
+            <Alert variant="destructive">
+              <AlertDescription>{erroresVentana.general}</AlertDescription>
+            </Alert>
+          )}
           <Textarea 
             placeholder="Descripción detallada del cambio solicitado..." 
             value={cambioDesc}
             onChange={e => setCambioDesc(e.target.value)}
             rows={5}
+            error={erroresVentana.cambio}
           />
         </div>
         <ModalFooter>

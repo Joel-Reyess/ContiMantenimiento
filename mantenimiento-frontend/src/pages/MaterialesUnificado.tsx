@@ -248,6 +248,7 @@ export function MaterialesUnificadoPage() {
       });
       if (resp.success) {
         setShowCreate(false);
+        toast.exito(`${form.nombre.trim()} agregado al inventario`);
         setForm({
           codigo: '',
           nombre: '',
@@ -284,6 +285,7 @@ export function MaterialesUnificadoPage() {
         ajuste.comentario?.trim() || undefined
       );
       if (resp.success) {
+        toast.exito(`Stock de ${showAdjust.nombre} ajustado`);
         setShowAdjust(null);
         setAjuste({ tipo: 'ajuste+', cantidad: 1, comentario: '' });
         loadStock();
@@ -295,15 +297,21 @@ export function MaterialesUnificadoPage() {
     }
   };
 
+  // Error de la ventana "Nueva solicitud": dentro de ella (antes iba al aviso de la pestaña, detrás de la ventana)
+  const [errorVentanaSolicitud, setErrorVentanaSolicitud] = useState('');
+
   const handleCreateSolicitud = async () => {
+    setErrorVentanaSolicitud('');
+    if (!formSolicitud.ordenTrabajoId) {
+      setErrorVentanaSolicitud('Selecciona una orden de trabajo.');
+      return;
+    }
+    if (!(refaccionSeleccionada?.label || formSolicitud.nombreRefaccion).trim()) {
+      setErrorVentanaSolicitud('Elige una refacción de la lista o escribe su nombre.');
+      return;
+    }
     setCreando(true);
-    setErrorSolicitudes('');
     try {
-      if (!formSolicitud.ordenTrabajoId) {
-        setErrorSolicitudes('Selecciona una orden de trabajo');
-        setCreando(false);
-        return;
-      }
       const costoEstimadoAuto = refaccionSeleccionada?.meta?.costo;
       const payload = {
         ordenTrabajoId: Number(formSolicitud.ordenTrabajoId),
@@ -325,13 +333,14 @@ export function MaterialesUnificadoPage() {
         });
         setOrdenSeleccionada(null);
         setRefaccionSeleccionada(null);
+        toast.exito(`Solicitud de ${payload.nombreRefaccion} enviada`);
         loadRefacciones();
       } else {
-        setErrorSolicitudes(res.message || 'No se pudo crear la solicitud');
+        setErrorVentanaSolicitud(res.message || 'No se pudo crear la solicitud');
       }
     } catch (err) {
       console.error(err);
-      setErrorSolicitudes('Error al crear la solicitud de refaccion');
+      setErrorVentanaSolicitud('Error al crear la solicitud de refacción');
     } finally {
       setCreando(false);
     }
@@ -515,7 +524,7 @@ export function MaterialesUnificadoPage() {
                   <Upload className="h-4 w-4 mr-1" /> Importar Excel
                 </Button>
               )}
-              <Button onClick={() => setShowCreate(true)}>
+              <Button onClick={() => { setErrorStock(''); setShowCreate(true); }}>
                 <Plus className="h-4 w-4 mr-1" /> Nuevo
               </Button>
             </div>
@@ -614,7 +623,7 @@ export function MaterialesUnificadoPage() {
                 <RefreshCcw className="h-4 w-4" />
                 Actualizar
               </Button>
-              <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => setCreateOpen(true)}>
+              <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => { setErrorVentanaSolicitud(''); setCreateOpen(true); }}>
                 <Plus className="h-4 w-4" />
                 Nueva solicitud
               </Button>
@@ -768,6 +777,11 @@ export function MaterialesUnificadoPage() {
         description="Solicita una refaccion ligada a una orden de trabajo."
       >
         <div className="space-y-3">
+          {errorVentanaSolicitud && (
+            <Alert variant="destructive">
+              <AlertDescription>{errorVentanaSolicitud}</AlertDescription>
+            </Alert>
+          )}
           <SearchableSelect
             label="Orden de trabajo"
             placeholder="Buscar por folio, vehiculo o texto"
@@ -857,6 +871,7 @@ export function MaterialesUnificadoPage() {
         entidad="inventario"
         titulo="artículos de inventario"
         onImportado={(r) => {
+          toast.exito(`Importación completada: ${r.nuevos} nuevo(s) y ${r.actualizados} actualizado(s)`);
           setMensajeExcel({
             tipo: 'success',
             texto: `Importación completada: ${r.nuevos} artículo(s) nuevo(s) y ${r.actualizados} actualizado(s)`

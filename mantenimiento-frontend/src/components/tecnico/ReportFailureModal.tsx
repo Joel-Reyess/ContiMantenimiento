@@ -5,7 +5,8 @@ import {
   SearchableSelect,
   type SearchableSelectOption,
   Spinner,
-  QrScannerButton
+  QrScannerButton,
+  useToast
 } from '@/components/ui';
 import {
   reportesService,
@@ -63,6 +64,7 @@ export function ReportFailureModal({
   initialTipoMantenimiento,
   forceFormStep = false
 }: ReportFailureModalProps) {
+  const toast = useToast();
   // 'preview' = vista previa antes de enviar (requerimiento 9.1.4)
   const [step, setStep] = useState<'scan' | 'form' | 'preview'>('scan');
   const [vehiculoSeleccionado, setVehiculoSeleccionado] = useState<VehiculoOption | null>(null);
@@ -894,7 +896,12 @@ if (reqSeq !== checklistReqSeqRef.current) return;
         setError('');
         setShowConfirmDuplicate(true);
       } else {
-        setError(response.message || 'Error al crear reporte');
+        // Cerrar el aviso de duplicado (si se confirmó desde ahí) para que el error no quede tapado,
+        // y avisarlo también arriba: en la vista previa el mensaje queda fuera de la vista
+        const mensaje = response.message || 'Error al crear reporte';
+        setShowConfirmDuplicate(false);
+        setError(mensaje);
+        toast.error(mensaje);
       }
     } catch (err: any) {
       console.error('Error in handleSubmit:', err);
@@ -905,7 +912,10 @@ if (reqSeq !== checklistReqSeqRef.current) return;
         setError('');
         setShowConfirmDuplicate(true);
       } else {
-        setError(resData?.message || err.message || 'No se pudo crear el reporte. Revise su conexion.');
+        const mensaje = resData?.message || err.message || 'No se pudo crear el reporte. Revise su conexion.';
+        setShowConfirmDuplicate(false);
+        setError(mensaje);
+        toast.error(mensaje);
       }
     } finally {
       submittingRef.current = false;

@@ -284,10 +284,12 @@ export function ConfiguracionPage() {
              if (uploadRes.success && uploadRes.data?.imagenUrl) {
                // Actualizamos la URL en el objeto recién creado
                await catalogosService.updateTipoVehiculo(res.data.id, { ...res.data, imagenUrl: uploadRes.data.imagenUrl });
+             } else {
+               toast.error(`El tipo se creó, pero la imagen no se pudo subir: ${uploadRes.message || 'error desconocido'}. Súbela desde "Editar".`);
              }
            } catch (uploadErr) {
              console.error('Error subiendo imagen tras crear', uploadErr);
-             // No fallamos toda la operación, pero avisamos o simplemente queda sin imagen
+             toast.error('El tipo se creó, pero la imagen no se pudo subir. Súbela desde "Editar".');
            } finally {
              setUploading(false);
            }
@@ -394,15 +396,17 @@ export function ConfiguracionPage() {
         proveedorId: tipo.proveedorId
       });
 
+      // Avisos visibles junto a lo que se está haciendo (el banner de arriba queda fuera de la vista)
       if (!res.success) {
-        setError(res.message || 'No se pudo guardar la programación preventiva.');
+        toast.error(res.message || 'No se pudo guardar la programación preventiva.');
       } else {
+        toast.exito(`Programación preventiva de ${tipo.nombre} guardada`);
         await loadTiposVehiculo();
         await loadProgramacionPreventiva();
       }
     } catch (err) {
       console.error(err);
-      setError('Error al guardar la programación preventiva.');
+      toast.error('Error al guardar la programación preventiva.');
     } finally {
       setSavingPreventivoId(null);
     }

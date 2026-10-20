@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Search, AlertTriangle, Check, X } from 'lucide-react';
-import { Button, LoadingCard } from '@/components/ui';
+import { Button, LoadingCard, useToast } from '@/components/ui';
+import { useAuth } from '@/contexts/AuthContext';
 import { consumiblesService } from '@/services';
 import type { Consumible } from '@/services';
 import { cn } from '@/lib/utils';
@@ -23,6 +24,10 @@ interface InventarioProps {
 }
 
 export function InventarioPage({ modoRefacciones = false, soloConsumibles = false }: InventarioProps) {
+  const toast = useToast();
+  const { hasRole } = useAuth();
+  // Ajustar stock: el servidor solo lo permite a administradores
+  const puedeAjustar = hasRole(['SuperUsuario', 'Administrador']);
   const [items, setItems] = useState<Consumible[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
@@ -112,6 +117,7 @@ export function InventarioPage({ modoRefacciones = false, soloConsumibles = fals
       });
       if (resp.success) {
         setShowCreate(false);
+        toast.exito(`${form.nombre.trim()} agregado al inventario`);
         setForm({
           codigo: '',
           nombre: '',
@@ -148,6 +154,7 @@ export function InventarioPage({ modoRefacciones = false, soloConsumibles = fals
         ajuste.comentario?.trim() || undefined
       );
       if (resp.success) {
+        toast.exito(`Stock de ${showAdjust.nombre} ajustado`);
         setShowAdjust(null);
         setAjuste({ tipo: 'ajuste+', cantidad: 1, comentario: '' });
         load();
@@ -263,9 +270,11 @@ export function InventarioPage({ modoRefacciones = false, soloConsumibles = fals
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">
-                        <Button size="sm" variant="outline" onClick={() => { setShowAdjust(c); setError(''); }}>
-                          Ajustar
-                        </Button>
+                        {puedeAjustar && (
+                          <Button size="sm" variant="outline" onClick={() => { setShowAdjust(c); setError(''); }}>
+                            Ajustar
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>
