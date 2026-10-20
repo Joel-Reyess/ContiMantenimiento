@@ -57,10 +57,11 @@ export function NotificacionesPage() {
         .filter((n) => (soloNoLeidas ? !n.leida : true))
     );
     const resp = await notificacionesService.marcarLeida(id);
+    // Primero avisar (recarga esta lista y su carga limpia el error); después mostrar el error, si hubo
+    avisarCambio();
     if (!resp.success) {
       setError(resp.message || 'No se pudo marcar como leida');
     }
-    avisarCambio();
   };
 
   const borrar = async (id: number) => {
@@ -72,17 +73,17 @@ export function NotificacionesPage() {
     });
     if (!ok) return;
     const resp = await notificacionesService.eliminar(id);
-    if (!resp.success) setError(resp.message || 'No se pudo borrar la notificación');
     avisarCambio();
+    if (!resp.success) setError(resp.message || 'No se pudo borrar la notificación');
   };
 
   const marcarTodas = async () => {
     setNotificaciones((prev) => prev.map((n) => ({ ...n, leida: true })).filter((n) => (soloNoLeidas ? !n.leida : true)));
     const resp = await notificacionesService.marcarTodasLeidas();
+    avisarCambio();
     if (!resp.success) {
       setError(resp.message || 'No se pudieron marcar todas como leidas');
     }
-    avisarCambio();
   };
 
   return (

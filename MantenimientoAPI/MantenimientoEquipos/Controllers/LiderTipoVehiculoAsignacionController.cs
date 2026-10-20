@@ -33,7 +33,7 @@ public class LiderTipoVehiculoAsignacionController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "SuperUsuario,Administrativo,Supervisor")]
+    [Authorize(Roles = "SuperUsuario,Administrador,Supervisor")] // Decía "Administrativo" (no existe): el Administrador recibía 403
     public async Task<ActionResult<LiderTipoVehiculoAsignacionDto>> Create(CreateLiderTipoVehiculoAsignacionRequest request)
     {
         try
@@ -62,7 +62,7 @@ public class LiderTipoVehiculoAsignacionController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Roles = "SuperUsuario,Administrativo,Supervisor")]
+    [Authorize(Roles = "SuperUsuario,Administrador,Supervisor")] // Decía "Administrativo" (no existe): el Administrador recibía 403
     public async Task<IActionResult> Delete(int id)
     {
         var result = await _service.DeleteAsync(id);

@@ -78,6 +78,9 @@ export function Bitacora() {
       if (!res.success || !res.data) {
         setError(res.message || 'No se pudo cargar la bitácora');
         setRegistros([]);
+        // Sin esto quedaba el pie "N registro(s) · página X de Y" de la consulta anterior
+        setTotal(0);
+        setTotalPaginas(1);
         return;
       }
       setRegistros(res.data.items);

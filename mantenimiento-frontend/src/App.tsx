@@ -209,6 +209,15 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            {/* Enlace "Orden Compra: OC-..." de Control de pagos: abre el detalle (antes llevaba a "no encontrado") */}
+            <Route
+              path="ordenes-compra/:id"
+              element={
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor']}>
+                  <OrdenesCompraPage />
+                </ProtectedRoute>
+              }
+            />
 
             {/* Usuarios */}
             <Route

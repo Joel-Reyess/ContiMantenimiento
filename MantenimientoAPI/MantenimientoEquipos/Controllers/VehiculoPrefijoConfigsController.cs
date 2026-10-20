@@ -50,7 +50,7 @@ public class VehiculoPrefijoConfigsController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(ex.Message);
+            return BadRequest(ApiResponse<object>.Error(ex.Message));
         }
     }
 
@@ -67,7 +67,7 @@ public class VehiculoPrefijoConfigsController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(ex.Message);
+            return BadRequest(ApiResponse<object>.Error(ex.Message));
         }
     }
 

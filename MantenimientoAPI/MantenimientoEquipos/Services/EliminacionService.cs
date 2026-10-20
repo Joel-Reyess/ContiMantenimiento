@@ -20,15 +20,37 @@ public class EliminacionService
         _db = db;
     }
 
-    /// <summary>Borra las órdenes; sus reportes (si no se borran también) vuelven a quedar "sin orden".</summary>
+    /// <summary>Órdenes ya terminadas: al borrarlas, su reporte se conserva como atendido (no vuelve a pendientes).</summary>
+    private static readonly EstadoOrdenTrabajoEnum[] EstadosOrdenTerminada =
+    {
+        EstadoOrdenTrabajoEnum.Validada,
+        EstadoOrdenTrabajoEnum.Entregado
+    };
+
+    /// <summary>
+    /// Borra las órdenes. Si la orden no estaba terminada, su reporte (si no se borra también) vuelve a quedar
+    /// "sin orden" para poder crear otra; si ya estaba validada o entregada, el reporte se conserva como atendido.
+    /// </summary>
     public async Task<int> EliminarOrdenesAsync(IReadOnlyCollection<int> ordenIds)
     {
         var ids = ordenIds.Distinct().ToList();
         if (ids.Count == 0) return 0;
 
         var reportesAfectados = await _db.OrdenesTrabajo
-            .Where(o => ids.Contains(o.Id) && o.ReporteFallaId.HasValue)
+            .Where(o => ids.Contains(o.Id) && o.ReporteFallaId.HasValue && !EstadosOrdenTerminada.Contains(o.Estado))
             .Select(o => o.ReporteFallaId!.Value)
+            .ToListAsync();
+        // Vehículos que estaban en reparación por estas órdenes: al final regresan al piso si ya no les queda nada abierto
+        var vehiculosEnReparacion = await _db.OrdenesTrabajo
+            .Where(o => ids.Contains(o.Id) && OrdenTrabajoService.EstadosOrdenActiva.Contains(o.Estado))
+            .Select(o => o.VehiculoId)
+            .Distinct()
+            .ToListAsync();
+        // Pagos que ya están en una orden de compra: al borrarlos se recalcula el total de esa OC (si no, quedaría mal)
+        var ordenesCompra = await _db.RegistrosPago
+            .Where(p => ids.Contains(p.OrdenTrabajoId) && p.OrdenCompraId.HasValue)
+            .Select(p => p.OrdenCompraId!.Value)
+            .Distinct()
             .ToListAsync();
 
         await _db.EvidenciasFotograficas
@@ -39,6 +61,11 @@ public class EliminacionService
         await _db.SolicitudesRefaccion.Where(s => ids.Contains(s.OrdenTrabajoId)).ExecuteDeleteAsync();
         await _db.SolicitudesActividadAdicional.Where(s => ids.Contains(s.OrdenTrabajoId)).ExecuteDeleteAsync();
         await _db.RegistrosPago.Where(p => ids.Contains(p.OrdenTrabajoId)).ExecuteDeleteAsync();
+        foreach (var ocId in ordenesCompra)
+        {
+            var total = await _db.RegistrosPago.Where(p => p.OrdenCompraId == ocId).SumAsync(p => (decimal?)p.MontoTotal) ?? 0m;
+            await _db.OrdenesCompra.Where(oc => oc.Id == ocId).ExecuteUpdateAsync(s => s.SetProperty(oc => oc.Total, total));
+        }
         await _db.ConsumosConsumibles
             .Where(c => c.OrdenTrabajoId.HasValue && ids.Contains(c.OrdenTrabajoId.Value))
             .ExecuteUpdateAsync(s => s.SetProperty(c => c.OrdenTrabajoId, (int?)null));
@@ -55,7 +82,32 @@ public class EliminacionService
                 .ExecuteUpdateAsync(s => s.SetProperty(r => r.TieneOrdenTrabajo, false));
         }
 
+        await RegresarAlPisoAsync(vehiculosEnReparacion);
         return eliminadas;
+    }
+
+    /// <summary>
+    /// Vehículos que quedaron sin orden abierta ni reporte pendiente después de eliminar: vuelven a
+    /// Operativo / Piso. Si no, se quedaban "en reparación" o "fuera de servicio" sin nada que lo explicara.
+    /// Solo se tocan los que están en el flujo de reparación; "fuera de servicio" solo si lo puso un reporte
+    /// eliminado ("no puede operar"), para no reactivar un vehículo que se dio de baja a mano.
+    /// </summary>
+    private async Task RegresarAlPisoAsync(IReadOnlyCollection<int> vehiculoIds, IReadOnlyCollection<int>? fueraDeServicioPorReporte = null)
+    {
+        if (vehiculoIds.Count == 0) return;
+        var fuera = fueraDeServicioPorReporte ?? Array.Empty<int>();
+        await _db.Vehiculos
+            .Where(v => vehiculoIds.Contains(v.Id)
+                && (v.Estado == EstadoVehiculoEnum.EnReparacion || v.Estado == EstadoVehiculoEnum.EnEspera
+                    || v.Ubicacion == UbicacionVehiculoEnum.Taller
+                    || v.Ubicacion == UbicacionVehiculoEnum.TransicionPorReparar
+                    || v.Ubicacion == UbicacionVehiculoEnum.TransicionReparado
+                    || (fuera.Contains(v.Id) && v.Estado == EstadoVehiculoEnum.FueraDeServicio))
+                && !_db.OrdenesTrabajo.Any(o => o.VehiculoId == v.Id && OrdenTrabajoService.EstadosOrdenActiva.Contains(o.Estado))
+                && !_db.ReportesFalla.Any(r => r.VehiculoId == v.Id && !r.TieneOrdenTrabajo))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(v => v.Estado, EstadoVehiculoEnum.Operativo)
+                .SetProperty(v => v.Ubicacion, UbicacionVehiculoEnum.Piso));
     }
 
     /// <summary>Borra los reportes y, si tienen, sus órdenes de trabajo.</summary>
@@ -67,6 +119,17 @@ public class EliminacionService
         var ordenIds = await _db.OrdenesTrabajo
             .Where(o => o.ReporteFallaId.HasValue && ids.Contains(o.ReporteFallaId.Value))
             .Select(o => o.Id)
+            .ToListAsync();
+        // Vehículos de estos reportes: al final regresan al piso si ya no les queda nada abierto
+        var vehiculosAfectados = await _db.ReportesFalla
+            .Where(r => ids.Contains(r.Id))
+            .Select(r => r.VehiculoId)
+            .Distinct()
+            .ToListAsync();
+        var fueraPorReporte = await _db.ReportesFalla
+            .Where(r => ids.Contains(r.Id) && !r.PuedeOperar)
+            .Select(r => r.VehiculoId)
+            .Distinct()
             .ToListAsync();
         var ordenes = await EliminarOrdenesAsync(ordenIds);
 
@@ -80,6 +143,7 @@ public class EliminacionService
             .ExecuteUpdateAsync(s => s.SetProperty(c => c.ReporteId, (int?)null));
 
         var reportes = await _db.ReportesFalla.Where(r => ids.Contains(r.Id)).ExecuteDeleteAsync();
+        await RegresarAlPisoAsync(vehiculosAfectados, fueraPorReporte);
         return (reportes, ordenes);
     }
 
@@ -119,14 +183,16 @@ public class EliminacionService
     {
         var orden = await _db.OrdenesTrabajo
             .Where(o => o.Id == ordenId)
-            .Select(o => new { o.Id, o.Folio, Vehiculo = o.Vehiculo.Codigo, Reporte = o.ReporteFalla != null ? o.ReporteFalla.Folio : null })
+            .Select(o => new { o.Id, o.Folio, o.Estado, Vehiculo = o.Vehiculo.Codigo, Reporte = o.ReporteFalla != null ? o.ReporteFalla.Folio : null })
             .FirstOrDefaultAsync();
         if (orden == null) return new EliminacionResultadoDto();
 
         using var tx = await _db.Database.BeginTransactionAsync();
         var n = await EliminarOrdenesAsync(new[] { orden.Id });
         Registrar(usuarioId, nombreUsuario, "OrdenTrabajo", orden.Id,
-            $"Orden {orden.Folio} del vehículo {orden.Vehiculo}" + (orden.Reporte != null ? $" (el reporte {orden.Reporte} quedó sin orden)" : ""));
+            $"Orden {orden.Folio} del vehículo {orden.Vehiculo}" + (orden.Reporte == null ? ""
+                : EstadosOrdenTerminada.Contains(orden.Estado) ? $" (el reporte {orden.Reporte} se conserva como atendido)"
+                : $" (el reporte {orden.Reporte} quedó sin orden)"));
         await _db.SaveChangesAsync();
         await tx.CommitAsync();
 

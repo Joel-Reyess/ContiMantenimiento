@@ -35,6 +35,31 @@ public class OrdenCompraController : ControllerBase
         public string? Estado { get; set; }
     }
 
+    // Lo que ve la pantalla. Antes se devolvía la entidad con el proveedor completo (usuario con su hash de contraseña).
+    public record OrdenCompraPagoVista(int Id, int OrdenTrabajoId, string? OrdenTrabajoFolio, string? TecnicoNombre, decimal MontoTotal, string Estado);
+    public record OrdenCompraVista(int Id, string Folio, int ProveedorId, string? ProveedorNombre, DateTime FechaRegistro,
+        string Estado, decimal Total, string? NumeroExterno, List<OrdenCompraPagoVista> Pagos);
+
+    private async Task<List<OrdenCompraVista>> VistasAsync(int? id = null)
+    {
+        var ordenes = await _db.OrdenesCompra
+            .AsNoTracking()
+            .Where(oc => id == null || oc.Id == id)
+            .OrderByDescending(oc => oc.FechaRegistro)
+            .Select(oc => new
+            {
+                oc.Id, oc.Folio, oc.ProveedorId, ProveedorNombre = oc.Proveedor.NombreCompleto,
+                oc.FechaRegistro, oc.Estado, oc.Total, oc.NumeroExterno,
+                Pagos = oc.Pagos.Select(p => new { p.Id, p.OrdenTrabajoId, OrdenTrabajoFolio = p.OrdenTrabajo.Folio, TecnicoNombre = p.Tecnico.NombreCompleto, p.MontoTotal, p.Estado }).ToList()
+            })
+            .ToListAsync();
+        return ordenes.Select(oc => new OrdenCompraVista(
+            oc.Id, oc.Folio, oc.ProveedorId, oc.ProveedorNombre,
+            DateTime.SpecifyKind(oc.FechaRegistro, DateTimeKind.Utc), oc.Estado, oc.Total, oc.NumeroExterno,
+            oc.Pagos.Select(p => new OrdenCompraPagoVista(p.Id, p.OrdenTrabajoId, p.OrdenTrabajoFolio, p.TecnicoNombre, p.MontoTotal, p.Estado.ToString())).ToList()))
+            .ToList();
+    }
+
     [HttpPost]
     [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
     public async Task<IActionResult> Create([FromBody] CreateOrdenCompraRequest request)
@@ -78,7 +103,8 @@ public class OrdenCompraController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        return Ok(ApiResponse<OrdenCompra>.Ok(ordenCompra, "Orden de compra generada correctamente."));
+        var vista = (await VistasAsync(ordenCompra.Id)).First();
+        return Ok(ApiResponse<OrdenCompraVista>.Ok(vista, "Orden de compra generada correctamente."));
     }
 
     [HttpPut("{id}")]
@@ -100,7 +126,7 @@ public class OrdenCompraController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
-        return Ok(ApiResponse<OrdenCompra>.Ok(ordenCompra, "Orden de compra actualizada correctamente."));
+        return Ok(ApiResponse<OrdenCompraVista>.Ok((await VistasAsync(id)).First(), "Orden de compra actualizada correctamente."));
     }
 
     /// <summary>Elimina la orden de compra; sus pagos vuelven a Aprobado y sin OC. Solo administradores; queda en la bitácora.</summary>
@@ -117,28 +143,18 @@ public class OrdenCompraController : ControllerBase
     [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
     public async Task<IActionResult> GetAll()
     {
-        var ordenes = await _db.OrdenesCompra
-            .Include(oc => oc.Proveedor)
-            .OrderByDescending(oc => oc.FechaRegistro)
-            .ToListAsync();
-
-        return Ok(ApiResponse<List<OrdenCompra>>.Ok(ordenes));
+        return Ok(ApiResponse<List<OrdenCompraVista>>.Ok(await VistasAsync()));
     }
 
     [HttpGet("{id}")]
     [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
     public async Task<IActionResult> GetById(int id)
     {
-        var orden = await _db.OrdenesCompra
-            .Include(oc => oc.Proveedor)
-            .Include(oc => oc.Pagos)
-                .ThenInclude(p => p.OrdenTrabajo)
-                    .ThenInclude(ot => ot.SolicitudesRefaccion)
-            .FirstOrDefaultAsync(oc => oc.Id == id);
+        var orden = (await VistasAsync(id)).FirstOrDefault();
 
         if (orden == null)
             return NotFound(ApiResponse<string>.Error("Orden de compra no encontrada."));
 
-        return Ok(ApiResponse<OrdenCompra>.Ok(orden));
+        return Ok(ApiResponse<OrdenCompraVista>.Ok(orden));
     }
 }

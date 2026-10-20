@@ -8,6 +8,19 @@ namespace MantenimientoEquipos.Services;
 
 public class OrdenTrabajoService
 {
+    /// <summary>
+    /// Estados en los que una orden sigue "abierta" para su vehículo (avisos de duplicado al crear reportes u órdenes).
+    /// Incluye esperando refacciones y completada sin validar: el vehículo todavía no regresa al piso.
+    /// </summary>
+    public static readonly EstadoOrdenTrabajoEnum[] EstadosOrdenActiva =
+    {
+        EstadoOrdenTrabajoEnum.Pendiente,
+        EstadoOrdenTrabajoEnum.Asignada,
+        EstadoOrdenTrabajoEnum.EnProceso,
+        EstadoOrdenTrabajoEnum.EsperandoRefacciones,
+        EstadoOrdenTrabajoEnum.Completada
+    };
+
     private readonly MantenimientoDbContext _db;
     private readonly NotificacionService _notificacionService;
 
@@ -326,10 +339,7 @@ public class OrdenTrabajoService
 
         // Validar que no exista una orden activa para el vehículo
         var ordenActiva = await _db.OrdenesTrabajo
-            .Where(o => o.VehiculoId == request.VehiculoId &&
-                           (o.Estado == EstadoOrdenTrabajoEnum.Pendiente ||
-                            o.Estado == EstadoOrdenTrabajoEnum.Asignada ||
-                            o.Estado == EstadoOrdenTrabajoEnum.EnProceso))
+            .Where(o => o.VehiculoId == request.VehiculoId && EstadosOrdenActiva.Contains(o.Estado))
             .FirstOrDefaultAsync();
 
         if (ordenActiva != null && !force)
@@ -355,14 +365,11 @@ public class OrdenTrabajoService
         }
 
         // Generar folio
-        var hoy = DateTime.Today;
-        var secuencia = await _db.OrdenesTrabajo
-            .Where(o => o.FechaCreacion.Date == hoy)
-            .CountAsync() + 1;
+        var folio = await FolioGenerator.SiguienteAsync(_db.OrdenesTrabajo.Select(o => o.Folio), "OT");
 
         var orden = new OrdenTrabajo
         {
-            Folio = FolioGenerator.GenerarFolioOrden(secuencia),
+            Folio = folio,
             ReporteFallaId = request.ReporteFallaId,
             VehiculoId = request.VehiculoId,
             TecnicoAsignadoId = tecnicoId,

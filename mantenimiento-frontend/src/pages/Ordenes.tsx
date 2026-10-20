@@ -143,7 +143,11 @@ export function OrdenesPage() {
       mensaje: (
         <div className="space-y-2">
           <p>Se eliminará la orden con su checklist, evidencias, refacciones, actividades adicionales y pagos.</p>
-          <p>Si viene de un reporte, el reporte se conserva y vuelve a quedar "sin orden".</p>
+          <p>
+            Si viene de un reporte, el reporte se conserva: vuelve a quedar "sin orden" para poder crear otra, salvo que
+            la orden ya esté validada o entregada (entonces queda como atendido).
+          </p>
+          <p>Si el vehículo ya no tiene otra orden ni reporte abierto, regresa a Piso como operativo. Si el pago estaba en una orden de compra, su total se ajusta.</p>
           <p>Esta acción no se puede deshacer. Quedará registrado quién la realizó y cuándo.</p>
         </div>
       ),
@@ -833,11 +837,17 @@ export function OrdenesPage() {
     }
   };
 
+  // "Limpiar": la recarga va en un efecto para que use los filtros ya vacíos. Antes se llamaba
+  // directo y tomaba los filtros anteriores, así que la lista seguía filtrada.
+  const [limpiezas, setLimpiezas] = useState(0);
+  useEffect(() => {
+    if (limpiezas > 0 && !ordenId) loadOrdenes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [limpiezas]);
+
   const resetFilters = () => {
     setFilters({ busqueda: '' });
-    if (!ordenId) {
-      loadOrdenes();
-    }
+    setLimpiezas((n) => n + 1);
   };
 
   const doAccion = async (fn: () => Promise<unknown>) => {
@@ -1688,15 +1698,20 @@ export function OrdenesPage() {
 
                                         setUploadingItemMap(prev => ({...prev, [item.id]: true}));
                                         try {
-                                          updateChecklistRespuesta(item.id, { fotoUrl: '' });
                                           const metaId = (item as any).metaId;
                                           const tipoItem = (item as any).tipo === 'ActividadAdicional' ? 'ActividadAdicional' : 'Checklist';
                                           if (metaId) {
-                                            await ordenTrabajoChecklistItemService.update(metaId, {
+                                            // Quitar la foto de la pantalla solo si el servidor la borró (antes se quitaba aunque fallara)
+                                            const res = await ordenTrabajoChecklistItemService.update(metaId, {
                                               fotoUrl: '',
                                               tipo: tipoItem
                                             });
+                                            if (!res.success) {
+                                              toast.error(res.message || 'No se pudo eliminar la evidencia');
+                                              return;
+                                            }
                                           }
+                                          updateChecklistRespuesta(item.id, { fotoUrl: '' });
                                           toast.exito('Evidencia eliminada');
                                         } catch (err) {
                                           console.error(err);

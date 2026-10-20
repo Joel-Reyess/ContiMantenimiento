@@ -175,11 +175,17 @@ export function ReportesPage() {
     }
   };
 
+  // "Limpiar": la recarga va en un efecto para que use los filtros ya vacíos. Antes se llamaba
+  // directo y tomaba los filtros anteriores, así que la lista seguía filtrada.
+  const [limpiezas, setLimpiezas] = useState(0);
+  useEffect(() => {
+    if (limpiezas > 0 && !reporteId) loadReportes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [limpiezas]);
+
   const resetFilters = () => {
     setFilters({ busqueda: '' });
-    if (!reporteId) {
-      loadReportes();
-    }
+    setLimpiezas((n) => n + 1);
   };
 
   const handleCrearOrden = async (force = false) => {

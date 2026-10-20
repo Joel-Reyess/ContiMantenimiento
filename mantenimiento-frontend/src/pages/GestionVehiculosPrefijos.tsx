@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import { Settings, Plus, Loader2, RefreshCcw, Package } from 'lucide-react';
 import {
   Alert,
@@ -54,7 +54,11 @@ export function GestionVehiculosPrefijosPage() {
     return () => clearTimeout(timer);
   }, [filtroBusqueda]);
 
+  // Solo cuenta la respuesta de la última búsqueda (una lenta anterior no debe pisar la lista)
+  const cargaSeqRef = useRef(0);
+
   const loadPrefijos = async () => {
+    const seq = ++cargaSeqRef.current;
     setLoading(true);
     setError('');
     try {
@@ -65,6 +69,7 @@ export function GestionVehiculosPrefijosPage() {
         activo: true,
         pageSize: 1000
       });
+      if (seq !== cargaSeqRef.current) return;
       if (res.success && res.data) {
         setPrefijos(res.data.items || []);
       } else {
@@ -76,7 +81,7 @@ export function GestionVehiculosPrefijosPage() {
       setError('No se pudo conectar con el servicio de prefijos de vehículos');
       setPrefijos([]);
     } finally {
-      setLoading(false);
+      if (seq === cargaSeqRef.current) setLoading(false);
     }
   };
 
