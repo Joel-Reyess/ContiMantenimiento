@@ -205,17 +205,19 @@ public class ExcelExportService
             }
             case "areas":
             {
+                // Solo las áreas en uso y sin columna Activa ("Desactivar" solo existe para usuarios)
                 var filas = await _db.Areas.AsNoTracking()
+                    .Where(a => a.Activa)
                     .OrderBy(a => a.Nombre)
                     .Select(a => new
                     {
                         a.Nombre, a.Codigo, a.Descripcion, Supervisor = a.Supervisor != null ? a.Supervisor.NombreCompleto : null,
-                        a.Activa, Vehiculos = a.Vehiculos.Count
+                        Vehiculos = a.Vehiculos.Count
                     })
                     .ToListAsync();
                 return EscribirHoja(wb, hoja, filas,
-                    new[] { "Nombre", "Código", "Descripción", "Supervisor", "Activa", "Vehículos" },
-                    a => new object?[] { a.Nombre, a.Codigo, a.Descripcion, a.Supervisor, a.Activa, a.Vehiculos });
+                    new[] { "Nombre", "Código", "Descripción", "Supervisor", "Vehículos" },
+                    a => new object?[] { a.Nombre, a.Codigo, a.Descripcion, a.Supervisor, a.Vehiculos });
             }
             case "tipos-vehiculo":
             {
@@ -239,13 +241,15 @@ public class ExcelExportService
             case "prefijos":
             {
                 var tipos = await NombresTiposAsync();
+                // Solo los prefijos en uso, como en la pantalla (14.2: sin Activo/Inactivo)
                 var filas = await _db.VehiculoPrefijoConfigs.AsNoTracking()
+                    .Where(p => p.Activo)
                     .OrderBy(p => p.PrefijoCodigo)
-                    .Select(p => new { p.PrefijoCodigo, p.TipoVehiculoId, p.Descripcion, p.Activo })
+                    .Select(p => new { p.PrefijoCodigo, p.TipoVehiculoId, p.Descripcion })
                     .ToListAsync();
                 return EscribirHoja(wb, hoja, filas,
-                    new[] { "Prefijo", "Tipo de vehículo", "Descripción", "Activo" },
-                    p => new object?[] { p.PrefijoCodigo, tipos.GetValueOrDefault(p.TipoVehiculoId, p.TipoVehiculoId.ToString()), p.Descripcion, p.Activo });
+                    new[] { "Prefijo", "Tipo de vehículo", "Descripción" },
+                    p => new object?[] { p.PrefijoCodigo, tipos.GetValueOrDefault(p.TipoVehiculoId, p.TipoVehiculoId.ToString()), p.Descripcion });
             }
             case "usuarios":
             {

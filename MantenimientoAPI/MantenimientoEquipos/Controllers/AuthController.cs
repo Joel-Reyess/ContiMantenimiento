@@ -37,22 +37,22 @@ public class AuthController : ControllerBase
             .FirstOrDefaultAsync(u => u.Username == username);
 
         if (user == null)
-            return Unauthorized(ApiResponse<string>.Error("Usuario o contraseña incorrectos"));
+            return Unauthorized(ApiResponse<string>.Error("Usuario o contraseÃ±a incorrectos"));
 
         var isPasswordValid = PasswordHasher.VerifyPassword(password, user.PasswordSalt, user.PasswordHash);
         if (!isPasswordValid && !string.Equals(password, password.Trim(), StringComparison.Ordinal))
         {
-            // Tolerar espacios accidentales al copiar/pegar contraseñas temporales.
+            // Tolerar espacios accidentales al copiar/pegar contraseÃ±as temporales.
             isPasswordValid = PasswordHasher.VerifyPassword(password.Trim(), user.PasswordSalt, user.PasswordHash);
         }
 
         if (!isPasswordValid)
-            return Unauthorized(ApiResponse<string>.Error("Usuario o contraseña incorrectos"));
+            return Unauthorized(ApiResponse<string>.Error("Usuario o contraseÃ±a incorrectos"));
 
         if (user.Status != Models.Enums.UserStatusEnum.Activo)
             return Unauthorized(ApiResponse<string>.Error("Usuario inactivo o suspendido"));
 
-        // Actualizar último inicio de sesión
+        // Actualizar Ãºltimo inicio de sesiÃ³n
         user.UltimoInicioSesion = DateTime.UtcNow;
         await _db.SaveChangesAsync();
 
