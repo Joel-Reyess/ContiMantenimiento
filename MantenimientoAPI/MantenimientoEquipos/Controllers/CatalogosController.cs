@@ -50,10 +50,15 @@ public class CatalogosController : ControllerBase
     [RolesAllowed("SuperUsuario", "Administrador")]
     public async Task<IActionResult> CreateArea([FromBody] AreaCreateRequest request)
     {
+        var nombre = request.Nombre.Trim();
+        var codigo = string.IsNullOrWhiteSpace(request.Codigo) ? null : request.Codigo.Trim();
+        var duplicado = await ValidarAreaUnicaAsync(nombre, codigo, null);
+        if (duplicado != null) return BadRequest(ApiResponse<string>.Error(duplicado));
+
         var area = new Area
         {
-            Nombre = request.Nombre,
-            Codigo = request.Codigo,
+            Nombre = nombre,
+            Codigo = codigo,
             Descripcion = request.Descripcion,
             SupervisorId = request.SupervisorId,
             CreatedAt = DateTime.UtcNow
@@ -63,6 +68,35 @@ public class CatalogosController : ControllerBase
         await _db.SaveChangesAsync();
 
         return Ok(ApiResponse<object>.Ok(new { area.Id }, "Área creada exitosamente"));
+    }
+
+    /// <summary>
+    /// Nombre y código de área únicos, sin importar mayúsculas ni acentos (como en la importación desde Excel).
+    /// Antes se podía crear "almacen" teniendo "Almacen". Devuelve el mensaje para el usuario, o null si está libre.
+    /// </summary>
+    private async Task<string?> ValidarAreaUnicaAsync(string? nombre, string? codigo, int? excluirId)
+    {
+        const string sinAcentos = "SQL_Latin1_General_CP1_CI_AI";
+        if (!string.IsNullOrWhiteSpace(nombre))
+        {
+            var otra = await _db.Areas
+                .Where(a => (excluirId == null || a.Id != excluirId) && EF.Functions.Collate(a.Nombre, sinAcentos) == nombre)
+                .Select(a => new { a.Nombre, a.Activa })
+                .FirstOrDefaultAsync();
+            if (otra != null)
+                return otra.Activa
+                    ? $"Ya existe el área \"{otra.Nombre}\"."
+                    : $"Ya existe el área \"{otra.Nombre}\", pero está inactiva. Actívala desde la lista en lugar de crear otra.";
+        }
+        if (!string.IsNullOrWhiteSpace(codigo))
+        {
+            var otra = await _db.Areas
+                .Where(a => (excluirId == null || a.Id != excluirId) && a.Codigo != null && EF.Functions.Collate(a.Codigo, sinAcentos) == codigo)
+                .Select(a => a.Nombre)
+                .FirstOrDefaultAsync();
+            if (otra != null) return $"El código \"{codigo}\" ya lo usa el área \"{otra}\".";
+        }
+        return null;
     }
 
     // ===== CATEGORÍAS DE FALLA =====
@@ -234,8 +268,11 @@ public class CatalogosController : ControllerBase
         if (area == null)
             return NotFound(ApiResponse<string>.Error("Area no encontrada"));
 
-        if (!string.IsNullOrWhiteSpace(request.Nombre)) area.Nombre = request.Nombre;
-        if (request.Codigo != null) area.Codigo = request.Codigo;
+        var duplicado = await ValidarAreaUnicaAsync(request.Nombre?.Trim(), request.Codigo?.Trim(), id);
+        if (duplicado != null) return BadRequest(ApiResponse<string>.Error(duplicado));
+
+        if (!string.IsNullOrWhiteSpace(request.Nombre)) area.Nombre = request.Nombre.Trim();
+        if (request.Codigo != null) area.Codigo = string.IsNullOrWhiteSpace(request.Codigo) ? null : request.Codigo.Trim();
         if (request.Descripcion != null) area.Descripcion = request.Descripcion;
         if (request.SupervisorId.HasValue) area.SupervisorId = request.SupervisorId;
         if (request.Activa.HasValue) area.Activa = request.Activa.Value;
