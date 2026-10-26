@@ -37,12 +37,13 @@ public class ExcelImportService
     private static readonly string[] ColumnasVehiculos = { "Código *", "Tipo", "Área", "Marca", "Modelo", "Notas" };
     private static readonly string[] ColumnasInventario =
         { "Código *", "Nombre *", "Categoría", "Unidad", "Stock actual", "Stock mínimo", "Stock máximo", "Costo unitario" };
-    private static readonly string[] ColumnasAreas = { "Nombre *", "Código", "Descripción", "Supervisor", "Activa" };
-    private static readonly string[] ColumnasPrefijos = { "Prefijo *", "Tipo de vehículo *", "Descripción", "Activo" };
+    // Sin columna Activa/Activo: "Desactivar" solo existe para usuarios (requerimiento 14.2 y estandarización de
+    // eliminación). Un archivo viejo que todavía la traiga se acepta y esa columna se ignora.
+    private static readonly string[] ColumnasAreas = { "Nombre *", "Código", "Descripción", "Supervisor" };
+    private static readonly string[] ColumnasPrefijos = { "Prefijo *", "Tipo de vehículo *", "Descripción" };
     private static readonly string[] ColumnasUsuarios =
         { "Usuario *", "Nombre *", "Número de empleado", "Correo", "Teléfono", "Rol *", "Área", "Estado", "Contraseña" };
 
-    private static readonly string[] SiNo = { "Sí", "No" };
     private static readonly (string Nombre, UserStatusEnum Valor)[] EstadosUsuario =
     {
         ("Activo", UserStatusEnum.Activo),
@@ -141,7 +142,6 @@ public class ExcelImportService
                 .ToListAsync();
             // No estricta: también se puede escribir el usuario o a alguien que no sea supervisor
             ListaDesplegable(wb, ws, 4, "Supervisores", supervisores, estricta: false);
-            ListaDesplegable(wb, ws, 5, "Activa", SiNo);
             Instrucciones(wb, new[]
             {
                 "Plantilla de importación de ÁREAS",
@@ -152,10 +152,10 @@ public class ExcelImportService
                 "• Descripción (opcional): máximo 300 caracteres.",
                 "• Supervisor (opcional): nombre completo o usuario de una persona registrada y activa.",
                 "  La lista desplegable trae a los supervisores y administradores activos.",
-                "• Activa (opcional): Sí o No. Si la dejas vacía, las áreas nuevas quedan activas.",
                 "",
                 "Si el Nombre YA EXISTE, el área se ACTUALIZA con los datos que escribas; las celdas vacías no cambian nada.",
                 "Si el Nombre NO existe, se da de alta. Para cambiarle el nombre a un área usa la pantalla Catálogo de áreas.",
+                "Si el área existía pero estaba inactiva, al importarla se vuelve a activar. Para quitar un área usa Eliminar en la pantalla.",
                 ""
             }.Concat(ReglasValidacion).ToArray());
         }
@@ -163,7 +163,6 @@ public class ExcelImportService
         {
             var ws = HojaPlantilla(wb, ExcelExportService.Hojas["prefijos"], ColumnasPrefijos);
             ListaDesplegable(wb, ws, 2, "Tipos", await NombresTiposActivosAsync());
-            ListaDesplegable(wb, ws, 4, "Activo", SiNo);
             Instrucciones(wb, new[]
             {
                 "Plantilla de importación de PREFIJOS de vehículos",
@@ -172,10 +171,10 @@ public class ExcelImportService
                 "• Prefijo (obligatorio): el inicio del código de los vehículos de un tipo, por ejemplo MTC o 9161. Máximo 20 caracteres.",
                 "• Tipo de vehículo: obligatorio para prefijos nuevos. Debe ser un tipo activo (usa la lista desplegable).",
                 "• Descripción (opcional): máximo 100 caracteres.",
-                "• Activo (opcional): Sí o No. Un prefijo inactivo no se usa para detectar el tipo. Si lo dejas vacío, los nuevos quedan activos.",
                 "",
                 "Si el Prefijo YA EXISTE, se ACTUALIZA con los datos que escribas; las celdas vacías no cambian nada.",
-                "Si el Prefijo NO existe, se da de alta.",
+                "Si el Prefijo NO existe, se da de alta. Si se había quitado, al importarlo se vuelve a activar.",
+                "Para quitar un prefijo usa Eliminar en la pantalla de Prefijos.",
                 ""
             }.Concat(ReglasValidacion).ToArray());
         }
@@ -538,7 +537,6 @@ public class ExcelImportService
             var codigo = fila.Texto("Código");
             var descripcion = fila.Texto("Descripción");
             var supervisorTexto = fila.Texto("Supervisor");
-            var (activa, errorActiva) = fila.SiNo("Activa");
             var erroresAntes = resultado.TotalErrores;
 
             if (string.IsNullOrEmpty(nombre)) { errores.Add(fila.Numero, "Nombre", "El nombre es obligatorio"); continue; }
@@ -562,7 +560,6 @@ public class ExcelImportService
                 codigosVistos.TryAdd(codigo, fila.Numero);
             }
             if (descripcion?.Length > 300) errores.Add(fila.Numero, "Descripción", "Máximo 300 caracteres");
-            if (errorActiva != null) errores.Add(fila.Numero, "Activa", errorActiva);
 
             int? supervisorId = null;
             if (supervisorTexto != null)
@@ -582,7 +579,7 @@ public class ExcelImportService
                     Codigo = codigo,
                     Descripcion = descripcion,
                     SupervisorId = supervisorId,
-                    Activa = activa ?? true,
+                    Activa = true,
                     CreatedAt = DateTime.UtcNow
                 }));
             }
@@ -593,7 +590,7 @@ public class ExcelImportService
                     if (codigo != null) existente.Codigo = codigo;
                     if (descripcion != null) existente.Descripcion = descripcion;
                     if (supervisorId.HasValue) existente.SupervisorId = supervisorId;
-                    if (activa.HasValue) existente.Activa = activa.Value;
+                    existente.Activa = true; // está en el archivo: si estaba inactiva, vuelve a usarse
                     existente.UpdatedAt = DateTime.UtcNow;
                 });
             }
@@ -622,7 +619,6 @@ public class ExcelImportService
             var prefijo = fila.Texto("Prefijo");
             var tipoTexto = fila.Texto("Tipo de vehículo");
             var descripcion = fila.Texto("Descripción");
-            var (activo, errorActivo) = fila.SiNo("Activo");
             var erroresAntes = resultado.TotalErrores;
 
             if (string.IsNullOrEmpty(prefijo)) { errores.Add(fila.Numero, "Prefijo", "El prefijo es obligatorio"); continue; }
@@ -650,7 +646,6 @@ public class ExcelImportService
             }
 
             if (descripcion?.Length > 100) errores.Add(fila.Numero, "Descripción", "Máximo 100 caracteres");
-            if (errorActivo != null) errores.Add(fila.Numero, "Activo", errorActivo);
 
             if (resultado.TotalErrores > erroresAntes) continue;
 
@@ -661,7 +656,7 @@ public class ExcelImportService
                     PrefijoCodigo = prefijo,
                     TipoVehiculoId = tipoId!.Value,
                     Descripcion = descripcion,
-                    Activo = activo ?? true,
+                    Activo = true,
                     CreatedAt = DateTime.UtcNow,
                     CreatedBy = imp.UsuarioId
                 }));
@@ -672,7 +667,7 @@ public class ExcelImportService
                 {
                     if (tipoId.HasValue) existente.TipoVehiculoId = tipoId.Value;
                     if (descripcion != null) existente.Descripcion = descripcion;
-                    if (activo.HasValue) existente.Activo = activo.Value;
+                    existente.Activo = true; // está en el archivo: si se había quitado, vuelve a usarse
                     existente.UpdatedAt = DateTime.UtcNow;
                     existente.UpdatedBy = imp.UsuarioId;
                 });
@@ -977,18 +972,6 @@ public class ExcelImportService
                 : v.ToString(CultureInfo.InvariantCulture);
             texto = texto.Trim();
             return texto.Length == 0 ? null : texto;
-        }
-
-        /// <summary>Sí/No, Verdadero/Falso, 1/0, Activo/Inactivo; null si la celda está vacía</summary>
-        public (bool? Valor, string? Error) SiNo(string columna)
-        {
-            if (!Valores.TryGetValue(Normalizar(columna), out var v) || v.IsBlank) return (null, null);
-            if (v.IsBoolean) return (v.GetBoolean(), null);
-            var texto = Compacto(Texto(columna) ?? "");
-            if (texto.Length == 0) return (null, null);
-            if (new[] { "si", "s", "true", "verdadero", "1", "x", "activo", "activa" }.Contains(texto)) return (true, null);
-            if (new[] { "no", "n", "false", "falso", "0", "inactivo", "inactiva" }.Contains(texto)) return (false, null);
-            return (null, $"'{Texto(columna)}' no es válido; escribe Sí o No");
         }
 
         public (decimal? Valor, string? Error) Decimal(string columna)
