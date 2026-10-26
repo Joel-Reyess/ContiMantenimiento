@@ -141,7 +141,8 @@ export function PagosPage() {
 
           return {
             value: o.id,
-            label: detailParts.join(' · '),
+            // Con el folio al inicio: el campo dice "Buscar por folio" y sin él no se distinguían dos órdenes del mismo vehículo
+            label: [o.folio, ...detailParts].filter(Boolean).join(' · '),
             description: detailParts.join(' | '),
             meta: {
               folio: o.folio,
