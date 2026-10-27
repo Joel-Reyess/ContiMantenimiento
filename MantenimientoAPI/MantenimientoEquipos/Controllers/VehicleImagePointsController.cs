@@ -91,7 +91,7 @@ public class VehicleImagePointsController : ControllerBase
 
     // POST: api/VehicleImagePoints
     [HttpPost]
-    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
+    [RolesAllowed("SuperUsuario", "Administrador")] // Hotspots: solo administración
     [ProducesResponseType(StatusCodes.Status201Created, Type = typeof(ApiResponse<VehicleImagePointDto>))]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> PostVehicleImagePoint([FromBody] VehicleImagePointCreateDto createDto)
@@ -149,7 +149,7 @@ public class VehicleImagePointsController : ControllerBase
 
     // PUT: api/VehicleImagePoints/5
     [HttpPut("{id:int}")]
-    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
     [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(ApiResponse<VehicleImagePointDto>))]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -212,7 +212,7 @@ public class VehicleImagePointsController : ControllerBase
 
     // DELETE: api/VehicleImagePoints/5
     [HttpDelete("{id:int}")]
-    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
     [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(ApiResponse<bool>))]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteVehicleImagePoint(int id)

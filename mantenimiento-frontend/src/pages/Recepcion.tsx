@@ -5,6 +5,7 @@ import { recepcionService, checklistService, reportesService } from '@/services'
 import { consumiblesService } from '@/services/consumiblesService';
 import { refaccionesService } from '@/services/refaccionesService';
 import type { ChecklistItem } from '@/services/checklistService';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Pendiente {
   id: number;
@@ -23,6 +24,9 @@ interface Pendiente {
 type RefaccionOption = SearchableSelectOption<{ stock: number }>;
 
 export function RecepcionPage() {
+  const { hasRole } = useAuth();
+  // Líder y Operador consultan la zona; el check-in y las solicitudes son del taller
+  const puedeRecibir = hasRole(['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico']);
   const [items, setItems] = useState<Pendiente[]>([]);
   const [loading, setLoading] = useState(true);
   const [diagnostico] = useState('');
@@ -106,6 +110,7 @@ export function RecepcionPage() {
 
   useEffect(() => {
     load();
+    if (!puedeRecibir) return; // el catálogo de refacciones solo se usa al solicitar
     consumiblesService.getAll({ q: undefined }).then((res) => {
       if (res.success && res.data) {
         const lista = (res.data as any[]).filter((c) => (c.categoria || '').toLowerCase().includes('refac'));
@@ -373,7 +378,9 @@ export function RecepcionPage() {
         <p className="text-xs uppercase tracking-[0.35em] text-continental-gray-1">Zona de Transición</p>
         <h1 className="text-2xl font-bold text-continental-black">Zona de Transición</h1>
         <p className="text-sm text-continental-gray-1">
-          Gestione el ingreso de contenedores al taller. Realice el check-in inicial y registre cualquier daño adicional detectado antes de iniciar los trabajos.
+          {puedeRecibir
+            ? 'Gestione el ingreso de contenedores al taller. Realice el check-in inicial y registre cualquier daño adicional detectado antes de iniciar los trabajos.'
+            : 'Consulta los contenedores reportados que están pendientes de ingresar al taller.'}
         </p>
       </div>
 
@@ -384,11 +391,15 @@ export function RecepcionPage() {
               <ClipboardList className="h-5 w-5" /> Pendientes ({items.length})
             </h2>
             <div className="flex flex-wrap items-center gap-3">
-              <label className="inline-flex items-center gap-2 text-sm text-continental-gray-1">
-                <input type="checkbox" checked={fifoActivo} onChange={(e) => setFifoActivo(e.target.checked)} />
-                FIFO (orden llegada)
-              </label>
-              {fifoActivo && <span className="text-xs text-continental-gray-2 hidden sm:inline">Solo el 1ro</span>}
+              {puedeRecibir && (
+                <>
+                  <label className="inline-flex items-center gap-2 text-sm text-continental-gray-1">
+                    <input type="checkbox" checked={fifoActivo} onChange={(e) => setFifoActivo(e.target.checked)} />
+                    FIFO (orden llegada)
+                  </label>
+                  {fifoActivo && <span className="text-xs text-continental-gray-2 hidden sm:inline">Solo el 1ro</span>}
+                </>
+              )}
               <Button variant="outline" size="sm" onClick={load}>
                 Actualizar
               </Button>
@@ -400,7 +411,7 @@ export function RecepcionPage() {
                 key={p.id}
                 className="list-tile border border-continental-gray-3/60 rounded-2xl cursor-pointer hover:border-continental-yellow/80 space-y-3 p-4 md:p-6"
                 onClick={() => {
-                  if (fifoActivo && items[0]?.id !== p.id) return;
+                  if (puedeRecibir && fifoActivo && items[0]?.id !== p.id) return;
                   setSelected(p);
                   setMessage('');
                   setError('');
@@ -447,9 +458,11 @@ export function RecepcionPage() {
       <Modal
         isOpen={accionesModalOpen && Boolean(selected)}
         onClose={() => setAccionesModalOpen(false)}
-        title="Gestionar acciones"
+        title={puedeRecibir ? 'Gestionar acciones' : 'Detalle del reporte'}
         description={
-          selected
+          !puedeRecibir
+            ? 'Consulta de solo lectura.'
+            : selected
             ? 'Trabaja cada paso con mas espacio y contexto antes de registrar las acciones.'
             : 'Selecciona un reporte para continuar.'
         }
@@ -461,6 +474,8 @@ export function RecepcionPage() {
           <div className="space-y-8">
             {renderSelectedDetails()}
 
+            {puedeRecibir && (
+            <>
       <div className="flex border-b border-gray-200 overflow-x-auto no-scrollbar">
         <button
           className={`px-6 py-3 font-medium text-sm transition-colors border-b-2 whitespace-nowrap ${
@@ -652,6 +667,8 @@ export function RecepcionPage() {
                   Si aun no existe la orden, se hara check-in automaticamente y se asociaran todas las refacciones capturadas.
                 </p>
               </section>
+            )}
+            </>
             )}
           </div>
         )}

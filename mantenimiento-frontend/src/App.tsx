@@ -54,7 +54,7 @@ function App() {
             <Route
               path="vehiculos"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor']}>
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Lider']}>
                   <VehiculosPage />
                 </ProtectedRoute>
               }
@@ -62,7 +62,7 @@ function App() {
             <Route
               path="vehiculos/:id"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor']}>
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Lider']}>
                   <VehiculoDetallePage />
                 </ProtectedRoute>
               }
@@ -72,7 +72,7 @@ function App() {
             <Route
               path="reportes"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider']}>
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider', 'Operador']}>
                   <ReportesPage />
                 </ProtectedRoute>
               }
@@ -80,7 +80,7 @@ function App() {
             <Route
               path="reportes/:id"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider']}>
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider', 'Operador']}>
                   <ReportesPage />
                 </ProtectedRoute>
               }
@@ -90,7 +90,7 @@ function App() {
             <Route
               path="ordenes"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico']}>
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider', 'Operador']}>
                   <OrdenesPage />
                 </ProtectedRoute>
               }
@@ -98,7 +98,7 @@ function App() {
             <Route
               path="ordenes/:id"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico']}>
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider', 'Operador']}>
                   <OrdenesPage />
                 </ProtectedRoute>
               }
@@ -126,7 +126,7 @@ function App() {
             <Route
               path="recepcion"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor']}>
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider', 'Operador']}>
                   <RecepcionPage />
                 </ProtectedRoute>
               }
@@ -136,7 +136,7 @@ function App() {
             <Route
               path="aprobaciones"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor']}>
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Lider']}>
                   <AprobacionesPage />
                 </ProtectedRoute>
               }
@@ -184,7 +184,7 @@ function App() {
             <Route
               path="archivo"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor']}>
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico']}>
                   <ArchivoPage />
                 </ProtectedRoute>
               }

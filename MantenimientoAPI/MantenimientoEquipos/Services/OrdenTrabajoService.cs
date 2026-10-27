@@ -109,7 +109,9 @@ public class OrdenTrabajoService
                 PrioridadNombre = o.Prioridad.ToString(),
                 TipoMantenimiento = o.TipoMantenimiento,
                 FechaCreacion = o.FechaCreacion,
-                FechaFinalizacion = o.FechaFinalizacion
+                FechaFinalizacion = o.FechaFinalizacion,
+                EstadoAprobacionLider = o.EstadoAprobacionLider,
+                EstadoAprobacionSupervisor = o.EstadoAprobacionSupervisor
             }).ToListAsync();
     }
 

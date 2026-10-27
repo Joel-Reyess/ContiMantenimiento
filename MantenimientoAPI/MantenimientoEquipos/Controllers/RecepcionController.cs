@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MantenimientoEquipos.Middlewares;
 using Microsoft.EntityFrameworkCore;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.Models.Enums;
@@ -9,7 +10,7 @@ namespace MantenimientoEquipos.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "SuperUsuario,Administrador,Supervisor,Tecnico")]
+[Authorize]
 public class RecepcionController : ControllerBase
 {
     private readonly MantenimientoDbContext _db;
@@ -22,6 +23,7 @@ public class RecepcionController : ControllerBase
     private int? GetUserId() => int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
 
     [HttpGet("pendientes")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico", "Lider", "Operador")] // Líder y Operador: solo consulta
     public async Task<IActionResult> GetPendientes()
     {
         var pendientes = await _db.ReportesFalla
@@ -53,6 +55,7 @@ public class RecepcionController : ControllerBase
     }
 
     [HttpPost("{reporteId}/check-in")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico")]
     public async Task<IActionResult> CheckIn(int reporteId, [FromBody] CheckInRequest request, [FromQuery] bool force = false)
     {
         var reporte = await _db.ReportesFalla
@@ -149,6 +152,7 @@ public class RecepcionController : ControllerBase
     }
 
     [HttpPost("{reporteId}/danios-extra")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico")]
     public async Task<IActionResult> DaniosExtra(int reporteId, [FromBody] DanioExtraRequest request)
     {
         var reporte = await _db.ReportesFalla.FirstOrDefaultAsync(r => r.Id == reporteId);
