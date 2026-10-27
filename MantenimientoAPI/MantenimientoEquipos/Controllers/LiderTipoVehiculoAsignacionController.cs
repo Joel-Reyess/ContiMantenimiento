@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MantenimientoEquipos.Middlewares;
 using MantenimientoEquipos.DTOs;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.Services;
@@ -33,7 +34,7 @@ public class LiderTipoVehiculoAsignacionController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "SuperUsuario,Administrador,Supervisor")] // Decía "Administrativo" (no existe): el Administrador recibía 403
+    [RolesAllowed("SuperUsuario", "Administrador")] // Configuración: solo administración
     public async Task<ActionResult<LiderTipoVehiculoAsignacionDto>> Create(CreateLiderTipoVehiculoAsignacionRequest request)
     {
         try
@@ -48,6 +49,7 @@ public class LiderTipoVehiculoAsignacionController : ControllerBase
     }
 
     [HttpPost("batch")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
     public async Task<IActionResult> CreateAsignaciones([FromBody] List<CreateLiderTipoVehiculoAsignacionRequest> request)
     {
         try
@@ -62,7 +64,7 @@ public class LiderTipoVehiculoAsignacionController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Roles = "SuperUsuario,Administrador,Supervisor")] // Decía "Administrativo" (no existe): el Administrador recibía 403
+    [RolesAllowed("SuperUsuario", "Administrador")]
     public async Task<IActionResult> Delete(int id)
     {
         var result = await _service.DeleteAsync(id);

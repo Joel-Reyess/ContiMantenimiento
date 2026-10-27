@@ -134,6 +134,8 @@ export function OrdenesPage() {
   const { hasRole, user } = useAuth();
   const canCreate = hasRole(['Administrador', 'Superusuario', 'Supervisor']);
   const canEliminar = hasRole(['Administrador', 'SuperUsuario']);
+  // Líder y Operador consultan las órdenes; el Líder además aprueba o rechaza reparaciones
+  const puedeTrabajarOrden = hasRole(['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico']);
   const navigate = useNavigate();
   const [eliminandoOrden, setEliminandoOrden] = useState(false);
 
@@ -557,7 +559,8 @@ export function OrdenesPage() {
   };
 
   useEffect(() => {
-    loadTecnicos();
+    // La lista de técnicos solo se usa para asignar (Líder y Operador consultan)
+    if (puedeTrabajarOrden) loadTecnicos();
   }, []);
 
   useEffect(() => {
@@ -1551,12 +1554,15 @@ export function OrdenesPage() {
             </div>
           </div>
 
-          <div className="space-y-2">
+          {/* En solo lectura se ven las respuestas y fotos, pero no se pueden cambiar */}
+          <fieldset disabled={!puedeTrabajarOrden} className="min-w-0 space-y-2">
             <div className="flex items-center justify-between">
               <p className="font-semibold text-continental-black">Checklist</p>
-              <Button size="sm" onClick={handleGuardarChecklist} disabled={savingChecklist || loadingChecklist}>
-                {savingChecklist ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Guardar checklist'}
-              </Button>
+              {puedeTrabajarOrden && (
+                <Button size="sm" onClick={handleGuardarChecklist} disabled={savingChecklist || loadingChecklist}>
+                  {savingChecklist ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Guardar checklist'}
+                </Button>
+              )}
             </div>
             {loadingChecklist && <p className="text-sm text-continental-gray-1">Cargando checklist...</p>}
             {checklistError && <p className="text-sm text-red-600">{checklistError}</p>}
@@ -1848,7 +1854,7 @@ export function OrdenesPage() {
                 </table>
               </div>
             )}
-          </div>
+          </fieldset>
 
           {(() => {
             // Componentes con falla marcados sobre la foto del carro al crear el reporte.
@@ -2430,7 +2436,7 @@ export function OrdenesPage() {
                   Crear Reporte
                 </Button>
               )}
-            {detalle.estado === EstadoOrdenTrabajo.Pendiente && (
+            {puedeTrabajarOrden && detalle.estado === EstadoOrdenTrabajo.Pendiente && (
               <Button
                 onClick={() => {
                   setErrorVentana('');
@@ -2444,7 +2450,7 @@ export function OrdenesPage() {
                 Iniciar
               </Button>
             )}
-            {(detalle.estado === EstadoOrdenTrabajo.Asignada || detalle.estado === EstadoOrdenTrabajo.EnProceso) && (
+            {puedeTrabajarOrden && (detalle.estado === EstadoOrdenTrabajo.Asignada || detalle.estado === EstadoOrdenTrabajo.EnProceso) && (
               <Button
                 onClick={() => {
                   setShowCompletar(true);
@@ -2471,7 +2477,7 @@ export function OrdenesPage() {
                 </Link>
               </Button>
             )}
-            {detalle.estado !== EstadoOrdenTrabajo.Cancelada && (
+            {puedeTrabajarOrden && detalle.estado !== EstadoOrdenTrabajo.Cancelada && (
               <Button
                 variant="ghost"
                 onClick={() => {

@@ -1,15 +1,27 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Package, CheckCircle, XCircle, RefreshCcw, AlertTriangle, Check, Edit3, Eye } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Package, CheckCircle, XCircle, RefreshCcw, AlertTriangle, Check, Edit3, Eye, ShieldCheck } from 'lucide-react';
 import { Button, Card, LoadingCard, Alert, AlertDescription, Badge, Modal, ModalFooter, Textarea, useToast } from '@/components/ui';
 import { refaccionesService } from '@/services/refaccionesService';
 import { ordenesService } from '@/services/ordenesService';
-import type { SolicitudRefaccion, OrdenTrabajo } from '@/interfaces';
+import type { SolicitudRefaccion, OrdenTrabajo, OrdenTrabajoList } from '@/interfaces';
+import { EstadoOrdenTrabajo } from '@/interfaces';
+import { useAuth } from '@/contexts/AuthContext';
 
 const formatDate = (v?: string) => (v ? new Date(v).toLocaleString() : 'N/D');
 const currency = (v?: number) => (v !== undefined ? `$${Number(v).toFixed(2)}` : 'N/D');
 
+const textoAprobacion = (estado?: number) => (estado === 1 ? 'Aprobada' : estado === 2 ? 'Rechazada' : 'Pendiente');
+const claseAprobacion = (estado?: number) =>
+  estado === 1 ? 'bg-green-100 text-green-700' : estado === 2 ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700';
+
 export function AprobacionesPage() {
   const toast = useToast();
+  const { hasRole } = useAuth();
+  // Las refacciones las aprueba el Supervisor; las reparaciones las validan Líder y Supervisor
+  const puedeAprobarRefacciones = hasRole(['SuperUsuario', 'Administrador', 'Supervisor']);
+  const esLider = hasRole(['Lider']);
+  const [reparaciones, setReparaciones] = useState<OrdenTrabajoList[]>([]);
   const [items, setItems] = useState<SolicitudRefaccion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -29,6 +41,15 @@ export function AprobacionesPage() {
     setLoading(true);
     setError('');
     try {
+      const respOrdenes = await ordenesService.getAll({ estado: EstadoOrdenTrabajo.Completada, pageSize: 100 });
+      if (respOrdenes.success && respOrdenes.data) {
+        const lista = Array.isArray(respOrdenes.data) ? respOrdenes.data : respOrdenes.data.items || [];
+        setReparaciones(lista);
+      } else {
+        setReparaciones([]);
+        setError(respOrdenes.message || 'No se pudieron cargar las reparaciones por validar');
+      }
+      if (!puedeAprobarRefacciones) return;
       const resp = await refaccionesService.getAll();
       if (resp.success && resp.data) {
         setItems(resp.data);
@@ -168,8 +189,12 @@ export function AprobacionesPage() {
       <div className="dashboard-card p-6 flex items-center justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.35em] text-continental-gray-1">Aprobaciones</p>
-          <h1 className="text-2xl font-bold text-continental-black">Solicitudes de refaccion</h1>
-          <p className="text-sm text-continental-gray-1">Aprueba y entrega las refacciones solicitadas.</p>
+          <h1 className="text-2xl font-bold text-continental-black">Validación y Aprobaciones</h1>
+          <p className="text-sm text-continental-gray-1">
+            {puedeAprobarRefacciones
+              ? 'Valida las reparaciones terminadas y aprueba o entrega las refacciones solicitadas.'
+              : 'Valida las reparaciones terminadas por el taller.'}
+          </p>
         </div>
         <Button variant="outline" onClick={load} className="flex items-center gap-2">
           <RefreshCcw className="h-4 w-4" />
@@ -188,6 +213,52 @@ export function AprobacionesPage() {
         </Alert>
       )}
 
+      <div className="dashboard-card p-6 space-y-4" data-testid="reparaciones-por-validar">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-continental-yellow" />
+          <h2 className="text-lg font-semibold text-continental-black">Reparaciones por validar</h2>
+          <Badge variant="secondary">{reparaciones.length}</Badge>
+        </div>
+        {reparaciones.length === 0 ? (
+          <p className="text-sm text-continental-gray-1">No hay reparaciones terminadas pendientes de validar.</p>
+        ) : (
+          <div className="space-y-3">
+            {reparaciones.map((o) => {
+              const miFirma = esLider ? o.estadoAprobacionLider : o.estadoAprobacionSupervisor;
+              return (
+                <Card key={o.id} className="px-6 py-5 border border-continental-gray-3/60">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-continental-black">
+                        {o.folio} · {o.vehiculoCodigo}
+                        {o.vehiculoTipo ? ` (${o.vehiculoTipo})` : ''}
+                      </p>
+                      <p className="text-xs text-continental-gray-1">
+                        Técnico: {o.tecnicoNombre || 'Sin asignar'} · Terminada: {formatDate(o.fechaFinalizacion)}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                        <span className={`px-2 py-0.5 rounded-full font-semibold ${claseAprobacion(o.estadoAprobacionLider)}`}>
+                          Líder: {textoAprobacion(o.estadoAprobacionLider)}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-full font-semibold ${claseAprobacion(o.estadoAprobacionSupervisor)}`}>
+                          Supervisor: {textoAprobacion(o.estadoAprobacionSupervisor)}
+                        </span>
+                      </div>
+                    </div>
+                    <Link to={`/ordenes/${o.id}`}>
+                      <Button size="sm" variant={miFirma === 0 || miFirma === undefined ? 'default' : 'outline'}>
+                        {miFirma === 0 || miFirma === undefined ? 'Revisar y validar' : 'Ver orden'}
+                      </Button>
+                    </Link>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {puedeAprobarRefacciones && (
       <div className="dashboard-card p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -244,6 +315,7 @@ export function AprobacionesPage() {
           <div className="space-y-3">{entregadas.map((item) => renderCard(item))}</div>
         )}
       </div>
+      )}
 
       <Modal
         isOpen={detailOpen && !!selectedItem}

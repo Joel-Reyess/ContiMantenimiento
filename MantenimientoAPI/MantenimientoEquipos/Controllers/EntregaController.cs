@@ -11,7 +11,7 @@ namespace MantenimientoEquipos.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "SuperUsuario,Administrador,Supervisor,Tecnico,Lider")]
+[Authorize(Roles = "SuperUsuario,Administrador,Supervisor,Lider")] // El Técnico no valida ni libera reparaciones
 public class EntregaController : ControllerBase
 {
     private readonly MantenimientoDbContext _db;

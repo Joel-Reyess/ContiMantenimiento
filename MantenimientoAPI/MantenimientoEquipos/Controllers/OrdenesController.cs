@@ -248,6 +248,17 @@ public class OrdenesController : ControllerBase
     public async Task<IActionResult> AprobarOrden(int id, [FromBody] AprobarOrdenRequest request)
     {
         var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+
+        // La firma se registra con el rol que de verdad tiene el usuario, no con el que manda la pantalla
+        var firmaPermitida = request.RolAprobador switch
+        {
+            "Lider" => User.IsInRole("Lider"),
+            "Supervisor" => User.IsInRole("SuperUsuario") || User.IsInRole("Administrador") || User.IsInRole("Supervisor"),
+            _ => false
+        };
+        if (!firmaPermitida)
+            return StatusCode(403, ApiResponse<string>.Error("No tienes permiso para firmar como " + (request.RolAprobador ?? "ese rol") + "."));
+
         var result = await _ordenService.AprobarOrdenAsync(id, request, userId);
 
         if (!result)

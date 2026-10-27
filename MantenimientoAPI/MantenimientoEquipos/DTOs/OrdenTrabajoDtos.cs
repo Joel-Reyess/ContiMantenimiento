@@ -130,6 +130,9 @@ public class OrdenTrabajoListDto
     public required string TipoMantenimiento { get; set; }
     public DateTime FechaCreacion { get; set; }
     public DateTime? FechaFinalizacion { get; set; }
+    /// <summary>Para la bandeja de reparaciones por validar (Líder / Supervisor)</summary>
+    public EstadoAprobacionEnum EstadoAprobacionLider { get; set; }
+    public EstadoAprobacionEnum EstadoAprobacionSupervisor { get; set; }
 }
 
 public class AsignarTecnicoRequest

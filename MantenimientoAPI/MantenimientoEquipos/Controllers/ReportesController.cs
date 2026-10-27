@@ -32,6 +32,12 @@ public class ReportesController : ControllerBase
         _asignacionService = asignacionService;
     }
 
+    /// <summary>
+    /// En la lista el Operador ve solo los reportes que él levantó; el detalle sí lo abre
+    /// (lo necesita al consultar una orden de trabajo en solo lectura)
+    /// </summary>
+    private int? SoloPropiosId() => User.EsSoloOperador() ? User.UsuarioId() : null;
+
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] bool? sinOrden = null,
@@ -54,7 +60,7 @@ public class ReportesController : ControllerBase
             }
         }
 
-        var reportes = await _reporteService.GetAllAsync(sinOrden, vehiculoId, desde, hasta, tiposPermitidos, busqueda, prioridad, categoriaId);
+        var reportes = await _reporteService.GetAllAsync(sinOrden, vehiculoId, desde, hasta, tiposPermitidos, busqueda, prioridad, categoriaId, SoloPropiosId());
         return Ok(ApiResponse<List<ReporteFallaListDto>>.Ok(reportes));
     }
 
@@ -232,7 +238,7 @@ public class ReportesController : ControllerBase
     [HttpGet("sin-atender")]
     public async Task<IActionResult> GetSinAtender()
     {
-        var reportes = await _reporteService.GetAllAsync(sinOrden: true, null, null, null);
+        var reportes = await _reporteService.GetAllAsync(sinOrden: true, reportadoPorId: SoloPropiosId());
         return Ok(ApiResponse<List<ReporteFallaListDto>>.Ok(reportes));
     }
 }

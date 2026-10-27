@@ -153,6 +153,7 @@ public class ChecklistsController : ControllerBase
     /// Guarda las respuestas de un checklist
     /// </summary>
     [HttpPost("respuestas")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico")]
     public async Task<IActionResult> GuardarRespuestas([FromBody] GuardarRespuestasChecklistRequest request)
     {
         try
@@ -172,6 +173,7 @@ public class ChecklistsController : ControllerBase
     /// Crea una inspección rápida de vehículo (crea orden y guarda respuestas)
     /// </summary>
     [HttpPost("inspeccion-rapida")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico")]
     public async Task<IActionResult> InspeccionRapida([FromBody] InspeccionRapidaRequest request)
     {
         try
@@ -201,6 +203,7 @@ public class ChecklistsController : ControllerBase
     }
 
     [HttpPost("asignaciones")]
+    [RolesAllowed("SuperUsuario", "Administrador")] // Modificar checklists: solo administración
     public async Task<IActionResult> AsignarChecklistVehiculo([FromBody] AsignarChecklistVehiculoRequest request)
     {
         try

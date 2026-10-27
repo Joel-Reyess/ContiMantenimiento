@@ -10,4 +10,12 @@ public static class ClaimsPrincipalExtensions
     /// <summary>Nombre para la bitácora: el completo si viene en el token, si no el usuario</summary>
     public static string? NombreUsuario(this ClaimsPrincipal user) =>
         user.FindFirst("NombreCompleto")?.Value ?? user.FindFirst(ClaimTypes.Name)?.Value;
+
+    private static readonly string[] RolesConMasAlcance = { "SuperUsuario", "Administrador", "Supervisor", "Tecnico", "Lider" };
+
+    /// <summary>
+    /// Operador sin otro rol: solo consulta sus propios reportes (definición de roles, 23-oct-2026)
+    /// </summary>
+    public static bool EsSoloOperador(this ClaimsPrincipal user) =>
+        user.IsInRole("Operador") && !RolesConMasAlcance.Any(user.IsInRole);
 }
