@@ -44,7 +44,8 @@ export const EstadoOrdenTrabajo = {
   EsperandoRefacciones: 4,
   Completada: 5,
   Cancelada: 6,
-  Validada: 7
+  Validada: 7,
+  Entregado: 8
 } as const;
 export type EstadoOrdenTrabajo = typeof EstadoOrdenTrabajo[keyof typeof EstadoOrdenTrabajo];
 
@@ -104,7 +105,8 @@ export const EstadoOrdenNombres: Record<number, string> = {
   [EstadoOrdenTrabajo.EsperandoRefacciones]: 'Esperando Refacciones',
   [EstadoOrdenTrabajo.Completada]: 'Completada',
   [EstadoOrdenTrabajo.Cancelada]: 'Cancelada',
-  [EstadoOrdenTrabajo.Validada]: 'Validada'
+  [EstadoOrdenTrabajo.Validada]: 'Validada',
+  [EstadoOrdenTrabajo.Entregado]: 'Entregado'
 };
 
 export const PrioridadNombres: Record<number, string> = {

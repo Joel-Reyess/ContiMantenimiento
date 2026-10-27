@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, CheckCircle, Loader2, Plus, RefreshCcw, Printer, Calculator, Trash2 } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Loader2, Plus, RefreshCcw, Printer, Calculator, Trash2 } from 'lucide-react';
 import {
   Alert,
   AlertDescription,
@@ -8,8 +8,6 @@ import {
   Badge,
   Button,
   Card,
-  Modal,
-  ModalFooter,
   Select,
   Spinner,
   useConfirm,
@@ -17,12 +15,12 @@ import {
   SearchInput
 } from '@/components/ui';
 import { reportesService } from '@/services/reportesService';
-import { ordenesService } from '@/services/ordenesService';
 import { catalogosService } from '@/services';
 import { ReportFailureModal } from '@/components/tecnico';
 import { InteractiveVehicleImage } from '@/components/vehiculos/InteractiveVehicleImage';
+import { PanelFlujo } from '@/components/flujo';
 import type { CategoriaFalla, ReporteFalla, ReporteFallaList, VehicleImagePoint } from '@/interfaces';
-import { Prioridad, PrioridadNombres } from '@/interfaces/Api.interface';
+import { PrioridadNombres } from '@/interfaces/Api.interface';
 import { getFullImageUrl } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -32,11 +30,14 @@ interface FiltersState {
   categoriaId?: string;
 }
 
+/** Estado del reporte en el flujo: con orden, en validación del Líder o rechazado para corregir */
+const estadoReporte = (r: { tieneOrdenTrabajo: boolean; estadoInspeccion?: number }) =>
+  r.tieneOrdenTrabajo ? 'Con orden' : r.estadoInspeccion === 2 ? 'Rechazado: en corrección' : 'En validación';
+
 export function ReportesPage() {
   const { id: reporteIdParam } = useParams();
   const reporteId = reporteIdParam ? Number(reporteIdParam) : undefined;
   const { hasRole } = useAuth();
-  const canCrearOrden = hasRole(['Administrador', 'Superusuario', 'Supervisor']);
   // Eliminar reportes: solo administradores (requerimiento 9.3)
   const canEliminar = hasRole(['Administrador', 'SuperUsuario']);
   const { confirmar } = useConfirm();
@@ -52,11 +53,6 @@ export function ReportesPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [crearOpen, setCrearOpen] = useState(false);
-  const [creatingOrder, setCreatingOrder] = useState(false);
-  const creatingOrderRef = useRef(false);
-  // Resultado de "Crear orden de trabajo" (requerimiento 9.2): se muestra dentro del detalle, junto al botón
-  const [ordenMsg, setOrdenMsg] = useState<{ tipo: 'success' | 'destructive'; texto: string; ordenId?: number } | null>(null);
-  const [ordenDuplicada, setOrdenDuplicada] = useState<{ folio: string; id?: number } | null>(null);
   const [vehicleImageUrl, setVehicleImageUrl] = useState<string | undefined>(undefined);
 
   // We keep priority options for filtering, but ReportFailureModal handles its own dropdowns
@@ -188,46 +184,6 @@ export function ReportesPage() {
     setLimpiezas((n) => n + 1);
   };
 
-  const handleCrearOrden = async (force = false) => {
-    if (!detalle || creatingOrderRef.current) return;
-    creatingOrderRef.current = true;
-    setCreatingOrder(true);
-    setOrdenMsg(null);
-    setOrdenDuplicada(null);
-    try {
-      const payload = {
-        reporteFallaId: detalle.id,
-        vehiculoId: detalle.vehiculoId || 0,
-        descripcion: detalle.descripcion || `Orden generada desde reporte ${detalle.folio || detalle.id}`,
-        tipoMantenimiento: detalle.tipoMantenimiento || 'Correctivo',
-        prioridad: detalle.prioridad ?? Prioridad.Baja,
-        notas: detalle.ubicacion || undefined
-      };
-
-      const res = await ordenesService.create(payload as any, force);
-      const codigo = res.errorCode || res.errors?.[0];
-      if (res.success) {
-        setOrdenMsg({
-          tipo: 'success',
-          texto: `Orden de trabajo ${res.data?.folio ?? ''} creada correctamente.`,
-          ordenId: res.data?.id
-        });
-        loadReportes();
-      } else if (codigo === 'DuplicateActiveOrder') {
-        const meta = (res.metadata || {}) as { existingOrderFolio?: string; existingOrderId?: number };
-        setOrdenDuplicada({ folio: meta.existingOrderFolio || 'N/A', id: meta.existingOrderId });
-      } else {
-        setOrdenMsg({ tipo: 'destructive', texto: res.message || 'No se pudo crear la orden de trabajo.' });
-      }
-    } catch (err) {
-      console.error(err);
-      setOrdenMsg({ tipo: 'destructive', texto: 'Error al crear la orden de trabajo. Revisa tu conexión e inténtalo de nuevo.' });
-    } finally {
-      creatingOrderRef.current = false;
-      setCreatingOrder(false);
-    }
-  };
-
   const toggleSeleccion = (id: number) =>
     setSeleccionados((prev) => {
       const next = new Set(prev);
@@ -357,8 +313,8 @@ export function ReportesPage() {
                 </p>
               </div>
               <div className="flex flex-col items-end gap-2">
-                <Badge variant={rep.tieneOrdenTrabajo ? 'default' : 'outline'}>
-                  {rep.tieneOrdenTrabajo ? 'Con orden' : 'Sin orden'}
+                <Badge variant={rep.tieneOrdenTrabajo ? 'default' : rep.estadoInspeccion === 2 ? 'destructive' : 'warning'}>
+                  {estadoReporte(rep)}
                 </Badge>
                 <Badge variant="secondary">{rep.cantidadEvidencias} evidencia(s)</Badge>
               </div>
@@ -418,10 +374,13 @@ export function ReportesPage() {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <Badge>{detalle.tieneOrdenTrabajo ? 'Con orden' : 'Sin orden'}</Badge>
+              <Badge>{estadoReporte(detalle)}</Badge>
               <Badge variant="secondary">{detalle.categoriaNombre || 'Sin categoria'}</Badge>
             </div>
           </div>
+
+          {/* Flujo de 7 etapas: aquí el Líder valida, rechaza o corrige el reporte (al validarlo se genera la orden) */}
+          <PanelFlujo reporteId={detalle.id} onCambio={() => void loadReportes()} />
 
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-2 text-sm text-continental-gray-1">
@@ -534,27 +493,7 @@ export function ReportesPage() {
             )}
           </div>
 
-          {ordenMsg && (
-            <Alert variant={ordenMsg.tipo} onClose={() => setOrdenMsg(null)} className="print:hidden">
-              <AlertTitle>{ordenMsg.tipo === 'success' ? 'Listo' : 'No se pudo crear la orden'}</AlertTitle>
-              <AlertDescription>
-                {ordenMsg.texto}{' '}
-                {ordenMsg.ordenId && (
-                  <Link to={`/ordenes/${ordenMsg.ordenId}`} className="font-semibold underline">
-                    Ver orden
-                  </Link>
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
-
           <div className="flex flex-wrap gap-2 print:hidden">
-            {!detalle.tieneOrdenTrabajo && canCrearOrden && (
-              <Button onClick={() => handleCrearOrden(false)} disabled={creatingOrder} className="flex items-center gap-2">
-                {creatingOrder ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                {creatingOrder ? 'Creando orden...' : 'Crear orden de trabajo'}
-              </Button>
-            )}
             <Button variant="outline" onClick={() => window.print()} className="flex items-center gap-2">
               <Printer className="h-4 w-4" />
               Imprimir
@@ -576,37 +515,6 @@ export function ReportesPage() {
             </Button>
           </div>
         </Card>
-
-        <Modal
-          isOpen={ordenDuplicada !== null}
-          onClose={() => {
-            if (!creatingOrder) setOrdenDuplicada(null);
-          }}
-          title="Orden de trabajo activa"
-          description="Ya hay una orden en curso para este vehículo."
-        >
-          <div className="space-y-3 text-sm text-continental-black">
-            <p>
-              El vehículo <strong>{detalle.vehiculoCodigo}</strong> ya tiene la orden de trabajo activa{' '}
-              <strong className="font-mono">{ordenDuplicada?.folio}</strong>.
-            </p>
-            {ordenDuplicada?.id && (
-              <Link to={`/ordenes/${ordenDuplicada.id}`} className="font-semibold underline">
-                Ver la orden existente
-              </Link>
-            )}
-            <p>¿Deseas crear otra orden para este reporte de todos modos?</p>
-          </div>
-          <ModalFooter>
-            <Button variant="outline" onClick={() => setOrdenDuplicada(null)} disabled={creatingOrder}>
-              Cancelar
-            </Button>
-            <Button onClick={() => handleCrearOrden(true)} disabled={creatingOrder} className="flex items-center gap-2">
-              {creatingOrder && <Loader2 className="h-4 w-4 animate-spin" />}
-              Crear de todos modos
-            </Button>
-          </ModalFooter>
-        </Modal>
 
         <div className="hidden print:block bg-white p-4 text-black font-sans text-xs">
           <div className="border border-black mb-4">

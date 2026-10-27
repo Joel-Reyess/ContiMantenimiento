@@ -57,6 +57,7 @@ public class EliminacionService
             .Where(e => e.OrdenTrabajoId.HasValue && ids.Contains(e.OrdenTrabajoId.Value))
             .ExecuteDeleteAsync();
         await _db.OrdenesTrabajoChecklistItems.Where(i => ids.Contains(i.OrdenTrabajoId)).ExecuteDeleteAsync();
+        await _db.HistorialFlujo.Where(h => h.OrdenTrabajoId != null && ids.Contains(h.OrdenTrabajoId.Value)).ExecuteDeleteAsync();
         await _db.ChecklistRespuestas.Where(r => ids.Contains(r.OrdenTrabajoId)).ExecuteDeleteAsync();
         await _db.SolicitudesRefaccion.Where(s => ids.Contains(s.OrdenTrabajoId)).ExecuteDeleteAsync();
         await _db.SolicitudesActividadAdicional.Where(s => ids.Contains(s.OrdenTrabajoId)).ExecuteDeleteAsync();
@@ -79,7 +80,15 @@ public class EliminacionService
         {
             await _db.ReportesFalla
                 .Where(r => reportesAfectados.Contains(r.Id))
-                .ExecuteUpdateAsync(s => s.SetProperty(r => r.TieneOrdenTrabajo, false));
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(r => r.TieneOrdenTrabajo, false)
+                    .SetProperty(r => r.EstadoInspeccion, EstadoInspeccionEnum.Pendiente)
+                    .SetProperty(r => r.InspeccionadoPorId, (int?)null)
+                    .SetProperty(r => r.FechaInspeccion, (DateTime?)null));
+            foreach (var reporteId in reportesAfectados)
+                FlujoHistorial.Agregar(_db, reporteId, null, "INSPECCION", "Reabierto", null, null, null,
+                    "Se eliminó su orden de trabajo; el reporte vuelve a quedar pendiente de inspección");
+            await _db.SaveChangesAsync();
         }
 
         await RegresarAlPisoAsync(vehiculosEnReparacion);
@@ -92,7 +101,7 @@ public class EliminacionService
     /// Solo se tocan los que están en el flujo de reparación; "fuera de servicio" solo si lo puso un reporte
     /// eliminado ("no puede operar"), para no reactivar un vehículo que se dio de baja a mano.
     /// </summary>
-    private async Task RegresarAlPisoAsync(IReadOnlyCollection<int> vehiculoIds, IReadOnlyCollection<int>? fueraDeServicioPorReporte = null)
+    public async Task RegresarAlPisoAsync(IReadOnlyCollection<int> vehiculoIds, IReadOnlyCollection<int>? fueraDeServicioPorReporte = null)
     {
         if (vehiculoIds.Count == 0) return;
         var fuera = fueraDeServicioPorReporte ?? Array.Empty<int>();
@@ -137,6 +146,7 @@ public class EliminacionService
             .Where(e => e.ReporteFallaId.HasValue && ids.Contains(e.ReporteFallaId.Value))
             .ExecuteDeleteAsync();
         await _db.ReportesFallaChecklistItems.Where(i => ids.Contains(i.ReporteFallaId)).ExecuteDeleteAsync();
+        await _db.HistorialFlujo.Where(h => h.ReporteFallaId != null && ids.Contains(h.ReporteFallaId.Value)).ExecuteDeleteAsync();
         await _db.ReportImageFaults.Where(f => ids.Contains(f.ReporteFallaId)).ExecuteDeleteAsync();
         await _db.ConsumosConsumibles
             .Where(c => c.ReporteId.HasValue && ids.Contains(c.ReporteId.Value))

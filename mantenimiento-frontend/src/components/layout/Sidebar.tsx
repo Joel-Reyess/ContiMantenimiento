@@ -20,7 +20,6 @@ const RUTAS_DE_CONFIGURACION = ['/usuarios', '/fallas-imagen', '/gestion-prefijo
 const navItems: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Lider', 'Operador'] },
   { label: 'Zona de Transición', href: '/recepcion', icon: <ClipboardList className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider', 'Operador'] },
-  { label: 'Entrega y Conformidad', href: '/entregas', icon: <CheckSquare className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Lider'] },
   { label: 'Órdenes de Trabajo', href: '/ordenes', icon: <Wrench className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider', 'Operador'] },
   { label: 'Inventario y Materiales', href: '/materiales', icon: <Package className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico'] },
   { label: 'Archivo Técnico (Planos)', href: '/archivo', icon: <FileText className="h-6 w-6" />, roles: ['Supervisor', 'Tecnico'], ocultarPara: ['SuperUsuario', 'Administrador'] },

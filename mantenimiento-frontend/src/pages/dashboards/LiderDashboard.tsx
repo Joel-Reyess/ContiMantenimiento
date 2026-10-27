@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { CapacidadZonas } from '@/components/flujo';
 import { Badge, Button, LoadingCard } from '@/components/ui';
 import { reportesService } from '@/services';
 import { formatDateTime } from '@/lib/utils';
@@ -17,6 +18,7 @@ interface ReporteReciente {
   prioridadNombre?: string;
   fechaReporte: string;
   tieneOrdenTrabajo: boolean;
+  estadoInspeccion?: number;
 }
 
 interface MantenimientoPreventivoPendiente {
@@ -132,6 +134,11 @@ export function LiderDashboard({ rol = 'Lider' }: LiderDashboardProps) {
           <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{error}</div>
         </div>
       )}
+
+      {/* Ocupación de la Zona de Transición con semáforo (PDF 23-oct-2026) */}
+      <div className="max-w-4xl mx-auto">
+        <CapacidadZonas />
+      </div>
 
       {/* Main Action Card - Prominent */}
       <div className="max-w-4xl mx-auto">
@@ -262,8 +269,8 @@ export function LiderDashboard({ rol = 'Lider' }: LiderDashboardProps) {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="font-semibold text-continental-black">{reporte.folio}</span>
-                      <Badge variant={reporte.tieneOrdenTrabajo ? 'success' : 'warning'}>
-                        {reporte.tieneOrdenTrabajo ? 'Atendido' : 'Pendiente'}
+                      <Badge variant={reporte.tieneOrdenTrabajo ? 'success' : reporte.estadoInspeccion === 2 ? 'destructive' : 'warning'}>
+                        {reporte.tieneOrdenTrabajo ? 'Con orden' : reporte.estadoInspeccion === 2 ? 'Rechazado' : 'En validación'}
                       </Badge>
                     </div>
                     <p className="text-continental-gray-1 text-sm">

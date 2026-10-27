@@ -512,3 +512,13 @@ svg.lucide {
 
 .animate-fadeIn { animation: fadeIn 0.2s ease-in-out; }
 .animate-slideIn { animation: slideIn 0.2s ease-in-out; }
+
+/* Flujo de 7 etapas: la etapa pendiente parpadea en naranja (PDF 23-oct-2026) */
+@keyframes flujo-parpadeo {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(255, 140, 0, 0.55); }
+  50% { opacity: 0.55; box-shadow: 0 0 0 8px rgba(255, 140, 0, 0); }
+}
+.flujo-parpadeo { animation: flujo-parpadeo 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .flujo-parpadeo { animation: none; }
+}
