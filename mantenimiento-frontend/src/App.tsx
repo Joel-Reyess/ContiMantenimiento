@@ -11,10 +11,9 @@ import { VehiculoDetallePage } from '@/pages/VehiculoDetalle';
 import { RefaccionesPage } from '@/pages/Refacciones';
 import { InventarioPage } from '@/pages/Inventario';
 import { MaterialesUnificadoPage } from '@/pages/MaterialesUnificado';
-import { RecepcionPage } from '@/pages/Recepcion';
+import { ZonaTransicionPage } from '@/pages/ZonaTransicion';
 import { ArchivoPage } from '@/pages/Archivo';
 import { AprobacionesPage } from '@/pages/Aprobaciones';
-import { EntregasPage } from '@/pages/Entregas';
 import { PagosPage } from '@/pages/Pagos';
 import { OrdenesCompraPage } from '@/pages/OrdenesCompra';
 import { UsuariosPage } from '@/pages/Usuarios';
@@ -122,12 +121,12 @@ function App() {
               }
             />
 
-            {/* Recepcion (solo admin/supervisor) */}
+            {/* Zona de Transición: capacidad, filas de espera y traslados (flujo de 7 etapas) */}
             <Route
               path="recepcion"
               element={
                 <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider', 'Operador']}>
-                  <RecepcionPage />
+                  <ZonaTransicionPage />
                 </ProtectedRoute>
               }
             />
@@ -142,15 +141,8 @@ function App() {
               }
             />
 
-            {/* Entregas / firma (admin/supervisor/lider) */}
-            <Route
-              path="entregas"
-              element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Lider']}>
-                  <EntregasPage />
-                </ProtectedRoute>
-              }
-            />
+            {/* La entrega con doble firma se reemplazó por la VALIDACIÓN del flujo (Líder o Gerente) */}
+            <Route path="entregas" element={<Navigate to="/aprobaciones" replace />} />
 
             {/* Inventario de consumibles */}
             <Route

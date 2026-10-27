@@ -366,7 +366,7 @@ public class ChecklistService
             .Include(o => o.Vehiculo)
             .FirstOrDefaultAsync(o => o.Id == request.OrdenTrabajoId);
 
-        if (orden?.Vehiculo != null &&
+        if (orden?.Vehiculo != null && orden.FechaAceptacion != null &&
             (orden.Estado == EstadoOrdenTrabajoEnum.Asignada ||
              orden.Estado == EstadoOrdenTrabajoEnum.EnProceso ||
              orden.Estado == EstadoOrdenTrabajoEnum.EsperandoRefacciones))
@@ -403,7 +403,9 @@ public class ChecklistService
             VehiculoId = vehiculoId,
             TecnicoAsignadoId = userId,
             CreadoPorId = userId,
-            Estado = EstadoOrdenTrabajoEnum.Completada,
+            // Una inspección rápida no es una reparación: queda cerrada para no entrar a las filas de la
+            // Zona de Transición ni contar como orden activa del vehículo (flujo de 7 etapas)
+            Estado = EstadoOrdenTrabajoEnum.Validada,
             Prioridad = PrioridadEnum.PuedeCircular,
             TipoMantenimiento = "Inspección",
             Descripcion = "Checklist de inspección rápida",
@@ -411,6 +413,8 @@ public class ChecklistService
             FechaAsignacion = DateTime.UtcNow,
             FechaInicio = DateTime.UtcNow,
             FechaFinalizacion = DateTime.UtcNow,
+            FechaValidacion = DateTime.UtcNow,
+            ValidadoPorId = userId,
             CreatedAt = DateTime.UtcNow
         };
 

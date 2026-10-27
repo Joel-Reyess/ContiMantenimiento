@@ -28,14 +28,12 @@ import {
   RefreshCcw,
   Wrench,
   CheckCircle,
-  ShieldCheck,
   XCircle,
   Package,
   ClipboardList,
   FileText,
   Trash2,
   Search,
-  PlayIcon,
   AlertTriangle,
   Camera
 } from 'lucide-react';
@@ -50,7 +48,7 @@ import { refaccionesService } from '@/services/refaccionesService';
 import { solicitudActividadAdicionalService } from '@/services/solicitudActividadAdicionalService';
 import { ordenTrabajoChecklistItemService } from '@/services/ordenTrabajoChecklistItemService';
 import { ReportFailureModal, RequestActivityModal } from '@/components/tecnico';
-import { OrdenFlowStatus } from '@/components/ordenes/OrdenFlowStatus';
+import { PanelFlujo } from '@/components/flujo';
 import { InteractiveVehicleImage } from '@/components/vehiculos/InteractiveVehicleImage';
 import { getFullImageUrl } from '@/lib/utils';
 import type { OrdenTrabajo, OrdenTrabajoList, ReporteFalla, Evidencia, VehicleImagePoint } from '@/interfaces';
@@ -136,6 +134,8 @@ export function OrdenesPage() {
   const canEliminar = hasRole(['Administrador', 'SuperUsuario']);
   // Líder y Operador consultan las órdenes; el Líder además aprueba o rechaza reparaciones
   const puedeTrabajarOrden = hasRole(['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico']);
+  // Asignar o cambiar técnico y cancelar: Supervisor (Gerente) y administración; el técnico acepta la orden
+  const puedeAsignarYCancelar = hasRole(['SuperUsuario', 'Administrador', 'Supervisor']);
   const navigate = useNavigate();
   const [eliminandoOrden, setEliminandoOrden] = useState(false);
 
@@ -207,8 +207,6 @@ export function OrdenesPage() {
   const [asignandoTecnico, setAsignandoTecnico] = useState(false);
   const [tecnicoAsignado, setTecnicoAsignado] = useState<SearchableSelectOption | null>(null);
   const [firmaError, setFirmaError] = useState('');
-  const [showIniciar, setShowIniciar] = useState(false);
-  const [diagInicio, setDiagInicio] = useState('');
   const [showCancelar, setShowCancelar] = useState(false);
   const [motivoCancelar, setMotivoCancelar] = useState('');
   const [reporteDetalle, setReporteDetalle] = useState<ReporteFalla | null>(null);
@@ -810,33 +808,6 @@ export function OrdenesPage() {
     }
   };
 
-  const handleAprobar = async (aprobado: boolean) => {
-    if (!detalle) return;
-    setAccionando(true);
-    try {
-      const rol = hasRole(['Lider']) ? 'Lider' : 'Supervisor';
-      // Si es ambos, preferir Supervisor si esta en estado de validacion, o Lider si es cierre inicial?
-      // Por simplicidad, el backend confía en lo que enviamos, pero valida permisos.
-      
-      const res = await ordenesService.aprobarOrden(detalle.id, {
-        aprobado,
-        rolAprobador: rol as 'Lider' | 'Supervisor',
-        comentarios: 'Aprobación digital'
-      });
-      
-      if (res.success) {
-        toast.exito(aprobado ? 'Orden aprobada' : 'Orden rechazada');
-        await loadOrdenes();
-      } else {
-        toast.error(res.message || 'Error al aprobar');
-      }
-    } catch (err) {
-      toast.error('Error de conexión');
-    } finally {
-      setAccionando(false);
-    }
-  };
-
   const applyFilters = () => {
     if (!ordenId) {
       loadOrdenes();
@@ -891,12 +862,6 @@ export function OrdenesPage() {
       setAccionando(false);
     }
   };
-
-  const handleIniciar = (id: number, diag?: string) =>
-    doAccion(() => ordenesService.iniciarTrabajo(id, diag ? { diagnostico: diag } : {}), {
-      exito: 'Orden iniciada',
-      alFallar: setErrorVentana
-    });
 
   const handleValidar = (id: number, aprobado: boolean, observaciones?: string) =>
     doAccion(() => ordenesService.validarOrden(id, { aprobado, observaciones }), {
@@ -1350,6 +1315,18 @@ export function OrdenesPage() {
       0
     );
 
+    // "Terminar reparación" del panel abre la ventana de siempre (trabajo, horas, consumibles, evidencia)
+    const abrirCompletar = () => {
+      setShowCompletar(true);
+      setCompError('');
+      setCompTrabajo(detalle.trabajoRealizado || '');
+      setCompHoras(detalle.horasTrabajadas ? String(detalle.horasTrabajadas) : '1');
+      setConsumos([{ consumibleId: undefined, cantidad: '1' }]);
+      setCompEvidFile(null);
+      setCompEvidDesc('');
+      loadConsumibles();
+    };
+
     const nombreTecnicoAsignado =
       detalle.tecnicoNombre ||
       detalle.tecnicoAsignadoNombre ||
@@ -1409,14 +1386,23 @@ export function OrdenesPage() {
 
     return (
       <div className="space-y-4">
-        <OrdenFlowStatus orden={detalle} reportadaPorNombre={reporteDetalle?.reportadoPorNombre} />
-
               <Button variant="ghost" className="flex items-center gap-2">
                 <Link to={isMisOrdenes ? '/mis-ordenes' : '/ordenes'}>
                   <ArrowLeft className="h-4 w-4" />
                   Volver al listado
                 </Link>
               </Button>
+
+        {/* Seguimiento del flujo de 7 etapas con las acciones del usuario (PDF 23-oct-2026) */}
+        <Card className="p-6" data-testid="seguimiento-orden">
+          <p className="mb-3 text-sm uppercase tracking-[0.25em] text-continental-gray-1">Seguimiento · {detalle.folio}</p>
+          <PanelFlujo
+            ordenId={detalle.id}
+            onTerminar={abrirCompletar}
+            onCambio={() => void loadOrdenes()}
+            version={`${detalle.estado}-${detalle.tecnicoAsignadoId ?? ''}`}
+          />
+        </Card>
 
         <Card className="p-6 space-y-4">
           <div className="flex items-start justify-between gap-4">
@@ -1483,7 +1469,8 @@ export function OrdenesPage() {
                   ))}
                 </div>
               )}
-                            {hasRole(['Administrador', 'SuperUsuario', 'Supervisor', 'Tecnico']) && (
+                            {puedeAsignarYCancelar && detalle.estado !== EstadoOrdenTrabajo.Completada && detalle.estado !== EstadoOrdenTrabajo.Validada
+                && detalle.estado !== EstadoOrdenTrabajo.Entregado && detalle.estado !== EstadoOrdenTrabajo.Cancelada && (
                 <div className="space-y-2 pt-2">
               <p className="font-semibold text-continental-black">
                 {detalle.tecnicoAsignadoId ? 'Técnico Asignado' : 'Asignar tecnico (requiere firma)'}
@@ -2321,64 +2308,6 @@ export function OrdenesPage() {
             </div>
           )}
 
-          {/* Approval Section */}
-          {(hasRole(['Lider', 'Supervisor', 'SuperUsuario', 'Administrador'])) && detalle.estado === EstadoOrdenTrabajo.Completada && (
-            <div className="mt-4 border-t border-continental-gray-3/60 pt-4">
-              <p className="font-semibold text-continental-black mb-2">Aprobación de Cierre</p>
-              
-              <div className="flex flex-wrap gap-3 items-center">
-                {/* Mostrar botones solo si el usuario tiene el rol y aún no ha aprobado */}
-                {((hasRole(['Lider']) && detalle.estadoAprobacionLider === 0) || 
-                  (hasRole(['Supervisor', 'SuperUsuario', 'Administrador']) && detalle.estadoAprobacionSupervisor === 0)) && (
-                  <>
-                    <Button 
-                      className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
-                      onClick={() => handleAprobar(true)}
-                      disabled={accionando}
-                    >
-                      <CheckCircle className="h-4 w-4" /> Aceptar
-                    </Button>
-                    <Button 
-                      variant="destructive"
-                      className="flex items-center gap-2"
-                      onClick={() => handleAprobar(false)}
-                      disabled={accionando}
-                    >
-                      <XCircle className="h-4 w-4" /> Rechazar
-                    </Button>
-                  </>
-                )}
-
-                {/* Indicador de cierre completo si ambas aprobaciones están listas */}
-                {detalle.estadoAprobacionLider === 1 && detalle.estadoAprobacionSupervisor === 1 && (
-                  <div className="flex items-center gap-2 text-green-600 font-bold bg-green-50 px-3 py-1.5 rounded-lg border border-green-200">
-                    <ShieldCheck className="h-5 w-5" />
-                    <span>Orden plenamente firmada y válida para pagos</span>
-                  </div>
-                )}
-
-                <div className="text-sm text-continental-gray-1 ml-2 flex gap-4">
-                  {detalle.estadoAprobacionLider !== undefined && (
-                     <div className="flex items-center gap-1.5">
-                       <span className="text-xs font-medium">Lider:</span>
-                       <Badge variant={detalle.estadoAprobacionLider === 1 ? 'default' : detalle.estadoAprobacionLider === 2 ? 'destructive' : 'outline'}>
-                         {detalle.estadoAprobacionLider === 1 ? 'Aprobado' : detalle.estadoAprobacionLider === 2 ? 'Rechazado' : 'Pendiente'}
-                       </Badge>
-                     </div>
-                  )}
-                   {detalle.estadoAprobacionSupervisor !== undefined && (
-                     <div className="flex items-center gap-1.5">
-                       <span className="text-xs font-medium">Supervisor:</span>
-                       <Badge variant={detalle.estadoAprobacionSupervisor === 1 ? 'default' : detalle.estadoAprobacionSupervisor === 2 ? 'destructive' : 'outline'}>
-                         {detalle.estadoAprobacionSupervisor === 1 ? 'Aprobado' : detalle.estadoAprobacionSupervisor === 2 ? 'Rechazado' : 'Pendiente'}
-                       </Badge>
-                     </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
           {isCameraActive && (
             <Card className="mt-4 p-4 border-2 border-continental-blue bg-continental-bg/30">
               <div className="space-y-4">
@@ -2436,48 +2365,8 @@ export function OrdenesPage() {
                   Crear Reporte
                 </Button>
               )}
-            {puedeTrabajarOrden && detalle.estado === EstadoOrdenTrabajo.Pendiente && (
-              <Button
-                onClick={() => {
-                  setErrorVentana('');
-                  setShowIniciar(true);
-                  setDiagInicio(detalle.diagnostico || '');
-                }}
-                disabled={accionando}
-                className="flex items-center gap-2"
-              >
-                {accionando ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayIcon />}
-                Iniciar
-              </Button>
-            )}
-            {puedeTrabajarOrden && (detalle.estado === EstadoOrdenTrabajo.Asignada || detalle.estado === EstadoOrdenTrabajo.EnProceso) && (
-              <Button
-                onClick={() => {
-                  setShowCompletar(true);
-                  setCompError('');
-                  setCompTrabajo(detalle.trabajoRealizado || '');
-                  setCompHoras(detalle.horasTrabajadas ? String(detalle.horasTrabajadas) : '1');
-                  setConsumos([{ consumibleId: undefined, cantidad: '1' }]);
-                  setCompEvidFile(null);
-                  setCompEvidDesc('');
-                  loadConsumibles();
-                }}
-                disabled={accionando}
-                className="flex items-center gap-2"
-              >
-                {accionando ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                Completar
-              </Button>
-            )}
-            {detalle.estado === EstadoOrdenTrabajo.Completada && hasRole(['Supervisor', 'SuperUsuario', 'Administrador']) && (
-              <Button variant="outline" className="flex items-center gap-2">
-                <Link to="/entregas">
-                  <ShieldCheck className="h-4 w-4" />
-                  Validar en panel de entregas
-                </Link>
-              </Button>
-            )}
-            {puedeTrabajarOrden && detalle.estado !== EstadoOrdenTrabajo.Cancelada && (
+            {puedeAsignarYCancelar && detalle.estado !== EstadoOrdenTrabajo.Cancelada
+              && detalle.estado !== EstadoOrdenTrabajo.Validada && detalle.estado !== EstadoOrdenTrabajo.Entregado && (
               <Button
                 variant="ghost"
                 onClick={() => {
@@ -2991,46 +2880,6 @@ export function OrdenesPage() {
           >
             {accionando ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
             Enviar
-          </Button>
-        </ModalFooter>
-      </Modal>
-
-      {/* Modal Iniciar */}
-      <Modal
-        isOpen={showIniciar}
-        onClose={() => setShowIniciar(false)}
-        title="Iniciar orden"
-        description="Agrega un diagnostico inicial (opcional) y marca la orden en proceso."
-      >
-        <div className="space-y-3">
-          <p className="text-sm text-continental-gray-1">
-            Folio: <span className="font-semibold text-continental-black">{detalle?.folio}</span>
-          </p>
-          {errorVentana && (
-            <Alert variant="destructive">
-              <AlertDescription>{errorVentana}</AlertDescription>
-            </Alert>
-          )}
-          <Textarea
-            label="Diagnostico inicial (opcional)"
-            placeholder="Notas breves del estado al iniciar"
-            value={diagInicio}
-            onChange={(e) => setDiagInicio(e.target.value)}
-          />
-        </div>
-        <ModalFooter>
-          <Button variant="outline" onClick={() => setShowIniciar(false)}>
-            Cancelar
-          </Button>
-          <Button
-            onClick={async () => {
-              if (!detalle) return;
-              setErrorVentana('');
-              if (await handleIniciar(detalle.id, diagInicio || undefined)) setShowIniciar(false);
-            }}
-            disabled={accionando}
-          >
-            {accionando ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Iniciar'}
           </Button>
         </ModalFooter>
       </Modal>

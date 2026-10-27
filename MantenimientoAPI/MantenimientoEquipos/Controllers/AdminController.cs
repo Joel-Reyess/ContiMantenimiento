@@ -144,6 +144,7 @@ public class AdminController : ControllerBase
             await _db.EvidenciasFotograficas.ExecuteDeleteAsync();
             await _db.ReportesFallaChecklistItems.ExecuteDeleteAsync();
             await _db.OrdenesTrabajoChecklistItems.ExecuteDeleteAsync();
+            await _db.HistorialFlujo.ExecuteDeleteAsync();
             await _db.ChecklistRespuestas.ExecuteDeleteAsync();
             await _db.ReportImageFaults.ExecuteDeleteAsync();
 

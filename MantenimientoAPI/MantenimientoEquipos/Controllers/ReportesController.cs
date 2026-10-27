@@ -22,9 +22,11 @@ public class ReportesController : ControllerBase
     private readonly LiderTipoVehiculoAsignacionService _asignacionService;
 
     private readonly EliminacionService _eliminacion;
+    private readonly FlujoAvisos _avisos;
 
-    public ReportesController(ReporteFallaService reporteService, NotificacionService notificacionService, IWebHostEnvironment env, LiderTipoVehiculoAsignacionService asignacionService, EliminacionService eliminacion)
+    public ReportesController(ReporteFallaService reporteService, NotificacionService notificacionService, IWebHostEnvironment env, LiderTipoVehiculoAsignacionService asignacionService, EliminacionService eliminacion, FlujoAvisos avisos)
     {
+        _avisos = avisos;
         _eliminacion = eliminacion;
         _reporteService = reporteService;
         _notificacionService = notificacionService;
@@ -83,14 +85,8 @@ public class ReportesController : ControllerBase
             var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var reporte = await _reporteService.CreateAsync(request, userId, force);
 
-            await _notificacionService.CrearNotificacionRolesAsync(
-                Models.Enums.TipoNotificacionEnum.NuevoReporte,
-                "Nuevo reporte de falla",
-                $"Folio {reporte.Folio} para vehiculo {reporte.Vehiculo?.Codigo ?? request.CodigoVehiculo}",
-                new[] { "superusuario", "administrador", "supervisor" },
-                reporte.Id,
-                "ReporteFalla",
-                $"/reportes/{reporte.Folio}");
+            // Aviso al Líder del tipo de vehículo para que haga la inspección (flujo de 7 etapas)
+            await _avisos.NuevoReporteAsync(reporte.Id, userId);
 
             return CreatedAtAction(nameof(GetById), new { id = reporte.Id },
                 ApiResponse<object>.Ok(new { reporte.Id, reporte.Folio }, "Reporte creado exitosamente"));
@@ -158,14 +154,8 @@ public class ReportesController : ControllerBase
             var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var reporte = await _reporteService.CreateWithAutoChecklistAsync(request, userId, force);
 
-            await _notificacionService.CrearNotificacionRolesAsync(
-                Models.Enums.TipoNotificacionEnum.NuevoReporte,
-                "Nuevo reporte de falla",
-                $"Folio {reporte.Folio} para vehiculo {reporte.Vehiculo?.Codigo ?? request.CodigoVehiculo}",
-                new[] { "superusuario", "administrador", "supervisor" },
-                reporte.Id,
-                "ReporteFalla",
-                $"/reportes/{reporte.Folio}");
+            // Aviso al Líder del tipo de vehículo para que haga la inspección (flujo de 7 etapas)
+            await _avisos.NuevoReporteAsync(reporte.Id, userId);
 
             return CreatedAtAction(nameof(GetById), new { id = reporte.Id },
                 ApiResponse<object>.Ok(new { reporte.Id, reporte.Folio }, "Reporte creado exitosamente con checklist automatico"));
