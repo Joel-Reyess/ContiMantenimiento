@@ -324,6 +324,7 @@ public class ExcelExportService
             ("Búsqueda", string.IsNullOrWhiteSpace(filtro.Busqueda) ? "(sin búsqueda)" : filtro.Busqueda.Trim()),
             ("Tipo", tipoTexto),
             ("Área", filtro.AreaId.HasValue ? area ?? $"#{filtro.AreaId}" : "Todas"),
+            ("Prefijo", string.IsNullOrWhiteSpace(filtro.Prefijo) ? "Todos" : filtro.Prefijo.Trim()),
             ("Vehículos", filtro.SoloActivos ? "Solo activos (como en la pantalla)" : "Activos e inactivos")
         };
         if (filtro.TiposPermitidos is { Count: > 0 })

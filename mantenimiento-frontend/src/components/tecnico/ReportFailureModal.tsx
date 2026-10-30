@@ -12,7 +12,6 @@ import {
   reportesService,
   vehiculosService,
   checklistService,
-  vehiculoPrefijoConfigsService,
   catalogosService,
   vehicleImagePointsService
 } from '@/services';
@@ -42,7 +41,6 @@ type VehiculoOption = SearchableSelectOption<{
   tipo?: string;
   area?: string;
   tipoId?: number;
-  isCreate?: boolean;
 }>;
 
 interface ReportFailureModalProps {
@@ -80,7 +78,6 @@ export function ReportFailureModal({
   const [selectedChecklistItems, setSelectedChecklistItems] = useState<number[]>([]);
   const [checklistQuantities, setChecklistQuantities] = useState<Record<number, number>>({});
   const [loadingChecklist, setLoadingChecklist] = useState(false);
-  const [loadingPrefijo, setLoadingPrefijo] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   // useRef además del estado: dos clics seguidos llegan antes de que React vuelva a pintar el botón deshabilitado
@@ -152,12 +149,8 @@ export function ReportFailureModal({
 const vehiculosFetchSeqRef = useRef(0);
 const vehiculosDebounceRef = useRef<number | null>(null);
 
-const prefijoConfigCacheRef = useRef(new Map<string, { tipoId?: number; templateId?: number } | null>());
 const templatesCacheRef = useRef(new Map<string, ChecklistItem[]>());
-const templateByIdCacheRef = useRef(new Map<number, ChecklistItem[]>());
 const checklistReqSeqRef = useRef(0);
-// Propio del aviso "Determinando checklist por prefijo...": loadChecklistItems sube checklistReqSeqRef y el aviso se quedaba fijo
-const prefijoReqSeqRef = useRef(0);
 
   const buildImageKey = useCallback((tipoVehiculoId?: number | null) => {
     if (!tipoVehiculoId || Number.isNaN(Number(tipoVehiculoId))) return '';
@@ -322,9 +315,23 @@ const prefijoReqSeqRef = useRef(0);
       }
 
       if (codigoInicial) {
-        setVehiculoSeleccionado(null);
-        setCodigoVehiculo(codigoInicial);
-        await loadChecklistByCodigo(codigoInicial, false, mantenimientoInicial);
+        const vehiculoRes = await vehiculosService.getByCodigo(codigoInicial).catch(() => null);
+        if (vehiculoRes?.success && vehiculoRes.data) {
+          const v = vehiculoRes.data;
+          setVehiculoSeleccionado({
+            value: String(v.id),
+            label: v.codigo,
+            description: v.areaNombre || v.estadoNombre || '',
+            meta: { codigo: v.codigo, tipo: v.tipoNombre, area: v.areaNombre, tipoId: v.tipo },
+          });
+          setCodigoVehiculo(v.codigo);
+          applyTipoVehiculoContext(v.tipo);
+          await loadChecklistItems(v.id, undefined, false);
+        } else {
+          setVehiculoSeleccionado(null);
+          setCodigoVehiculo('');
+          setError(`El vehículo ${codigoInicial} no está registrado en la plataforma. Regístralo en Flota de Contenedores antes de generar el reporte de falla.`);
+        }
       }
     };
 
@@ -335,18 +342,6 @@ const prefijoReqSeqRef = useRef(0);
 
   const fetchVehiculos = useCallback((busqueda: string): Promise<VehiculoOption[]> => {
     const typed = (busqueda || '').trim();
-
-    const buildCreateOption = (): VehiculoOption[] => {
-      if (!typed) return [];
-      return [
-        {
-          value: `__create__:${typed}`,
-          label: `Crear "${typed}"`,
-          description: 'Se creará al enviar',
-          meta: { codigo: typed, isCreate: true },
-        } as VehiculoOption,
-      ];
-    };
 
     vehiculosFetchSeqRef.current += 1;
     const mySeq = vehiculosFetchSeqRef.current;
@@ -387,22 +382,17 @@ const prefijoReqSeqRef = useRef(0);
             });
           }
 
-          const exactExists = typed ? options.some((o) => (o.meta?.codigo || '').toLowerCase() === typed.toLowerCase()) : true;
-          const finalOptions = exactExists ? options : [...buildCreateOption(), ...options];
-
-          resolve(finalOptions);
+          // Solo vehículos registrados: el reporte ya no da de alta vehículos (PDF 29-oct)
+          resolve(options);
         } catch (err) {
           console.error('No se pudo cargar vehiculos', err);
-          const fallback = buildCreateOption();
-          resolve(fallback);
+          resolve([]);
         }
       }, 250);
     });
   }, []);
 
   const resetForm = () => {
-    prefijoReqSeqRef.current++;
-    setLoadingPrefijo(false);
     setStep('scan');
     setVehiculoSeleccionado(null);
     setCodigoVehiculo('');
@@ -503,161 +493,6 @@ const prefijoReqSeqRef = useRef(0);
     }
   };
 
-  const loadChecklistByCodigo = async (codigo: string, autoSelect = false, mantenimientoOverride?: string) => {
-    const raw = (codigo || '').trim();
-    if (!raw) return;
-
-    const normalized = raw.toUpperCase().replace(/\s+/g, '');
-    const token = normalized.includes('-') ? normalized.split('-')[0] : normalized;
-    const base = token.replace(/[^A-Z0-9]/g, '');
-
-const candidatePrefijos = Array.from(
-  new Set(
-    Array.from({ length: base.length }, (_, idx) => base.slice(0, base.length - idx)).filter((p) => p.length >= 2)
-  )
-).slice(0, 15);
-    const mantenimiento = mantenimientoOverride ?? tipoMantenimiento;
-
-
-    const extractConfig = (d: any, mant: string): { tipoId?: number; templateId?: number } => {
-      const toNum = (v: any): number | undefined => {
-        if (v === undefined || v === null) return undefined;
-        if (typeof v === 'number') return Number.isFinite(v) && v > 0 ? v : undefined;
-        if (typeof v === 'string') {
-          const n = Number(v);
-          return Number.isFinite(n) && n > 0 ? n : undefined;
-        }
-        if (typeof v === 'object') {
-          const n = Number((v as any).id ?? (v as any).value);
-          return Number.isFinite(n) && n > 0 ? n : undefined;
-        }
-        return undefined;
-      };
-
-      const directTipo = toNum(d);
-      if (directTipo !== undefined && (typeof d === 'number' || typeof d === 'string')) {
-        return { tipoId: directTipo };
-      }
-
-      const obj = d ?? {};
-      const tipoId =
-        toNum(obj.tipoVehiculoId) ??
-        toNum(obj.tipoId) ??
-        toNum(obj.tipo) ??
-        toNum(obj.vehiculoTipoId) ??
-        toNum(obj.id);
-
-      const mantKey = (mant || '').toLowerCase();
-      const isPrev = mantKey === 'preventivo';
-      const isCorr = mantKey === 'correctivo';
-
-      const templateId =
-        toNum(obj[`checklistTemplateId${isPrev ? 'Preventivo' : isCorr ? 'Correctivo' : ''}`]) ??
-        toNum(obj[`templateId${isPrev ? 'Preventivo' : isCorr ? 'Correctivo' : ''}`]) ??
-        toNum(obj[`${mantKey}ChecklistTemplateId`]) ??
-        toNum(obj[`${mantKey}TemplateId`]) ??
-        toNum(obj[`${isPrev ? 'checklistTemplatePreventivoId' : isCorr ? 'checklistTemplateCorrectivoId' : ''}`]) ??
-        toNum(obj[`${isPrev ? 'checklistPreventivoTemplateId' : isCorr ? 'checklistCorrectivoTemplateId' : ''}`]) ??
-        toNum(obj[`${isPrev ? 'templatePreventivoId' : isCorr ? 'templateCorrectivoId' : ''}`]) ??
-        toNum(obj[`${isPrev ? 'checklist_template_id_preventivo' : isCorr ? 'checklist_template_id_correctivo' : ''}`]) ??
-        toNum(obj[`${isPrev ? 'template_id_preventivo' : isCorr ? 'template_id_correctivo' : ''}`]) ??
-        toNum(obj.checklistTemplateId) ??
-        toNum(obj.templateId);
-
-      return { tipoId: tipoId ?? undefined, templateId: templateId ?? undefined };
-    };
-
-    setLoadingPrefijo(true);
-    const reqSeq = ++checklistReqSeqRef.current;
-    const prefijoSeq = ++prefijoReqSeqRef.current;
-    try {
-let config: { tipoId?: number; templateId?: number } | undefined;
-
-for (const pref of candidatePrefijos) {
-  const cacheKey = `${pref}:${mantenimiento}`;
-  const cached = prefijoConfigCacheRef.current.get(cacheKey);
-
-  if (cached === null) {
-    continue;
-  }
-  if (cached !== undefined) {
-    config = cached;
-    break;
-  }
-
-  let tipoRes = await vehiculoPrefijoConfigsService.getTipoVehiculoIdByCodigo(pref as any);
-  if (!tipoRes?.success && /^\d+$/.test(pref)) {
-    tipoRes = await vehiculoPrefijoConfigsService.getTipoVehiculoIdByCodigo(Number(pref) as any);
-  }
-
-  if (tipoRes?.success) {
-    const parsed = extractConfig(tipoRes.data, mantenimiento);
-    if (parsed.tipoId !== undefined || parsed.templateId !== undefined) {
-      config = { tipoId: parsed.tipoId, templateId: parsed.templateId };
-      prefijoConfigCacheRef.current.set(cacheKey, config);
-      break;
-    }
-  }
-
-  prefijoConfigCacheRef.current.set(cacheKey, null);
-}
-
-const tipoId = config?.tipoId;
-const templateId = config?.templateId;
-
-
-if (reqSeq !== checklistReqSeqRef.current) return;
-
-      if (tipoId !== undefined && tipoId !== null) {
-        applyTipoVehiculoContext(tipoId);
-      }
-
-      if (tipoId === undefined && !templateId) {
-        applyTipoVehiculoContext(null);
-        setChecklistItems([]);
-        setSelectedChecklistItems([]);
-        setError(`No hay checklist configurado para el prefijo de "${raw}".`);
-        return;
-      }
-
-      setError('');
-
-      if (templateId) {
-        const cachedItems = templateByIdCacheRef.current.get(templateId);
-        let items: ChecklistItem[] = cachedItems || [];
-        if (!cachedItems) {
-          const templateRes = await checklistService.getTemplateById(templateId);
-          if (templateRes.success && templateRes.data) {
-            items = (templateRes.data.items || []) as ChecklistItem[];
-            templateByIdCacheRef.current.set(templateId, items);
-          }
-        }
-
-        if (reqSeq !== checklistReqSeqRef.current) return;
-
-        setChecklistItems(items);
-        if (autoSelect) setSelectedChecklistItems(items.map((i) => i.id));
-        else setSelectedChecklistItems([]);
-        setChecklistQuantities({});
-        return;
-      }
-
-      await loadChecklistItems(undefined, tipoId, autoSelect);
-    } catch (err) {
-      console.error('No se pudo cargar checklist por prefijo', err);
-      if (reqSeq !== checklistReqSeqRef.current) return;
-      setChecklistItems([]);
-      setSelectedChecklistItems([]);
-      setError('No se pudo determinar checklist por prefijo.');
-    } finally {
-      if (prefijoSeq === prefijoReqSeqRef.current) setLoadingPrefijo(false);
-    }
-  };
-
-
-
-
-
     const handleScanResult
  = async (codigo: string) => {
     stopCamera();
@@ -665,7 +500,8 @@ if (reqSeq !== checklistReqSeqRef.current) return;
       const response = await vehiculosService.getAll({ busqueda: codigo });
       const data: any = response.data;
       const items = (data && (data.items || data.Items)) || (Array.isArray(data) ? data : []);
-      const vehiculo = items[0];
+      // La búsqueda es por "contiene": se toma solo el vehículo con ese código exacto
+      const vehiculo = items.find((v: { codigo?: string }) => (v.codigo || '').trim().toLowerCase() === codigo.trim().toLowerCase());
 
       if (vehiculo) {
         const option: VehiculoOption = {
@@ -683,21 +519,19 @@ if (reqSeq !== checklistReqSeqRef.current) return;
         await loadChecklistItems(vehiculo.id, undefined, false);
       } else {
         setVehiculoSeleccionado(null);
-        setCodigoVehiculo(codigo);
+        setCodigoVehiculo('');
         setSelectedImageFaults([]);
         applyTipoVehiculoContext(null);
         setStep('form');
-        await loadChecklistByCodigo(codigo, false, tipoMantenimiento);
-        setError(`Vehiculo "${codigo}" no encontrado, se creara si el prefijo coincide`);
+        setError(`El vehículo ${codigo} no está registrado en la plataforma. Regístralo en Flota de Contenedores antes de generar el reporte de falla.`);
       }
-    } catch (err) {
+    } catch {
       setVehiculoSeleccionado(null);
-      setCodigoVehiculo(codigo);
+      setCodigoVehiculo('');
       setSelectedImageFaults([]);
       applyTipoVehiculoContext(null);
       setStep('form');
-      await loadChecklistByCodigo(codigo, false, tipoMantenimiento);
-      setError('Error al buscar vehiculo, se intentara crear con el codigo capturado');
+      setError('No se pudo buscar el vehículo. Inténtalo de nuevo o búscalo por código.');
     }
   };
 
@@ -786,6 +620,7 @@ if (reqSeq !== checklistReqSeqRef.current) return;
     const code = (vehiculoSeleccionado?.meta?.codigo || codigoVehiculo).trim();
     const errores: typeof fieldErrors = {};
     if (!code) errores.vehiculo = 'Selecciona o escanea el vehículo.';
+    else if (!vehiculoSeleccionado) errores.vehiculo = `El vehículo ${code} no está registrado en la plataforma. Regístralo en Flota de Contenedores antes de generar el reporte de falla.`;
     if (!prioridad) errores.prioridad = 'Selecciona el nivel de prioridad.';
     if (!tipoMantenimiento) errores.tipoMantenimiento = 'Selecciona el tipo de mantenimiento.';
     if (selectedChecklistItems.length === 0 && selectedImageFaults.length === 0) {
@@ -942,11 +777,6 @@ if (reqSeq !== checklistReqSeqRef.current) return;
   const renderVistaPrevia = () => {
     const { code, trabajos, componentes, reporteData } = armarReporte();
     const area = vehiculoSeleccionado?.meta?.area;
-    const notaAlta = vehiculoSeleccionado?.meta?.isCreate
-      ? ' (vehículo nuevo, se dará de alta)'
-      : !vehiculoSeleccionado
-        ? ' (si no existe, se dará de alta)'
-        : '';
     const fila = (etiqueta: string, valor: React.ReactNode) => (
       <div className="flex flex-col gap-1 sm:flex-row sm:gap-3">
         <span className="w-48 flex-shrink-0 text-sm font-semibold text-gray-600">{etiqueta}</span>
@@ -968,7 +798,6 @@ if (reqSeq !== checklistReqSeqRef.current) return;
               <span className="font-mono font-bold">{code}</span>
               {tipoVehiculoNombreSeleccionado ? ` · ${tipoVehiculoNombreSeleccionado}` : ''}
               {area ? ` · ${area}` : ''}
-              {notaAlta}
             </>
           )}
           {fila('Tipo de mantenimiento', tipoMantenimiento)}
@@ -1283,20 +1112,9 @@ if (reqSeq !== checklistReqSeqRef.current) return;
                     placeholder="Buscar por codigo, tipo o area"
                     selected={vehiculoSeleccionado}
                     fetchOptions={fetchVehiculos}
+                    noResultsText="Sin resultados. Solo se pueden reportar vehículos registrados en Flota de Contenedores."
                     onSelect={async (option) => {
                       if (!option) return;
-
-                      if (option.meta?.isCreate) {
-                        const code = (option.meta?.codigo || '').trim();
-                        setVehiculoSeleccionado(null);
-                        setCodigoVehiculo(code);
-                        setSelectedImageFaults([]);
-                        applyTipoVehiculoContext(null);
-                        setError('');
-                        setFieldErrors((f) => ({ ...f, vehiculo: undefined }));
-                        await loadChecklistByCodigo(code, false, tipoMantenimiento);
-                        return;
-                      }
 
                       setVehiculoSeleccionado(option);
                       setCodigoVehiculo(option.meta?.codigo || '');
@@ -1307,11 +1125,6 @@ if (reqSeq !== checklistReqSeqRef.current) return;
                       await loadChecklistItems(Number(option.value), undefined, false);
                     }}
                   />
-                  {loadingPrefijo && (
-                    <span className="text-xs text-gray-500">
-                      Determinando checklist por prefijo...
-                    </span>
-                  )}
                   {errorCampo('vehiculo')}
                 </div>
 

@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.Models.Enums;
@@ -10,66 +9,30 @@ namespace MantenimientoEquipos.Services;
 public class ReporteFallaService
 {
     private readonly MantenimientoDbContext _db;
-    private readonly VehiculoPrefijoConfigService _prefijoConfigService;
 
-    // Formato válido para auto-crear un vehículo desde un reporte: PREFIJO-###
-    // (prefijo alfanumérico, guion, y sufijo numérico). Evita que un dedazo
-    // como "CIR01" o "CIRR-001 " genere basura en la tabla Vehiculos / zonas.
-    private static readonly Regex FormatoCodigoAutoCreacion =
-        new(@"^[A-Za-z0-9]+-\d+$", RegexOptions.Compiled);
-
-    public ReporteFallaService(MantenimientoDbContext db, VehiculoPrefijoConfigService prefijoConfigService)
+    public ReporteFallaService(MantenimientoDbContext db)
     {
         _db = db;
-        _prefijoConfigService = prefijoConfigService;
     }
 
-    private static TipoVehiculoEnum MapearTipoEnum(int tipoVehiculoId)
+    /// <summary>
+    /// El flujo de mantenimiento solo empieza con un vehículo ya registrado y activo en Flota de
+    /// Contenedores (PDF 29-oct, "Registro y administración de vehículos"): ya no se da de alta
+    /// un vehículo desde el reporte de falla.
+    /// </summary>
+    private async Task<Vehiculo> ObtenerVehiculoRegistradoAsync(string codigoVehiculo)
     {
-        return Enum.IsDefined(typeof(TipoVehiculoEnum), tipoVehiculoId)
-            ? (TipoVehiculoEnum)tipoVehiculoId
-            : TipoVehiculoEnum.Carrito;
-    }
-
-    private async Task<Vehiculo> ObtenerOCrearVehiculoAsync(string codigoVehiculo, int userId)
-    {
-        // Normalizamos para que un espacio accidental no cree un vehículo distinto ("CIR-001 " != "CIR-001").
+        // Normalizamos para que un espacio accidental no impida encontrarlo ("CIR-001 " = "CIR-001").
         codigoVehiculo = (codigoVehiculo ?? string.Empty).Trim();
         if (string.IsNullOrEmpty(codigoVehiculo))
             throw new ArgumentException("El código del vehículo es obligatorio.");
 
         var vehiculo = await _db.Vehiculos.FirstOrDefaultAsync(v => v.Codigo == codigoVehiculo && v.Activo);
-        if (vehiculo != null) return vehiculo;
-
-        // A partir de aquí vamos a auto-crear el vehículo. Antes de tocar la tabla
-        // compartida (Vehiculos / zonas de transición) exigimos el formato PREFIJO-###
-        // para no ensuciar logística con códigos mal escritos.
-        if (!FormatoCodigoAutoCreacion.IsMatch(codigoVehiculo))
-            throw new ArgumentException(
-                $"El código \"{codigoVehiculo}\" no existe y no tiene el formato requerido para darlo de alta automáticamente. Usa el formato PREFIJO-### (por ejemplo CIR-001).");
-
-        var tipoPrefijoId = await _prefijoConfigService.GetTipoVehiculoIdByCodigoAsync(codigoVehiculo);
-        if (!tipoPrefijoId.HasValue)
-            throw new ArgumentException("Vehículo no encontrado y no existe un prefijo configurado para determinar su tipo.");
-
-        vehiculo = new Vehiculo
-        {
-            Codigo = codigoVehiculo,
-            Tipo = MapearTipoEnum(tipoPrefijoId.Value),
-            Estado = EstadoVehiculoEnum.Operativo,
-            Ubicacion = UbicacionVehiculoEnum.Piso,
-            Activo = true,
-            CreatedAt = DateTime.UtcNow,
-            CreatedBy = userId,
-            Marca = string.Empty,
-            Modelo = string.Empty,
-            NumeroSerie = string.Empty
-        };
-
-        _db.Vehiculos.Add(vehiculo);
-        await _db.SaveChangesAsync();
-        return vehiculo;
+        return vehiculo ?? throw new ArgumentException(MensajeNoRegistrado(codigoVehiculo));
     }
+
+    private static string MensajeNoRegistrado(string codigoVehiculo) =>
+        $"El vehículo {codigoVehiculo} no está registrado en la plataforma. Regístralo en Flota de Contenedores antes de generar el reporte de falla.";
 
     public async Task<List<ReporteFallaListDto>> GetAllAsync(
         bool? sinOrden = null, 
@@ -215,7 +178,7 @@ public class ReporteFallaService
 
     public async Task<ReporteFalla> CreateAsync(ReporteFallaCreateRequest request, int userId, bool force = false)
     {
-        var vehiculo = await ObtenerOCrearVehiculoAsync(request.CodigoVehiculo, userId);
+        var vehiculo = await ObtenerVehiculoRegistradoAsync(request.CodigoVehiculo);
 
         if (!force)
         {
@@ -339,7 +302,7 @@ public class ReporteFallaService
         if (!traeTrabajos && !traeComponentes)
             throw new ArgumentException("Selecciona al menos un trabajo del checklist o un componente con falla.");
 
-        var vehiculo = await ObtenerOCrearVehiculoAsync(request.CodigoVehiculo, userId);
+        var vehiculo = await ObtenerVehiculoRegistradoAsync(request.CodigoVehiculo);
 
         if (!force)
         {

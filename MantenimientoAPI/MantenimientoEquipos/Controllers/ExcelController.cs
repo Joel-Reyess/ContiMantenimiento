@@ -58,7 +58,7 @@ public class ExcelController : ControllerBase
     }
 
     /// <summary>
-    /// La flota con los filtros de la pantalla ("lo que estoy viendo"): búsqueda, tipo, área y pestaña
+    /// La flota con los filtros de la pantalla ("lo que estoy viendo"): búsqueda, tipo, área, prefijo y pestaña
     /// (excluirTipo = Tugger en la pestaña Contenedores). Mismos filtros que el listado (VehiculoFiltros).
     /// </summary>
     [HttpGet("exportar-flota")]
@@ -67,7 +67,8 @@ public class ExcelController : ControllerBase
         [FromQuery] string? busqueda = null,
         [FromQuery] TipoVehiculoEnum? tipo = null,
         [FromQuery] int? areaId = null,
-        [FromQuery] TipoVehiculoEnum? excluirTipo = null)
+        [FromQuery] TipoVehiculoEnum? excluirTipo = null,
+        [FromQuery] string? prefijo = null)
     {
         var esAdmin = User.IsInRole("SuperUsuario") || User.IsInRole("Administrador");
         List<TipoVehiculoEnum>? tiposPermitidos = null;
@@ -83,6 +84,7 @@ public class ExcelController : ControllerBase
             Tipo = tipo,
             AreaId = areaId,
             ExcluirTipo = excluirTipo,
+            Prefijo = prefijo,
             TiposPermitidos = tiposPermitidos
         };
         var (archivo, _) = await _exportService.ExportarFlotaFiltradaAsync(filtro,

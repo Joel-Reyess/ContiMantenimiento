@@ -178,3 +178,30 @@ public class EliminarVehiculosResultDto
     public int ReportesEliminados { get; set; }
     public int OrdenesEliminadas { get; set; }
 }
+
+/// <summary>
+/// Eliminación por filtro (área, tipo, prefijo; PDF 29-oct). Son los mismos filtros de la pantalla
+/// Flota de Contenedores, así se elimina exactamente lo que se está viendo.
+/// </summary>
+public class EliminarVehiculosPorFiltroRequest
+{
+    public string? Busqueda { get; set; }
+    public TipoVehiculoEnum? Tipo { get; set; }
+    public int? AreaId { get; set; }
+    public string? Prefijo { get; set; }
+    /// <summary>La pestaña "Contenedores" deja fuera a los Tuggers</summary>
+    public TipoVehiculoEnum? ExcluirTipo { get; set; }
+    /// <summary>true: solo regresa cuántos vehículos se eliminarían, sin borrar nada</summary>
+    public bool SoloContar { get; set; }
+    /// <summary>Total que confirmó el usuario; si ya no coincide con los filtros no se elimina nada</summary>
+    public int? TotalConfirmado { get; set; }
+}
+
+public class VistaPreviaEliminacionVehiculosDto
+{
+    public int Total { get; set; }
+    /// <summary>Vehículos con reportes u órdenes (también se borra ese historial)</summary>
+    public int ConHistorial { get; set; }
+    /// <summary>Los primeros códigos, en orden, para mostrarlos al confirmar</summary>
+    public List<string> Codigos { get; set; } = new();
+}

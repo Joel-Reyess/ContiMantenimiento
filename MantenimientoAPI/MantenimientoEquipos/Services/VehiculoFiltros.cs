@@ -13,6 +13,8 @@ public class FiltroVehiculos
     /// <summary>Líder/Supervisor: solo los tipos que tiene asignados</summary>
     public List<TipoVehiculoEnum>? TiposPermitidos { get; set; }
     public string? Busqueda { get; set; }
+    /// <summary>Prefijo del código (catálogo de prefijos), con el mismo criterio que la detección del tipo</summary>
+    public string? Prefijo { get; set; }
     /// <summary>La pestaña "Contenedores" deja fuera a los Tuggers (tienen su propia pestaña)</summary>
     public TipoVehiculoEnum? ExcluirTipo { get; set; }
     public bool SoloActivos { get; set; } = true;
@@ -49,6 +51,16 @@ public static class VehiculoFiltros
 
         if (f.Ubicacion.HasValue)
             query = query.Where(v => v.Ubicacion == f.Ubicacion.Value);
+
+        if (!string.IsNullOrWhiteSpace(f.Prefijo))
+        {
+            // El código empieza con el prefijo y no con otro prefijo activo más largo que también empiece así
+            // ("CDC-001" es de CDC, no de CD): gana el más largo, igual que al detectar el tipo
+            var prefijo = f.Prefijo.Trim();
+            query = query.Where(v => v.Codigo.StartsWith(prefijo) &&
+                !db.VehiculoPrefijoConfigs.Any(p => p.Activo && p.PrefijoCodigo.Length > prefijo.Length &&
+                    p.PrefijoCodigo.StartsWith(prefijo) && v.Codigo.StartsWith(p.PrefijoCodigo)));
+        }
 
         if (!string.IsNullOrEmpty(f.Busqueda))
         {

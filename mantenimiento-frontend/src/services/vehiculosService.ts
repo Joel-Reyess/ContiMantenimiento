@@ -18,6 +18,8 @@ export interface VehiculoFilters {
   soloActivos?: boolean;
   /** La pestaña "Contenedores" deja fuera a los Tuggers */
   excluirTipo?: number;
+  /** Prefijo del código (catálogo de prefijos) */
+  prefijo?: string;
   page?: number;
   pageSize?: number;
 }
@@ -44,6 +46,23 @@ export interface EliminarVehiculosResult {
   ordenesEliminadas: number;
 }
 
+/** Filtros de la pantalla Flota de Contenedores con los que se elimina por filtro */
+export interface FiltrosEliminacionVehiculos {
+  busqueda?: string;
+  tipo?: number;
+  areaId?: number;
+  prefijo?: string;
+  excluirTipo?: number;
+}
+
+export interface VistaPreviaEliminacionVehiculos {
+  total: number;
+  /** Con reportes u órdenes: también se borra ese historial */
+  conHistorial: number;
+  /** Los primeros códigos, para mostrarlos al confirmar */
+  codigos: string[];
+}
+
 export const vehiculosService = {
   async getAll(filters?: VehiculoFilters): Promise<ApiResponse<PaginatedResponse<VehiculoList>>> {
     const params = new URLSearchParams();
@@ -56,6 +75,7 @@ export const vehiculosService = {
       if (filters.busqueda) params.append('busqueda', filters.busqueda);
       if (filters.soloActivos !== undefined) params.append('soloActivos', filters.soloActivos.toString());
       if (filters.excluirTipo !== undefined) params.append('excluirTipo', filters.excluirTipo.toString());
+      if (filters.prefijo) params.append('prefijo', filters.prefijo);
       if (filters.page !== undefined) params.append('page', filters.page.toString());
       if (filters.pageSize !== undefined) params.append('pageSize', filters.pageSize.toString());
     }
@@ -92,6 +112,16 @@ export const vehiculosService = {
 
   async deleteMany(ids: number[]): Promise<ApiResponse<EliminarVehiculosResult>> {
     return await httpClient.post<EliminarVehiculosResult>('/vehiculos/eliminar', { ids });
+  },
+
+  /** Cuántos y cuáles vehículos se eliminarían con estos filtros (no borra nada) */
+  async vistaPreviaEliminarPorFiltro(filtros: FiltrosEliminacionVehiculos): Promise<ApiResponse<VistaPreviaEliminacionVehiculos>> {
+    return await httpClient.post<VistaPreviaEliminacionVehiculos>('/vehiculos/eliminar-filtro', { ...filtros, soloContar: true });
+  },
+
+  /** Elimina los vehículos de los filtros; totalConfirmado es lo que vio el usuario (si cambió, no borra nada) */
+  async eliminarPorFiltro(filtros: FiltrosEliminacionVehiculos, totalConfirmado: number): Promise<ApiResponse<EliminarVehiculosResult>> {
+    return await httpClient.post<EliminarVehiculosResult>('/vehiculos/eliminar-filtro', { ...filtros, totalConfirmado });
   },
 
   async cambiarEstado(id: number, estado: number): Promise<ApiResponse<Vehiculo>> {

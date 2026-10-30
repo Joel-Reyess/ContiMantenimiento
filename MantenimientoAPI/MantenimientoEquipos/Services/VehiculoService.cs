@@ -37,7 +37,8 @@ public class VehiculoService
         string? busqueda = null,
         int page = 1,
         int pageSize = 10,
-        TipoVehiculoEnum? excluirTipo = null)
+        TipoVehiculoEnum? excluirTipo = null,
+        string? prefijo = null)
     {
         // Los filtros viven en VehiculoFiltros: la exportación a Excel de "lo que estoy viendo" usa los mismos
         var query = VehiculoFiltros.Aplicar(_db,
@@ -50,7 +51,8 @@ public class VehiculoService
                 Ubicacion = ubicacion,
                 TiposPermitidos = tiposPermitidos,
                 Busqueda = busqueda,
-                ExcluirTipo = excluirTipo
+                ExcluirTipo = excluirTipo,
+                Prefijo = prefijo
             });
 
         var totalItems = await query.CountAsync();
@@ -360,6 +362,21 @@ public class VehiculoService
             OrdenesEliminadas = ordenesEliminadas
         };
     }
+
+    /// <summary>Cuántos vehículos cumplen los filtros (y cuáles), antes de eliminarlos por filtro</summary>
+    public async Task<VistaPreviaEliminacionVehiculosDto> VistaPreviaPorFiltroAsync(FiltroVehiculos filtro)
+    {
+        var query = VehiculoFiltros.Aplicar(_db, _db.Vehiculos.AsNoTracking(), filtro);
+        return new VistaPreviaEliminacionVehiculosDto
+        {
+            Total = await query.CountAsync(),
+            ConHistorial = await query.CountAsync(v => v.Reportes.Any() || v.OrdenesTrabajo.Any()),
+            Codigos = await query.OrderBy(v => v.Codigo).Select(v => v.Codigo).Take(50).ToListAsync()
+        };
+    }
+
+    public async Task<List<int>> IdsPorFiltroAsync(FiltroVehiculos filtro) =>
+        await VehiculoFiltros.Aplicar(_db, _db.Vehiculos.AsNoTracking(), filtro).Select(v => v.Id).ToListAsync();
 
     public async Task<bool> ExisteCodigoAsync(string codigo, int? excludeId = null)
     {
