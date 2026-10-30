@@ -25,13 +25,9 @@ public class OrdenesController : ControllerBase
     private readonly LiderTipoVehiculoAsignacionService _asignacionService;
 
     private readonly EliminacionService _eliminacion;
-    private readonly FlujoService _flujo;
-    private readonly FlujoAvisos _avisos;
 
-    public OrdenesController(OrdenTrabajoService ordenService, NotificacionService notificacionService, IWebHostEnvironment env, LiderTipoVehiculoAsignacionService asignacionService, EliminacionService eliminacion, FlujoService flujo, FlujoAvisos avisos)
+    public OrdenesController(OrdenTrabajoService ordenService, NotificacionService notificacionService, IWebHostEnvironment env, LiderTipoVehiculoAsignacionService asignacionService, EliminacionService eliminacion)
     {
-        _flujo = flujo;
-        _avisos = avisos;
         _eliminacion = eliminacion;
         _ordenService = ordenService;
         _notificacionService = notificacionService;
@@ -108,11 +104,9 @@ public class OrdenesController : ControllerBase
     [RolesAllowed("SuperUsuario", "Administrador")]
     public async Task<IActionResult> Delete(int id)
     {
-        var filasAntes = await _flujo.FilasBloqueadasAsync();
         var r = await _eliminacion.EliminarOrdenConRegistroAsync(id, User.UsuarioId(), User.NombreUsuario());
         if (r.Ordenes == 0)
             return NotFound(ApiResponse<string>.Error("Orden de trabajo no encontrada"));
-        await _flujo.AvisarCambiosEnFilasAsync(filasAntes, User.UsuarioId());
         return Ok(ApiResponse<EliminacionResultadoDto>.Ok(r, $"Orden de trabajo {r.Folios[0]} eliminada"));
     }
 
@@ -169,19 +163,11 @@ public class OrdenesController : ControllerBase
     /// Asigna un técnico a una orden de trabajo
     /// </summary>
     [HttpPost("{id}/asignar")]
-    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")] // El técnico no asigna: acepta la orden (flujo de 7 etapas)
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico")]
     public async Task<IActionResult> AsignarTecnico(int id, [FromBody] AsignarTecnicoRequest request)
     {
         var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-        bool result;
-        try
-        {
-            result = await _ordenService.AsignarTecnicoAsync(id, request.TecnicoId, userId, request.FirmaAsignacionTexto);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(ApiResponse<string>.Error(ex.Message));
-        }
+        var result = await _ordenService.AsignarTecnicoAsync(id, request.TecnicoId, userId, request.FirmaAsignacionTexto);
 
         if (!result)
             return NotFound(ApiResponse<string>.Error("Orden de trabajo no encontrada"));
@@ -201,23 +187,12 @@ public class OrdenesController : ControllerBase
     public async Task<IActionResult> IniciarTrabajo(int id, [FromBody] IniciarTrabajoRequest request)
     {
         var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-        if (await NoEsSuOrdenAsync(id, userId))
-            return StatusCode(403, ApiResponse<string>.Error("Solo el técnico asignado a la orden puede hacer esto."));
-        bool result;
-        try
-        {
-            result = await _ordenService.IniciarTrabajoAsync(id, request.Diagnostico, userId);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(ApiResponse<string>.Error(ex.Message));
-        }
+        var result = await _ordenService.IniciarTrabajoAsync(id, request.Diagnostico, userId);
 
         if (!result)
             return NotFound(ApiResponse<string>.Error("Orden de trabajo no encontrada"));
 
-        await _avisos.ReparacionEnProcesoAsync(id, userId);
-        return Ok(ApiResponse<string>.Ok("Reparación iniciada"));
+        return Ok(ApiResponse<string>.Ok("Trabajo iniciado correctamente"));
     }
 
     /// <summary>
@@ -230,17 +205,16 @@ public class OrdenesController : ControllerBase
         try
         {
             var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-            if (await NoEsSuOrdenAsync(id, userId))
-                return StatusCode(403, ApiResponse<string>.Error("Solo el técnico asignado a la orden puede hacer esto."));
-            var filasAntes = await _flujo.FilasBloqueadasAsync();
             var result = await _ordenService.CompletarTrabajoAsync(id, request, userId);
 
             if (!result)
                 return NotFound(ApiResponse<string>.Error("Orden de trabajo no encontrada"));
 
-            await _avisos.ReparacionConcluidaAsync(id, userId);
-            // Si la zona de reparados está llena, la unidad queda en fila y se avisa al taller, al Líder y al Gerente
-            await _flujo.AvisarCambiosEnFilasAsync(filasAntes, userId);
+            var detalle = await _ordenService.GetByIdAsync(id);
+            if (detalle != null)
+            {
+                await _notificacionService.NotificarOrdenListaParaEntregaAsync(detalle.Folio, detalle.Id, detalle.VehiculoCodigo);
+            }
 
             return Ok(ApiResponse<string>.Ok("Trabajo completado correctamente"));
         }
@@ -254,62 +228,32 @@ public class OrdenesController : ControllerBase
     /// El supervisor valida una orden completada
     /// </summary>
     [HttpPost("{id}/validar")]
-    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Lider")]
-    public Task<IActionResult> ValidarOrden(int id, [FromBody] ValidarOrdenRequest request) =>
-        ValidarReparacion(id, request.Aprobado, request.Observaciones);
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
+    public async Task<IActionResult> ValidarOrden(int id, [FromBody] ValidarOrdenRequest request)
+    {
+        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var result = await _ordenService.ValidarOrdenAsync(id, request.Aprobado, request.Observaciones, userId);
+
+        if (!result)
+            return NotFound(ApiResponse<string>.Error("Orden de trabajo no encontrada"));
+
+        return Ok(ApiResponse<string>.Ok(request.Aprobado ? "Orden validada correctamente" : "Orden devuelta para corrección"));
+    }
 
     /// <summary>
-    /// Aprueba o rechaza la reparación. Desde el flujo de 7 etapas basta una validación (Líder o Gerente de
-    /// Mantenimiento); la detallada, con los puntos a corregir, está en POST /api/flujo/ordenes/{id}/validar
+    /// Aprueba o rechaza una orden (Lider o Supervisor)
     /// </summary>
     [HttpPost("{id}/aprobar")]
     [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Lider")]
-    public Task<IActionResult> AprobarOrden(int id, [FromBody] AprobarOrdenRequest request) =>
-        ValidarReparacion(id, request.Aprobado, request.Comentarios);
-
-    /// <summary>Un técnico solo trabaja sus órdenes; supervisión y administración, cualquiera</summary>
-    private async Task<bool> NoEsSuOrdenAsync(int ordenId, int userId)
+    public async Task<IActionResult> AprobarOrden(int id, [FromBody] AprobarOrdenRequest request)
     {
-        if (User.IsInRole("SuperUsuario") || User.IsInRole("Administrador") || User.IsInRole("Supervisor")) return false;
-        var tecnico = (await _ordenService.GetByIdAsync(ordenId))?.TecnicoAsignadoId;
-        return tecnico.HasValue && tecnico != userId;
-    }
+        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var result = await _ordenService.AprobarOrdenAsync(id, request, userId);
 
-    /// <summary>Cancela la orden con su motivo (antes la pantalla llamaba a esta ruta y no existía)</summary>
-    [HttpPost("{id}/cancelar")]
-    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
-    public async Task<IActionResult> Cancelar(int id, [FromBody] CancelarOrdenRequest request)
-    {
-        try
-        {
-            var r = await _flujo.CancelarOrdenAsync(id, request.Motivo, User.UsuarioFlujo());
-            return Ok(ApiResponse<ResultadoFlujoDto>.Ok(r, r.Mensaje));
-        }
-        catch (FlujoException ex)
-        {
-            return StatusCode(ex.Status, ex.Codigo == null ? ApiResponse<string>.Error(ex.Message) : ApiResponse<string>.Error(ex.Message, ex.Codigo));
-        }
-        catch (Exception ex) when (ex is DbUpdateException || ex is Microsoft.Data.SqlClient.SqlException || ex.InnerException is Microsoft.Data.SqlClient.SqlException)
-        {
-            return Conflict(ApiResponse<string>.Error("Otro usuario hizo un cambio en este momento. Actualiza la pantalla e inténtalo de nuevo."));
-        }
-    }
+        if (!result)
+            return NotFound(ApiResponse<string>.Error("Orden de trabajo no encontrada"));
 
-    private async Task<IActionResult> ValidarReparacion(int id, bool aprobado, string? observacion)
-    {
-        try
-        {
-            var r = await _flujo.ValidarReparacionAsync(id, new ValidarReparacionRequest { Aprobado = aprobado, Observacion = observacion }, User.UsuarioFlujo());
-            return Ok(ApiResponse<ResultadoFlujoDto>.Ok(r, r.Mensaje));
-        }
-        catch (FlujoException ex)
-        {
-            return StatusCode(ex.Status, ex.Codigo == null ? ApiResponse<string>.Error(ex.Message) : ApiResponse<string>.Error(ex.Message, ex.Codigo));
-        }
-        catch (Exception ex) when (ex is DbUpdateException || ex is Microsoft.Data.SqlClient.SqlException || ex.InnerException is Microsoft.Data.SqlClient.SqlException)
-        {
-            return Conflict(ApiResponse<string>.Error("Otro usuario hizo un cambio en este momento. Actualiza la pantalla e inténtalo de nuevo."));
-        }
+        return Ok(ApiResponse<string>.Ok(request.Aprobado ? "Orden aprobada correctamente" : "Orden rechazada"));
     }
 
     /// <summary>
@@ -321,12 +265,12 @@ public class OrdenesController : ControllerBase
         var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
         var ordenes = await _ordenService.GetAllAsync(estado, userId);
 
-        // Para tecnicos, por defecto se muestran solo ordenes activas en "Mis Ordenes" (incluye las terminadas
-        // que aún debe entregar en la Zona de Transición). Si envian estado explicito por query, se respeta tal cual.
+        // Para tecnicos, por defecto se muestran solo ordenes activas en "Mis Ordenes".
+        // Si envian estado explicito por query, se respeta tal cual.
         if (!estado.HasValue)
         {
             ordenes = ordenes
-                .Where(o => (o.Estado != EstadoOrdenTrabajoEnum.Completada || o.PorEntregarEnZona)
+                .Where(o => o.Estado != EstadoOrdenTrabajoEnum.Completada
                          && o.Estado != EstadoOrdenTrabajoEnum.Validada
                          && o.Estado != EstadoOrdenTrabajoEnum.Cancelada
                          && o.Estado != EstadoOrdenTrabajoEnum.Entregado)

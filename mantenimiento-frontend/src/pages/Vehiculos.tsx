@@ -75,8 +75,6 @@ export function VehiculosPage() {
   const [loadingTipos, setLoadingTipos] = useState(true);
 
   const canDelete = hasRole(['SuperUsuario', 'Administrador']);
-  // El Líder solo consulta la flota: sin alta, edición ni exportación
-  const puedeEditar = hasRole(['SuperUsuario', 'Administrador', 'Supervisor']);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [deleteTargets, setDeleteTargets] = useState<VehiculoList[] | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -507,12 +505,10 @@ export function VehiculosPage() {
           <UbicacionLegend className="mt-3" />
         </div>
         <div className="flex flex-wrap gap-2">
-          {puedeEditar && (
-            <Button variant="outline" className="flex items-center gap-2" onClick={handleExportar} disabled={exportando}>
-              {exportando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              Exportar Excel
-            </Button>
-          )}
+          <Button variant="outline" className="flex items-center gap-2" onClick={handleExportar} disabled={exportando}>
+            {exportando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Exportar Excel
+          </Button>
           {canDelete && (
             <Button
               variant="outline"
@@ -526,7 +522,7 @@ export function VehiculosPage() {
               Importar Excel
             </Button>
           )}
-          {puedeEditar && (
+          {hasRole(['SuperUsuario', 'Administrador', 'Supervisor']) && (
             <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={openCreate}>
               <Plus className="h-4 w-4" />
               Nuevo vehiculo
@@ -736,7 +732,7 @@ export function VehiculosPage() {
                 <p>Reportes: {v.totalReportes ?? 0}</p>
                 {v.notas && typeof v.notas === 'string' && <p>Notas: {v.notas}</p>}
               </div>
-              {puedeEditar && (
+              {hasRole(['SuperUsuario', 'Administrador', 'Supervisor']) && (
                 <div className="pt-3 flex gap-2">
                   <Button size="sm" variant="outline" onClick={() => openEdit(v.id)}>
                     Editar
@@ -918,8 +914,7 @@ export function VehiculosPage() {
           />
           <VehiculoFotosInput
             existentes={fotosExistentes.filter((f) => !fotosQuitadas.includes(f.id))}
-            // Quitar fotos ya guardadas es eliminar datos: solo administradores
-            onQuitarExistente={canDelete ? (id) => setFotosQuitadas((prev) => [...prev, id]) : undefined}
+            onQuitarExistente={(id) => setFotosQuitadas((prev) => [...prev, id])}
             nuevas={fotosNuevas}
             onAgregar={(files) => setFotosNuevas((prev) => [...prev, ...files])}
             onQuitarNueva={(i) => setFotosNuevas((prev) => prev.filter((_, idx) => idx !== i))}

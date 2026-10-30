@@ -70,7 +70,6 @@ public class RefaccionesController : ControllerBase
     /// Crea una nueva solicitud de refacción
     /// </summary>
     [HttpPost]
-    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico")] // Solicitar materiales: Técnico (y quien administra el taller)
     public async Task<IActionResult> Create([FromBody] SolicitudRefaccionCreateRequest request)
     {
         try
@@ -91,7 +90,6 @@ public class RefaccionesController : ControllerBase
     /// Crea múltiples solicitudes de refacción en un solo pedido
     /// </summary>
     [HttpPost("lote")]
-    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico")]
     public async Task<IActionResult> CreateBatch([FromBody] SolicitudRefaccionBatchRequest request)
     {
         if (request.Solicitudes == null || request.Solicitudes.Count == 0)

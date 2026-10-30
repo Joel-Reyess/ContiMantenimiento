@@ -23,8 +23,6 @@ public class ReporteFallaDto
     public bool PuedeOperar { get; set; }
     public DateTime FechaReporte { get; set; }
     public bool TieneOrdenTrabajo { get; set; }
-    /// <summary>INSPECCIÓN del flujo: 0 en validación, 1 validado, 2 rechazado</summary>
-    public EstadoInspeccionEnum EstadoInspeccion { get; set; }
     public int? OrdenTrabajoId { get; set; }
     public List<EvidenciaDto> Evidencias { get; set; } = new();
     public List<ReporteFallaChecklistItemDto> ItemsChecklist { get; set; } = new();
@@ -76,8 +74,6 @@ public class ReporteFallaListDto
     public string? TipoMantenimiento { get; set; }
     public DateTime FechaReporte { get; set; }
     public bool TieneOrdenTrabajo { get; set; }
-    /// <summary>INSPECCIÓN del flujo: 0 en validación, 1 validado, 2 rechazado</summary>
-    public EstadoInspeccionEnum EstadoInspeccion { get; set; }
     public string? ReportadoPorNombre { get; set; }
     public int CantidadEvidencias { get; set; }
 }

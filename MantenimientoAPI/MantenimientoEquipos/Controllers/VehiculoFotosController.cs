@@ -50,7 +50,7 @@ public class VehiculoFotosController : ControllerBase
     }
 
     [HttpDelete("{id:int}")]
-    [RolesAllowed("SuperUsuario", "Administrador")] // El Supervisor no elimina datos
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
     public async Task<IActionResult> Delete(int vehiculoId, int id)
     {
         var ok = await _service.DeleteFotoAsync(vehiculoId, id);

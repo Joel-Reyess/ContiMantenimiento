@@ -86,8 +86,6 @@ export function MaterialesUnificadoPage() {
   // Eliminar solicitudes: solo administradores (estandarización de eliminación)
   const canEliminarSolicitud = hasRole(['SuperUsuario', 'Administrador']);
   const canImport = hasRole(['SuperUsuario', 'Administrador']);
-  // El Técnico consulta el inventario y solicita materiales; aprobar, entregar y exportar es del Supervisor
-  const puedeAprobar = hasRole(['SuperUsuario', 'Administrador', 'Supervisor']);
   const [importOpen, setImportOpen] = useState(false);
   const [exportando, setExportando] = useState(false);
   const [mensajeExcel, setMensajeExcel] = useState<{ tipo: 'success' | 'destructive'; texto: string } | null>(null);
@@ -498,7 +496,6 @@ export function MaterialesUnificadoPage() {
               <Button variant="outline" onClick={loadStock}>
                 <RefreshCcw className="h-4 w-4 mr-1" /> Actualizar
               </Button>
-              {puedeAprobar && (
               <Button
                 variant="outline"
                 disabled={exportando}
@@ -516,7 +513,6 @@ export function MaterialesUnificadoPage() {
               >
                 {exportando ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Download className="h-4 w-4 mr-1" />} Exportar Excel
               </Button>
-              )}
               {canImport && (
                 <Button
                   variant="outline"
@@ -528,12 +524,9 @@ export function MaterialesUnificadoPage() {
                   <Upload className="h-4 w-4 mr-1" /> Importar Excel
                 </Button>
               )}
-              {/* Dar de alta materiales: el servidor solo lo permite a administradores */}
-              {canImport && (
-                <Button onClick={() => { setErrorStock(''); setShowCreate(true); }}>
-                  <Plus className="h-4 w-4 mr-1" /> Nuevo
-                </Button>
-              )}
+              <Button onClick={() => { setErrorStock(''); setShowCreate(true); }}>
+                <Plus className="h-4 w-4 mr-1" /> Nuevo
+              </Button>
             </div>
           </div>
 
@@ -671,7 +664,7 @@ export function MaterialesUnificadoPage() {
                     <div className="flex flex-col items-end gap-3">
                       <Badge variant={badgeVariant(item.estado)}>{item.estado}</Badge>
                       <div className="flex gap-3">
-                        {puedeAprobar && item.estado.toLowerCase().includes('pend') && (
+                        {item.estado.toLowerCase().includes('pend') && (
                           <>
                             <Button size="sm" onClick={() => handleAprobar(item.id)} disabled={accionando} className="flex items-center gap-1">
                               <CheckCircle className="h-4 w-4" />
@@ -683,7 +676,7 @@ export function MaterialesUnificadoPage() {
                             </Button>
                           </>
                         )}
-                        {puedeAprobar && item.estado.toLowerCase().includes('aprob') && (
+                        {item.estado.toLowerCase().includes('aprob') && (
                           <Button size="sm" onClick={() => handleEntregar(item.id)} disabled={accionando} className="flex items-center gap-1">
                             <CheckCircle className="h-4 w-4" />
                             Entregar

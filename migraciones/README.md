@@ -1,16 +1,5 @@
 # migraciones — Poner tu base de datos al día (SQL manual)
 
-## ⭐ Nuevo (oct-2026): flujo de 7 etapas y capacidad de la Zona de Transición
-Corre **`16_flujo_7_etapas.sql`** en la base de producción **antes** de publicar la versión nueva de la API.
-- Agrega las columnas de inspección (reportes), traslados y aceptación (órdenes), hallazgos del taller,
-  la tabla `HistorialFlujo` y la capacidad de cada zona (15 y 15; se cambia en Configuración → Zona de Transición).
-- Acomoda lo que ya existe: reportes con orden = validados; reportes sin orden = pendientes de inspección del Líder;
-  órdenes abiertas = ya trasladadas; asignadas o más = aceptadas; completadas = ya entregadas en zona de reparados.
-- Se puede correr dos veces sin problema (no duplica ni cambia lo ya migrado). Haz respaldo antes.
-
----
-
-
 Tu base `MantenimientoEquiposDB` está **atrasada** respecto al código del repo.
 Le faltan **8 tablas**. Se dividen en dos grupos por la forma correcta de aplicarlas.
 

@@ -35,7 +35,4 @@ public class OrdenTrabajoChecklistItem
 
     [MaxLength(500)]
     public string? FotoUrl { get; set; }
-
-    /// <summary>Hallazgo agregado por el técnico en la revisión de recepción ("Reportado por Taller")</summary>
-    public bool ReportadoPorTaller { get; set; }
 }

@@ -27,7 +27,6 @@ public class OrdenTrabajoChecklistItemsController : ControllerBase
     /// Obtiene todos los ítems del checklist asignados a una orden de trabajo específica
     /// </summary>
     [HttpGet("orden-trabajo/{ordenTrabajoId}")]
-    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico", "Lider", "Operador")]
     public async Task<IActionResult> GetAllByOrdenTrabajoId(int ordenTrabajoId)
     {
         var items = await _service.GetAllByOrdenTrabajoIdAsync(ordenTrabajoId);
@@ -75,7 +74,7 @@ public class OrdenTrabajoChecklistItemsController : ControllerBase
     /// Elimina una asignación de ítem del checklist a una orden de trabajo
     /// </summary>
     [HttpDelete("{id}")]
-    [RolesAllowed("SuperUsuario", "Administrador")] // Supervisor y Líder no eliminan datos
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Lider")]
     public async Task<IActionResult> Delete(int id)
     {
         var success = await _service.DeleteAsync(id);
@@ -107,7 +106,7 @@ public class OrdenTrabajoChecklistItemsController : ControllerBase
     /// Obtiene los ítems del checklist más parecidos al nombre del vehículo
     /// </summary>
     [HttpGet("similares-por-vehiculo/{nombreVehiculo}")]
-    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico", "Lider", "Operador")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Lider", "Tecnico")]
     public async Task<IActionResult> GetSimilaresPorVehiculo(string nombreVehiculo)
     {
         var items = await _service.GetChecklistItemsSimilaresPorVehiculoAsync(nombreVehiculo);
@@ -118,7 +117,7 @@ public class OrdenTrabajoChecklistItemsController : ControllerBase
     /// Obtiene los ítems del checklist asignados a una orden de trabajo específica
     /// </summary>
     [HttpGet("por-orden/{ordenTrabajoId}")]
-    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico", "Lider", "Operador")] // Líder y Operador consultan órdenes
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Lider", "Tecnico")]
     public async Task<IActionResult> GetPorOrden(int ordenTrabajoId)
     {
         // Verificar que la orden de trabajo exista y pertenezca al usuario o área correspondiente

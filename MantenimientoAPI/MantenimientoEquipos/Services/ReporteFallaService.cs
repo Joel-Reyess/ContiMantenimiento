@@ -79,8 +79,7 @@ public class ReporteFallaService
         List<TipoVehiculoEnum>? tiposPermitidos = null,
         string? busqueda = null,
         PrioridadEnum? prioridad = null,
-        int? categoriaId = null,
-        int? reportadoPorId = null)
+        int? categoriaId = null)
     {
         var query = _db.ReportesFalla
             .Include(r => r.Vehiculo)
@@ -93,9 +92,6 @@ public class ReporteFallaService
         {
             query = query.Where(r => tiposPermitidos.Contains(r.Vehiculo.Tipo));
         }
-
-        if (reportadoPorId.HasValue)
-            query = query.Where(r => r.ReportadoPorId == reportadoPorId.Value);
 
         if (sinOrden == true)
             query = query.Where(r => !r.TieneOrdenTrabajo);
@@ -139,7 +135,6 @@ public class ReporteFallaService
                 TipoMantenimiento = r.TipoMantenimiento,
                 FechaReporte = r.FechaReporte,
                 TieneOrdenTrabajo = r.TieneOrdenTrabajo,
-                EstadoInspeccion = r.EstadoInspeccion,
                 ReportadoPorNombre = r.ReportadoPor.NombreCompleto,
                 CantidadEvidencias = r.Evidencias.Count
             }).ToListAsync();
@@ -180,7 +175,6 @@ public class ReporteFallaService
                 PuedeOperar = r.PuedeOperar,
                 FechaReporte = r.FechaReporte,
                 TieneOrdenTrabajo = r.TieneOrdenTrabajo,
-                EstadoInspeccion = r.EstadoInspeccion,
                 OrdenTrabajoId = r.OrdenTrabajo != null ? r.OrdenTrabajo.Id : null,
                 Evidencias = r.Evidencias.Select(e => new EvidenciaDto
                 {

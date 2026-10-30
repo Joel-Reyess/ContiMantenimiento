@@ -73,7 +73,7 @@ public class ImageFaultsController : ControllerBase
 
     // POST: api/ImageFaults
     [HttpPost]
-    [RolesAllowed("SuperUsuario", "Administrador")] // Hotspots: solo administración
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
     [ProducesResponseType(StatusCodes.Status201Created, Type = typeof(ApiResponse<ImageFaultDto>))]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> PostImageFault([FromBody] ImageFaultCreateDto createDto)
@@ -118,7 +118,7 @@ public class ImageFaultsController : ControllerBase
 
     // PUT: api/ImageFaults/5
     [HttpPut("{id:int}")]
-    [RolesAllowed("SuperUsuario", "Administrador")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
     [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(ApiResponse<ImageFaultDto>))]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -166,7 +166,7 @@ public class ImageFaultsController : ControllerBase
 
     // DELETE: api/ImageFaults/5
     [HttpDelete("{id:int}")]
-    [RolesAllowed("SuperUsuario", "Administrador")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
     [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(ApiResponse<bool>))]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteImageFault(int id)

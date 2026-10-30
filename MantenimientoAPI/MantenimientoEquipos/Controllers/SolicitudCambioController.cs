@@ -81,7 +81,6 @@ namespace MantenimientoEquipos.Controllers
         }
 
         [HttpPost]
-        [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico")]
         public async Task<ActionResult<ApiResponse<SolicitudCambioDto>>> Create(CreateSolicitudCambioDto dto)
         {
             var userId = GetUserId();

@@ -365,8 +365,8 @@ public class DashboardService
         return await _db.OrdenesTrabajo
             .Include(o => o.Vehiculo)
             .Include(o => o.TecnicoAsignado)
-            // Terminadas y aún sin la validación final (una sola: Líder o Gerente de Mantenimiento)
-            .Where(o => o.Estado == EstadoOrdenTrabajoEnum.Completada)
+            .Where(o => (o.Estado == EstadoOrdenTrabajoEnum.Completada || o.Estado == EstadoOrdenTrabajoEnum.Validada) 
+                        && o.EstadoAprobacionLider == EstadoAprobacionEnum.Pendiente)
             .OrderByDescending(o => o.FechaFinalizacion)
             .Select(o => new OrdenSinFirmaDto
             {

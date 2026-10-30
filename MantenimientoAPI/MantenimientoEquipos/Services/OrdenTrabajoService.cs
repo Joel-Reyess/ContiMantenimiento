@@ -109,10 +109,7 @@ public class OrdenTrabajoService
                 PrioridadNombre = o.Prioridad.ToString(),
                 TipoMantenimiento = o.TipoMantenimiento,
                 FechaCreacion = o.FechaCreacion,
-                FechaFinalizacion = o.FechaFinalizacion,
-                EstadoAprobacionLider = o.EstadoAprobacionLider,
-                EstadoAprobacionSupervisor = o.EstadoAprobacionSupervisor,
-                PorEntregarEnZona = o.Estado == EstadoOrdenTrabajoEnum.Completada && o.FechaTrasladoRetorno == null
+                FechaFinalizacion = o.FechaFinalizacion
             }).ToListAsync();
     }
 
@@ -398,11 +395,6 @@ public class OrdenTrabajoService
 
             if (reporte != null)
             {
-                // La orden de un reporte nace de su validación (INSPECCIÓN); no se puede crear antes
-                if (reporte.EstadoInspeccion == EstadoInspeccionEnum.Rechazado)
-                    throw new InvalidOperationException("El reporte fue rechazado en la inspección: el Líder debe corregirlo y reenviarlo.");
-                if (reporte.EstadoInspeccion == EstadoInspeccionEnum.Pendiente)
-                    throw new InvalidOperationException("El reporte aún no se valida: el Líder debe validarlo en la inspección y con eso se genera la orden.");
                 reporte.TieneOrdenTrabajo = true;
 
                 // Copiar items del checklist del reporte a la orden de trabajo
@@ -424,10 +416,11 @@ public class OrdenTrabajoService
             }
         }
 
-        // El vehículo queda en reparación; su ubicación cambia hasta que se confirma el traslado a la Zona de Transición
+        // Cambiar estado y ubicación del vehículo (ya cargado arriba con el Include)
         if (vehiculo != null)
         {
             vehiculo.Estado = EstadoVehiculoEnum.EnReparacion;
+            vehiculo.Ubicacion = UbicacionVehiculoEnum.TransicionPorReparar;
         }
 
         await _db.SaveChangesAsync();
@@ -456,21 +449,20 @@ public class OrdenTrabajoService
             .FirstOrDefaultAsync(o => o.Id == ordenId);
             
         if (orden == null) return false;
-        if (orden.Estado != EstadoOrdenTrabajoEnum.Pendiente && orden.Estado != EstadoOrdenTrabajoEnum.Asignada
-            && orden.Estado != EstadoOrdenTrabajoEnum.EnProceso && orden.Estado != EstadoOrdenTrabajoEnum.EsperandoRefacciones)
-            throw new InvalidOperationException("Solo se puede asignar técnico a una orden que no se ha terminado.");
 
         orden.TecnicoAsignadoId = tecnicoId;
-        // Cambiar de técnico no regresa la orden de etapa (si ya estaba en revisión o en proceso, sigue igual)
-        if (orden.Estado == EstadoOrdenTrabajoEnum.Pendiente)
-            orden.Estado = EstadoOrdenTrabajoEnum.Asignada;
+        orden.Estado = EstadoOrdenTrabajoEnum.Asignada;
         orden.FechaAsignacion = DateTime.UtcNow;
         orden.FirmaAsignacionTexto = firmaAsignacionTexto;
         orden.FechaFirmaAsignacion = DateTime.UtcNow;
         orden.FirmadoPorId = userId;
         orden.UpdatedAt = DateTime.UtcNow;
-        // La unidad pasa al taller cuando el técnico acepta la orden (flujo de 7 etapas), no al asignarla
-        await FlujoHistorial.AgregarAsync(_db, orden.ReporteFallaId, orden.Id, "TALLER", "Asignada", userId, "Técnico asignado");
+
+        // Actualizar ubicación del vehículo a Taller
+        if (orden.Vehiculo != null)
+        {
+            orden.Vehiculo.Ubicacion = UbicacionVehiculoEnum.Taller;
+        }
 
         await _db.SaveChangesAsync();
         return true;
@@ -482,17 +474,11 @@ public class OrdenTrabajoService
             .Include(o => o.Vehiculo)
             .FirstOrDefaultAsync(o => o.Id == ordenId);
         if (orden == null) return false;
-        if (orden.FechaAceptacion == null)
-            throw new InvalidOperationException("El técnico debe aceptar la orden antes de iniciar la reparación.");
-        if (orden.Estado != EstadoOrdenTrabajoEnum.Asignada && orden.Estado != EstadoOrdenTrabajoEnum.EsperandoRefacciones)
-            throw new InvalidOperationException("La orden no está en revisión: no se puede iniciar.");
 
         orden.Estado = EstadoOrdenTrabajoEnum.EnProceso;
-        orden.FechaInicio ??= DateTime.UtcNow;
+        orden.FechaInicio = DateTime.UtcNow;
         orden.Diagnostico = diagnostico;
         orden.UpdatedAt = DateTime.UtcNow;
-        await FlujoHistorial.AgregarAsync(_db, orden.ReporteFallaId, orden.Id, "TALLER", "Iniciada", userId,
-            string.IsNullOrWhiteSpace(diagnostico) ? "Reparación en proceso" : $"Reparación en proceso. Diagnóstico: {diagnostico}");
 
         // Actualizar ubicación del vehículo al iniciar trabajo
         if (orden.Vehiculo != null)
@@ -510,9 +496,6 @@ public class OrdenTrabajoService
             .Include(o => o.Vehiculo)
             .FirstOrDefaultAsync(o => o.Id == ordenId);
         if (orden == null) return false;
-        if (orden.FechaAceptacion == null
-            || (orden.Estado != EstadoOrdenTrabajoEnum.Asignada && orden.Estado != EstadoOrdenTrabajoEnum.EnProceso && orden.Estado != EstadoOrdenTrabajoEnum.EsperandoRefacciones))
-            throw new InvalidOperationException("Solo se puede terminar una orden aceptada y en reparación.");
 
         // No permitir completar si hay refacciones pendientes de entrega
         var refaccionesPendientes = await _db.SolicitudesRefaccion
@@ -521,7 +504,6 @@ public class OrdenTrabajoService
             throw new InvalidOperationException("No se puede completar la orden: hay refacciones pendientes por entregar.");
 
         orden.Estado = EstadoOrdenTrabajoEnum.Completada;
-        orden.FechaInicio ??= DateTime.UtcNow;
         orden.FechaFinalizacion = DateTime.UtcNow;
         orden.TrabajoRealizado = request.TrabajoRealizado;
         orden.HorasTrabajadas = request.HorasTrabajadas ?? 0;
@@ -530,12 +512,9 @@ public class OrdenTrabajoService
 
         // Verificar garantía/mantenimiento reciente (< 6 meses)
         // Se usa la fecha de último mantenimiento ANTES de actualizarla
-        // (sin contar el que dejó esta misma orden si se terminó antes y la validación la regresó al taller)
-        var inicioDeEstaOrden = orden.FechaAceptacion ?? orden.FechaCreacion;
         var aplicaGarantia = orden.Vehiculo != null && 
                              orden.Vehiculo.UltimoMantenimiento.HasValue &&
-                             orden.Vehiculo.UltimoMantenimiento.Value > DateTime.UtcNow.AddMonths(-6) &&
-                             orden.Vehiculo.UltimoMantenimiento.Value < inicioDeEstaOrden;
+                             orden.Vehiculo.UltimoMantenimiento.Value > DateTime.UtcNow.AddMonths(-6);
 
         // Calcular costo al completar: checklist + refacciones entregadas
         var costoChecklist = await _db.ChecklistRespuestas
@@ -560,11 +539,12 @@ public class OrdenTrabajoService
             orden.CostoTotal = costoChecklist + costoRefacciones;
         }
 
-        // La unidad sigue en el taller hasta que el técnico confirma su entrega en la zona de reparados;
-        // vuelve a estar operativa cuando se valida la reparación (DISPONIBLE)
+        // Actualizar vehículo - Pasa a zona de transición de reparados
         if (orden.Vehiculo != null)
         {
+            orden.Vehiculo.Estado = EstadoVehiculoEnum.Operativo;
             orden.Vehiculo.UltimoMantenimiento = DateTime.UtcNow;
+            orden.Vehiculo.Ubicacion = UbicacionVehiculoEnum.TransicionReparado;
 
             // Si fue mantenimiento preventivo, mover la siguiente fecha al siguiente ciclo.
             if (string.Equals(orden.TipoMantenimiento, "Preventivo", StringComparison.OrdinalIgnoreCase))
@@ -593,8 +573,35 @@ public class OrdenTrabajoService
             }
         }
 
-        await FlujoHistorial.AgregarAsync(_db, orden.ReporteFallaId, orden.Id, "TALLER", "Terminada", userId,
-            string.IsNullOrWhiteSpace(request.TrabajoRealizado) ? "Reparación concluida" : $"Reparación concluida: {request.TrabajoRealizado}");
+        await _db.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<bool> ValidarOrdenAsync(int ordenId, bool aprobado, string? observaciones, int userId)
+    {
+        var orden = await _db.OrdenesTrabajo
+            .Include(o => o.Vehiculo)
+            .FirstOrDefaultAsync(o => o.Id == ordenId);
+        if (orden == null) return false;
+
+        orden.Estado = aprobado ? EstadoOrdenTrabajoEnum.Validada : EstadoOrdenTrabajoEnum.EnProceso;
+        orden.FechaValidacion = aprobado ? DateTime.UtcNow : null;
+        orden.ValidadoPorId = userId;
+        if (!string.IsNullOrEmpty(observaciones))
+            orden.Notas = observaciones;
+        orden.UpdatedAt = DateTime.UtcNow;
+
+        // Si se valida positivamente, el vehículo regresa a Piso (Disponible)
+        if (aprobado && orden.Vehiculo != null)
+        {
+            orden.Vehiculo.Ubicacion = UbicacionVehiculoEnum.Piso;
+        }
+        else if (!aprobado && orden.Vehiculo != null)
+        {
+            // Si se devuelve, regresa al taller
+            orden.Vehiculo.Ubicacion = UbicacionVehiculoEnum.Taller;
+        }
+
         await _db.SaveChangesAsync();
         return true;
     }
@@ -632,6 +639,52 @@ public class OrdenTrabajoService
         _db.EvidenciasFotograficas.Add(evidencia);
         await _db.SaveChangesAsync();
         return evidencia;
+    }
+
+    public async Task<bool> AprobarOrdenAsync(int ordenId, AprobarOrdenRequest request, int userId)
+    {
+        var orden = await _db.OrdenesTrabajo
+            .Include(o => o.Vehiculo)
+            .FirstOrDefaultAsync(o => o.Id == ordenId);
+        if (orden == null) return false;
+
+        var estadoAprobacion = request.Aprobado ? EstadoAprobacionEnum.Aprobado : EstadoAprobacionEnum.Rechazado;
+        var user = await _db.Users.FindAsync(userId);
+        var nombreUsuario = user?.NombreCompleto ?? "Usuario";
+
+        if (request.RolAprobador == "Lider")
+        {
+            orden.EstadoAprobacionLider = estadoAprobacion;
+            orden.ComentariosAprobacionLider = request.Comentarios;
+            orden.FirmaLider = request.Aprobado ? "Aprobado digitalmente" : "Rechazado";
+            orden.FirmaLiderNombre = nombreUsuario;
+            orden.FirmaLiderFecha = DateTime.UtcNow;
+        }
+        else if (request.RolAprobador == "Supervisor")
+        {
+            orden.EstadoAprobacionSupervisor = estadoAprobacion;
+            orden.ComentariosAprobacionSupervisor = request.Comentarios;
+            orden.FirmaSupervisor = request.Aprobado ? "Aprobado digitalmente" : "Rechazado";
+            orden.FirmaSupervisorNombre = nombreUsuario;
+            orden.FirmaSupervisorFecha = DateTime.UtcNow;
+        }
+
+        if (request.Aprobado
+            && orden.EstadoAprobacionLider == EstadoAprobacionEnum.Aprobado
+            && orden.EstadoAprobacionSupervisor == EstadoAprobacionEnum.Aprobado)
+        {
+            orden.Estado = EstadoOrdenTrabajoEnum.Validada;
+            orden.FechaValidacion = DateTime.UtcNow;
+            orden.ValidadoPorId = userId;
+            if (orden.Vehiculo != null)
+            {
+                orden.Vehiculo.Ubicacion = UbicacionVehiculoEnum.Piso;
+            }
+        }
+
+        orden.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return true;
     }
 
     public async Task<int> GenerarOrdenesPreventivasAsync(int tipoVehiculoId, int userId)

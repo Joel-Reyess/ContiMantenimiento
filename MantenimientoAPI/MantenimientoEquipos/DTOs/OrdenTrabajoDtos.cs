@@ -130,11 +130,6 @@ public class OrdenTrabajoListDto
     public required string TipoMantenimiento { get; set; }
     public DateTime FechaCreacion { get; set; }
     public DateTime? FechaFinalizacion { get; set; }
-    /// <summary>Para la bandeja de reparaciones por validar (Líder / Supervisor)</summary>
-    public EstadoAprobacionEnum EstadoAprobacionLider { get; set; }
-    public EstadoAprobacionEnum EstadoAprobacionSupervisor { get; set; }
-    /// <summary>Terminada pero aún sin entregar en la zona de reparados (le toca al técnico)</summary>
-    public bool PorEntregarEnZona { get; set; }
 }
 
 public class AsignarTecnicoRequest
@@ -181,10 +176,4 @@ public class AprobarOrdenRequest
     // "Lider" o "Supervisor"
     [Required]
     public string RolAprobador { get; set; } = "Lider";
-}
-
-public class CancelarOrdenRequest
-{
-    [MaxLength(500)]
-    public string? Motivo { get; set; }
 }
