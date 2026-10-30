@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Truck, Plus, Loader2, RefreshCw, Info, Package, Trash2, CheckCircle2, Download, Upload } from 'lucide-react';
 import { formatDate, getFullImageUrl } from '@/lib/utils';
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, Input, Modal, ModalFooter, Select, Spinner, Textarea, SearchInput, useToast } from '@/components/ui';
-import { vehiculosService } from '@/services/vehiculosService';
+import { vehiculosService, type VistaPreviaEliminacionVehiculos } from '@/services/vehiculosService';
+import { vehiculoPrefijoConfigsService } from '@/services/vehiculoPrefijoConfigsService';
 import { catalogosService } from '@/services/catalogosService';
 import type { Area, ValidacionCodigoVehiculo, VehiculoFoto, VehiculoList } from '@/interfaces';
 import { EstadoVehiculoNombres, TipoVehiculoNombres, TipoVehiculo } from '@/interfaces/Api.interface';
@@ -17,6 +18,7 @@ interface FiltersState {
   busqueda: string;
   tipo?: string;
   areaId?: string;
+  prefijo?: string;
 }
 
 interface CrearVehiculoForm {
@@ -86,6 +88,14 @@ export function VehiculosPage() {
   const [exportOpen, setExportOpen] = useState(false);
   const [alcanceExport, setAlcanceExport] = useState<'vista' | 'todo'>('vista');
   const [errorExport, setErrorExport] = useState('');
+  // Eliminación por filtro (área, tipo, prefijo): primero se ve cuántos y cuáles, y se confirma escribiendo el total
+  const [eliminarFiltroOpen, setEliminarFiltroOpen] = useState(false);
+  const [vistaEliminar, setVistaEliminar] = useState<VistaPreviaEliminacionVehiculos | null>(null);
+  const [cargandoVistaEliminar, setCargandoVistaEliminar] = useState(false);
+  const [totalEscrito, setTotalEscrito] = useState('');
+  const [eliminandoFiltro, setEliminandoFiltro] = useState(false);
+  const [errorEliminarFiltro, setErrorEliminarFiltro] = useState('');
+  const [prefijos, setPrefijos] = useState<{ prefijo: string; tipoId: number }[]>([]);
   const toast = useToast();
 
   /** Lo que se está viendo, igual que lo pide loadVehiculos */
@@ -95,8 +105,16 @@ export function VehiculosPage() {
       busqueda: f.busqueda?.trim() || undefined,
       tipo: activeTab === 'tuggers' ? TipoVehiculo.Tugger : f.tipo ? Number(f.tipo) : undefined,
       areaId: f.areaId ? Number(f.areaId) : undefined,
+      prefijo: f.prefijo || undefined,
       excluirTipo: activeTab === 'general' ? TipoVehiculo.Tugger : undefined
     };
+  };
+
+  /** Hay cambios en los filtros que no se han aplicado (exportar y eliminar usan los aplicados) */
+  const filtrosSinAplicar = () => {
+    const f = filtrosAplicados.current;
+    return (filters.busqueda || '') !== (f.busqueda || '') || (filters.tipo || '') !== (f.tipo || '') ||
+      (filters.areaId || '') !== (f.areaId || '') || (filters.prefijo || '') !== (f.prefijo || '');
   };
 
   const handleExportar = () => {
@@ -144,6 +162,20 @@ export function VehiculosPage() {
   const [areas, setAreas] = useState<Area[]>([]);
 
   useEffect(() => {
+    vehiculoPrefijoConfigsService
+      .getAll({ activo: true, pageSize: 500 })
+      .then((res) => {
+        if (res.success && res.data)
+          setPrefijos(
+            (res.data.items || [])
+              .map((p) => ({ prefijo: p.prefijoCodigo, tipoId: p.tipoVehiculoId }))
+              .sort((a, b) => a.prefijo.localeCompare(b.prefijo))
+          );
+      })
+      .catch((err) => console.error('Error al cargar prefijos:', err));
+  }, []);
+
+  useEffect(() => {
     catalogosService
       .getAreas()
       .then((res) => {
@@ -178,6 +210,33 @@ export function VehiculosPage() {
         : tiposVehiculo;
     return [{ value: '', label: 'Todos los tipos' }, ...filteredTipos];
   }, [tiposVehiculo, loadingTipos, allowedTipoIds]);
+
+  // Solo los prefijos de los tipos que el usuario puede ver
+  const prefijoFilterOptions = useMemo(
+    () => [
+      { value: '', label: 'Todos los prefijos' },
+      ...prefijos
+        .filter((p) => !allowedTipoIds || allowedTipoIds.length === 0 || allowedTipoIds.includes(p.tipoId))
+        .map((p) => {
+          const tipo = tiposVehiculo.find((t) => t.value === String(p.tipoId))?.label;
+          return { value: p.prefijo, label: tipo ? `${p.prefijo} · ${tipo}` : p.prefijo };
+        })
+    ],
+    [prefijos, tiposVehiculo, allowedTipoIds]
+  );
+
+  /** Los filtros aplicados en palabras (los muestran Exportar y Eliminar por filtro) */
+  const describirFiltros = () => {
+    const f = filtrosAplicados.current;
+    const tipoNombre = activeTab === 'tuggers'
+      ? 'Tugger'
+      : f.tipo
+        ? tipoOptions.find((t) => t.value === f.tipo)?.label ?? f.tipo
+        : 'Todos (sin Tuggers)';
+    const areaNombre = f.areaId ? areaFilterOptions.find((o) => o.value === f.areaId)?.label ?? f.areaId : 'Todas';
+    return `Pestaña: ${activeTab === 'tuggers' ? 'Tuggers' : 'Contenedores'} · Búsqueda: ${f.busqueda?.trim() ? `"${f.busqueda.trim()}"` : 'ninguna'} · ` +
+      `Tipo: ${tipoNombre} · Área: ${areaNombre} · Prefijo: ${f.prefijo || 'Todos'}`;
+  };
 
   const tipoFormOptions = useMemo(
     () => [{ value: '', label: 'Selecciona un tipo' }, ...tipoOptions.filter((t) => t.value !== '')],
@@ -234,6 +293,7 @@ export function VehiculosPage() {
         busqueda: f.busqueda || undefined,
         tipo: typeFilter,
         areaId: f.areaId ? Number(f.areaId) : undefined,
+        prefijo: f.prefijo || undefined,
         // La pestaña Contenedores excluye Tuggers en el servidor, así el total y las páginas cuadran
         excluirTipo: activeTab === 'general' ? TipoVehiculo.Tugger : undefined,
         page: page,
@@ -397,7 +457,10 @@ export function VehiculosPage() {
       }
       const fallidas = await subirFotos(res.data.id, fotosNuevas);
       setCreateOpen(false);
-      terminarGuardado(`Vehículo ${form.codigo.trim()} registrado correctamente`, fallidas);
+      terminarGuardado(
+        res.message || `El vehículo ${form.codigo.trim()} ha sido registrado correctamente y se encuentra disponible para operación.`,
+        fallidas
+      );
     } catch (err) {
       console.error(err);
       setFormError('Error al crear el vehiculo');
@@ -487,6 +550,52 @@ export function VehiculosPage() {
 
   const targetsConHistorial = (deleteTargets || []).filter((v) => (v.totalReportes ?? 0) > 0);
 
+  // Eliminar por filtro: solo con un tipo, área o prefijo aplicado (la pestaña Tuggers ya es un tipo)
+  const filtroEliminable =
+    activeTab === 'tuggers' || Boolean(filtrosAplicados.current.tipo || filtrosAplicados.current.areaId || filtrosAplicados.current.prefijo);
+
+  const cargarVistaEliminar = async () => {
+    setCargandoVistaEliminar(true);
+    try {
+      const res = await vehiculosService.vistaPreviaEliminarPorFiltro(filtrosDeLaVista());
+      if (res.success && res.data) setVistaEliminar(res.data);
+      else setErrorEliminarFiltro(res.message || 'No se pudo calcular qué vehículos se eliminarían');
+    } finally {
+      setCargandoVistaEliminar(false);
+    }
+  };
+
+  const abrirEliminarFiltro = () => {
+    setSuccessMessage('');
+    setErrorEliminarFiltro('');
+    setTotalEscrito('');
+    setVistaEliminar(null);
+    setEliminarFiltroOpen(true);
+    void cargarVistaEliminar();
+  };
+
+  const confirmarEliminarFiltro = async () => {
+    if (!vistaEliminar) return;
+    setEliminandoFiltro(true);
+    setErrorEliminarFiltro('');
+    try {
+      const res = await vehiculosService.eliminarPorFiltro(filtrosDeLaVista(), vistaEliminar.total);
+      if (res.success) {
+        setSuccessMessage(res.message || 'Vehículos eliminados correctamente');
+        toast.exito(res.message || 'Vehículos eliminados correctamente');
+        setEliminarFiltroOpen(false);
+        loadVehiculos(1, filtrosAplicados.current, true);
+      } else {
+        setErrorEliminarFiltro(res.message || 'No se pudieron eliminar los vehículos');
+        // Si la flota cambió mientras tanto, se muestra la lista nueva para confirmar otra vez
+        setTotalEscrito('');
+        await cargarVistaEliminar();
+      }
+    } finally {
+      setEliminandoFiltro(false);
+    }
+  };
+
   return (
     <div className="dashboard-wrapper space-y-4">
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -561,7 +670,7 @@ export function VehiculosPage() {
         </button>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-5">
+      <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
         <div className="md:col-span-2">
           <SearchInput
             placeholder="Buscar por codigo, modelo o marca"
@@ -579,6 +688,11 @@ export function VehiculosPage() {
           options={areaFilterOptions}
           value={filters.areaId || ''}
           onChange={(value) => setFilters((prev) => ({ ...prev, areaId: value }))}
+        />
+        <Select
+          options={prefijoFilterOptions}
+          value={filters.prefijo || ''}
+          onChange={(value) => setFilters((prev) => ({ ...prev, prefijo: value }))}
         />
         <div className="flex gap-2 md:col-span-2 lg:col-span-1">
           <Button variant="secondary" className="w-full" onClick={resetFilters}>
@@ -637,6 +751,17 @@ export function VehiculosPage() {
             >
               <Trash2 className="h-4 w-4" />
               Eliminar seleccionados
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex items-center gap-2 border-red-300 text-red-700 hover:bg-red-50"
+              disabled={!filtroEliminable}
+              title={filtroEliminable ? undefined : 'Aplica un filtro de tipo, área o prefijo para eliminar por filtro'}
+              onClick={abrirEliminarFiltro}
+            >
+              <Trash2 className="h-4 w-4" />
+              Eliminar lo filtrado ({pagination.totalItems})
             </Button>
           </div>
         </div>
@@ -807,10 +932,13 @@ export function VehiculosPage() {
           )}
           {!validando && validacion?.existe && (
             <Alert variant="warning">
-              <AlertTitle>Este vehículo ya está dado de alta</AlertTitle>
+              <AlertTitle>Vehículo duplicado</AlertTitle>
               <AlertDescription>
-                Tipo: <strong>{validacion.tipoNombre || 'N/D'}</strong> · Área: <strong>{validacion.areaNombre || 'Sin área'}</strong> ·
-                Registrado: <strong>{validacion.fechaRegistro ? formatDate(validacion.fechaRegistro) : 'N/D'}</strong>
+                El vehículo <strong>{validacion.codigo || form.codigo.trim()}</strong> de tipo <strong>{validacion.tipoNombre || 'N/D'}</strong> ya
+                se encuentra registrado en el sistema. Verifique la información antes de continuar.
+                <br />
+                Área: <strong>{validacion.areaNombre || 'Sin área'}</strong> · Registrado:{' '}
+                <strong>{validacion.fechaRegistro ? formatDate(validacion.fechaRegistro) : 'N/D'}</strong>
               </AlertDescription>
             </Alert>
           )}
@@ -1007,15 +1135,7 @@ export function VehiculosPage() {
         size="md"
       >
         {(() => {
-          const f = filtrosAplicados.current;
-          const tipoNombre = activeTab === 'tuggers'
-            ? 'Tugger'
-            : f.tipo
-              ? tipoOptions.find((t) => t.value === f.tipo)?.label ?? f.tipo
-              : 'Todos (sin Tuggers)';
-          const areaNombre = f.areaId ? areaFilterOptions.find((o) => o.value === f.areaId)?.label ?? f.areaId : 'Todas';
-          const sinAplicar =
-            (filters.busqueda || '') !== (f.busqueda || '') || (filters.tipo || '') !== (f.tipo || '') || (filters.areaId || '') !== (f.areaId || '');
+          const sinAplicar = filtrosSinAplicar();
           const opcion = (valor: 'vista' | 'todo', titulo: string, contenido: React.ReactNode) => (
             <button
               type="button"
@@ -1036,10 +1156,7 @@ export function VehiculosPage() {
               {opcion(
                 'vista',
                 `Lo que estoy viendo (${pagination.totalItems} vehículo${pagination.totalItems === 1 ? '' : 's'})`,
-                <>
-                  Pestaña: {activeTab === 'tuggers' ? 'Tuggers' : 'Contenedores'} · Búsqueda: {f.busqueda?.trim() ? `"${f.busqueda.trim()}"` : 'ninguna'} ·
-                  Tipo: {tipoNombre} · Área: {areaNombre}
-                </>
+                describirFiltros()
               )}
               {opcion('todo', 'Toda la flota', 'Todos los vehículos, incluidos Tuggers e inactivos.')}
               {sinAplicar && alcanceExport === 'vista' && (
@@ -1062,6 +1179,80 @@ export function VehiculosPage() {
           <Button onClick={descargarExport} disabled={exportando} className="flex items-center gap-2">
             {exportando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             Descargar
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      <Modal
+        isOpen={eliminarFiltroOpen}
+        onClose={() => !eliminandoFiltro && setEliminarFiltroOpen(false)}
+        title="Eliminar vehículos por filtro"
+        description="Esta acción no se puede deshacer."
+      >
+        <div className="space-y-3" data-testid="eliminar-por-filtro">
+          <p className="text-sm text-continental-gray-1">{describirFiltros()}</p>
+          {cargandoVistaEliminar && !vistaEliminar ? (
+            <Spinner />
+          ) : vistaEliminar && vistaEliminar.total === 0 ? (
+            <p className="text-sm text-continental-black">No hay vehículos con estos filtros.</p>
+          ) : vistaEliminar ? (
+            <>
+              <p className="text-sm text-continental-black">
+                Se eliminarán definitivamente <strong data-testid="total-a-eliminar">{vistaEliminar.total}</strong> vehículo(s):
+              </p>
+              <div className="max-h-48 overflow-y-auto rounded-lg border border-continental-gray-3 bg-continental-gray-4/40 px-3 py-2">
+                <ul className="space-y-1 text-sm font-medium text-continental-black">
+                  {vistaEliminar.codigos.map((c) => (
+                    <li key={c}>{c}</li>
+                  ))}
+                </ul>
+                {vistaEliminar.total > vistaEliminar.codigos.length && (
+                  <p className="mt-1 text-xs text-continental-gray-1" style={{ marginBottom: 0 }}>
+                    y {vistaEliminar.total - vistaEliminar.codigos.length} más
+                  </p>
+                )}
+              </div>
+              {vistaEliminar.conHistorial > 0 && (
+                <Alert variant="warning">
+                  <AlertTitle>Tienen historial</AlertTitle>
+                  <AlertDescription>
+                    {vistaEliminar.conHistorial === 1 ? '1 vehículo tiene' : `${vistaEliminar.conHistorial} vehículos tienen`} reportes u órdenes
+                    registrados. También se borrarán sus reportes, órdenes de trabajo, evidencias, checklists y pagos asociados.
+                  </AlertDescription>
+                </Alert>
+              )}
+              <Input
+                label={`Para confirmar, escribe el número de vehículos (${vistaEliminar.total})`}
+                inputMode="numeric"
+                value={totalEscrito}
+                onChange={(e) => setTotalEscrito(e.target.value)}
+                disabled={eliminandoFiltro}
+              />
+            </>
+          ) : null}
+          {filtrosSinAplicar() && (
+            <p className="text-sm font-medium" style={{ color: '#b45309', marginBottom: 0 }}>
+              Tienes cambios en los filtros que no has aplicado; se eliminan los vehículos de los filtros aplicados.
+            </p>
+          )}
+          {errorEliminarFiltro && (
+            <Alert variant="destructive">
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>{errorEliminarFiltro}</AlertDescription>
+            </Alert>
+          )}
+        </div>
+        <ModalFooter>
+          <Button variant="outline" onClick={() => setEliminarFiltroOpen(false)} disabled={eliminandoFiltro}>
+            Cancelar
+          </Button>
+          <Button
+            className="bg-red-600 hover:bg-red-700 text-white flex items-center gap-2"
+            onClick={confirmarEliminarFiltro}
+            disabled={eliminandoFiltro || !vistaEliminar || vistaEliminar.total === 0 || totalEscrito.trim() !== String(vistaEliminar.total)}
+          >
+            {eliminandoFiltro ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            {eliminandoFiltro ? 'Eliminando...' : 'Sí, eliminar'}
           </Button>
         </ModalFooter>
       </Modal>

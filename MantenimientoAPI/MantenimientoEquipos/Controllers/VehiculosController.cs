@@ -36,7 +36,8 @@ public class VehiculosController : ControllerBase
         [FromQuery] string? busqueda = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 10,
-        [FromQuery] TipoVehiculoEnum? excluirTipo = null)
+        [FromQuery] TipoVehiculoEnum? excluirTipo = null,
+        [FromQuery] string? prefijo = null)
     {
         List<TipoVehiculoEnum>? tiposPermitidos = null;
         
@@ -50,7 +51,7 @@ public class VehiculosController : ControllerBase
             }
         }
 
-        var vehiculos = await _vehiculoService.GetAllAsync(tipo, estado, areaId, ubicacion, tiposPermitidos, busqueda, page, pageSize, excluirTipo);
+        var vehiculos = await _vehiculoService.GetAllAsync(tipo, estado, areaId, ubicacion, tiposPermitidos, busqueda, page, pageSize, excluirTipo, prefijo);
         return Ok(ApiResponse<PaginatedResponse<VehiculoListDto>>.Ok(vehiculos));
     }
 
@@ -104,8 +105,8 @@ public class VehiculosController : ControllerBase
         {
             var fecha = validacion.FechaRegistro?.ToLocalTime().ToString("dd/MM/yyyy") ?? "N/D";
             return BadRequest(ApiResponse<string>.Error(
-                $"El vehículo {request.Codigo} ya está dado de alta en el sistema " +
-                $"(Tipo: {validacion.TipoNombre}, Área: {validacion.AreaNombre ?? "Sin área"}, Registrado: {fecha})."));
+                $"El vehículo {request.Codigo} de tipo {validacion.TipoNombre} ya se encuentra registrado en el sistema " +
+                $"(Área: {validacion.AreaNombre ?? "Sin área"}, registrado el {fecha}). Verifique la información antes de continuar."));
         }
 
         request.Tipo ??= validacion.TipoDetectado;
@@ -116,8 +117,10 @@ public class VehiculosController : ControllerBase
         var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
         var vehiculo = await _vehiculoService.CreateAsync(request, userId);
 
+        var tipoNombre = (await _vehiculoService.GetByIdAsync(vehiculo.Id))?.TipoNombre ?? vehiculo.Tipo.ToString();
         return CreatedAtAction(nameof(GetById), new { id = vehiculo.Id },
-            ApiResponse<object>.Ok(new { vehiculo.Id, vehiculo.Codigo }, "Vehículo creado exitosamente"));
+            ApiResponse<object>.Ok(new { vehiculo.Id, vehiculo.Codigo },
+                $"El vehículo {vehiculo.Codigo} de tipo {tipoNombre} ha sido registrado correctamente y se encuentra disponible para operación."));
     }
 
     /// <summary>
@@ -161,6 +164,42 @@ public class VehiculosController : ControllerBase
         if (result.VehiculosEliminados == 0)
             return NotFound(ApiResponse<string>.Error("No se encontraron los vehículos seleccionados"));
 
+        return Ok(ApiResponse<EliminarVehiculosResultDto>.Ok(result, $"{result.VehiculosEliminados} vehículo(s) eliminado(s) correctamente"));
+    }
+
+    /// <summary>
+    /// Eliminación por filtro (área, tipo, prefijo; PDF 29-oct). Con soloContar=true regresa cuántos y
+    /// cuáles se eliminarían. Para eliminar hay que mandar ese total en totalConfirmado: si mientras tanto
+    /// cambió la flota (otro usuario dio de alta o eliminó), no se borra nada y se pide confirmar de nuevo.
+    /// </summary>
+    [HttpPost("eliminar-filtro")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
+    public async Task<IActionResult> DeleteByFilter([FromBody] EliminarVehiculosPorFiltroRequest request)
+    {
+        if (request.Tipo == null && request.AreaId == null && string.IsNullOrWhiteSpace(request.Prefijo))
+            return BadRequest(ApiResponse<string>.Error(
+                "Para eliminar por filtro aplica al menos un tipo, un área o un prefijo."));
+
+        var filtro = new FiltroVehiculos
+        {
+            Busqueda = request.Busqueda,
+            Tipo = request.Tipo,
+            AreaId = request.AreaId,
+            Prefijo = request.Prefijo,
+            ExcluirTipo = request.ExcluirTipo
+        };
+        var vista = await _vehiculoService.VistaPreviaPorFiltroAsync(filtro);
+        if (request.SoloContar)
+            return Ok(ApiResponse<VistaPreviaEliminacionVehiculosDto>.Ok(vista));
+
+        if (vista.Total == 0)
+            return NotFound(ApiResponse<string>.Error("No hay vehículos con esos filtros."));
+        if (request.TotalConfirmado != vista.Total)
+            return Conflict(ApiResponse<string>.Error(
+                $"Los vehículos con esos filtros cambiaron: ahora son {vista.Total}. Revisa la lista y vuelve a confirmar."));
+
+        var ids = await _vehiculoService.IdsPorFiltroAsync(filtro);
+        var result = await _vehiculoService.DeleteManyAsync(ids, User.UsuarioId(), User.NombreUsuario());
         return Ok(ApiResponse<EliminarVehiculosResultDto>.Ok(result, $"{result.VehiculosEliminados} vehículo(s) eliminado(s) correctamente"));
     }
 

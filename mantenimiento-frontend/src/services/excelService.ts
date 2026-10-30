@@ -71,7 +71,7 @@ export const excelService = {
   },
 
   /** La flota con los mismos filtros de la pantalla ("lo que estoy viendo") */
-  exportarFlotaFiltrada(filtros: { busqueda?: string; tipo?: number; areaId?: number; excluirTipo?: number }): Promise<void> {
+  exportarFlotaFiltrada(filtros: { busqueda?: string; tipo?: number; areaId?: number; prefijo?: string; excluirTipo?: number }): Promise<void> {
     const params = new URLSearchParams();
     Object.entries(filtros).forEach(([clave, valor]) => {
       if (valor !== undefined && valor !== null && valor !== '') params.append(clave, String(valor));
