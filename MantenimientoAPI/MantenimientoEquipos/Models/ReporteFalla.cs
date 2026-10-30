@@ -69,19 +69,6 @@ public class ReporteFalla
     /// </summary>
     public bool TieneOrdenTrabajo { get; set; } = false;
 
-    // ===== Etapa INSPECCIÓN (flujo de 7 etapas) =====
-    /// <summary>El Líder valida (crea la orden) o rechaza el reporte antes del traslado</summary>
-    public EstadoInspeccionEnum EstadoInspeccion { get; set; } = EstadoInspeccionEnum.Pendiente;
-    public int? InspeccionadoPorId { get; set; }
-    public virtual User? InspeccionadoPor { get; set; }
-    public DateTime? FechaInspeccion { get; set; }
-    [MaxLength(1000)]
-    public string? ObservacionesInspeccion { get; set; }
-    /// <summary>Líder que corrigió y reenvió el reporte tras un rechazo (aparece como responsable de REPORTE)</summary>
-    public int? ReenviadoPorId { get; set; }
-    public virtual User? ReenviadoPor { get; set; }
-    public DateTime? FechaReenvio { get; set; }
-
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
 

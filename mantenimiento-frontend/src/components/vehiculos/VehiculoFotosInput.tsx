@@ -56,7 +56,7 @@ export function VehiculoFotosInput({
   };
 
   const miniaturas = [
-    ...existentes.map((f) => ({ key: `e-${f.id}`, src: getFullImageUrl(f.url), alt: f.nombre || 'Foto', quitar: onQuitarExistente ? () => onQuitarExistente(f.id) : undefined })),
+    ...existentes.map((f) => ({ key: `e-${f.id}`, src: getFullImageUrl(f.url), alt: f.nombre || 'Foto', quitar: () => onQuitarExistente?.(f.id) })),
     ...nuevas.map((f, i) => ({ key: `n-${i}-${f.name}`, src: previews[i], alt: f.name, quitar: () => onQuitarNueva(i) }))
   ];
 
@@ -68,7 +68,7 @@ export function VehiculoFotosInput({
           {miniaturas.map((m) => (
             <div key={m.key} className="relative aspect-square overflow-hidden rounded-lg border border-continental-gray-3 bg-white">
               <img src={m.src} alt={m.alt} className="h-full w-full object-cover" />
-              {!disabled && m.quitar && (
+              {!disabled && (
                 <button
                   type="button"
                   data-icon="true"

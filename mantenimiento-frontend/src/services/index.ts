@@ -5,7 +5,6 @@ export { vehiculoDocumentosService } from './vehiculoDocumentosService';
 export { reportesService } from './reportesService';
 export { ordenesService } from './ordenesService';
 export { dashboardService } from './dashboardService';
-export { flujoService } from './flujoService';
 export { notificacionesService } from './notificacionesService';
 export { catalogosService } from './catalogosService';
 export { usuariosService } from './usuariosService';

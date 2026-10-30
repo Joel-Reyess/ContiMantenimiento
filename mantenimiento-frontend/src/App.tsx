@@ -11,9 +11,10 @@ import { VehiculoDetallePage } from '@/pages/VehiculoDetalle';
 import { RefaccionesPage } from '@/pages/Refacciones';
 import { InventarioPage } from '@/pages/Inventario';
 import { MaterialesUnificadoPage } from '@/pages/MaterialesUnificado';
-import { ZonaTransicionPage } from '@/pages/ZonaTransicion';
+import { RecepcionPage } from '@/pages/Recepcion';
 import { ArchivoPage } from '@/pages/Archivo';
 import { AprobacionesPage } from '@/pages/Aprobaciones';
+import { EntregasPage } from '@/pages/Entregas';
 import { PagosPage } from '@/pages/Pagos';
 import { OrdenesCompraPage } from '@/pages/OrdenesCompra';
 import { UsuariosPage } from '@/pages/Usuarios';
@@ -53,7 +54,7 @@ function App() {
             <Route
               path="vehiculos"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Lider']}>
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor']}>
                   <VehiculosPage />
                 </ProtectedRoute>
               }
@@ -61,7 +62,7 @@ function App() {
             <Route
               path="vehiculos/:id"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Lider']}>
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor']}>
                   <VehiculoDetallePage />
                 </ProtectedRoute>
               }
@@ -71,7 +72,7 @@ function App() {
             <Route
               path="reportes"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider', 'Operador']}>
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider']}>
                   <ReportesPage />
                 </ProtectedRoute>
               }
@@ -79,7 +80,7 @@ function App() {
             <Route
               path="reportes/:id"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider', 'Operador']}>
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider']}>
                   <ReportesPage />
                 </ProtectedRoute>
               }
@@ -89,7 +90,7 @@ function App() {
             <Route
               path="ordenes"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider', 'Operador']}>
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico']}>
                   <OrdenesPage />
                 </ProtectedRoute>
               }
@@ -97,7 +98,7 @@ function App() {
             <Route
               path="ordenes/:id"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider', 'Operador']}>
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico']}>
                   <OrdenesPage />
                 </ProtectedRoute>
               }
@@ -121,12 +122,12 @@ function App() {
               }
             />
 
-            {/* Zona de Transición: capacidad, filas de espera y traslados (flujo de 7 etapas) */}
+            {/* Recepcion (solo admin/supervisor) */}
             <Route
               path="recepcion"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider', 'Operador']}>
-                  <ZonaTransicionPage />
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor']}>
+                  <RecepcionPage />
                 </ProtectedRoute>
               }
             />
@@ -135,14 +136,21 @@ function App() {
             <Route
               path="aprobaciones"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Lider']}>
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor']}>
                   <AprobacionesPage />
                 </ProtectedRoute>
               }
             />
 
-            {/* La entrega con doble firma se reemplazó por la VALIDACIÓN del flujo (Líder o Gerente) */}
-            <Route path="entregas" element={<Navigate to="/aprobaciones" replace />} />
+            {/* Entregas / firma (admin/supervisor/lider) */}
+            <Route
+              path="entregas"
+              element={
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Lider']}>
+                  <EntregasPage />
+                </ProtectedRoute>
+              }
+            />
 
             {/* Inventario de consumibles */}
             <Route
@@ -176,7 +184,7 @@ function App() {
             <Route
               path="archivo"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico']}>
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor']}>
                   <ArchivoPage />
                 </ProtectedRoute>
               }

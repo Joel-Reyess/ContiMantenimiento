@@ -55,7 +55,6 @@ public partial class MantenimientoDbContext : DbContext
     // Auditoría y Configuración
     public virtual DbSet<LogAccion> LogAcciones { get; set; }
     public virtual DbSet<ConfiguracionSistema> ConfiguracionSistema { get; set; }
-    public virtual DbSet<HistorialFlujo> HistorialFlujo { get; set; }
 
     // Consumibles
     public virtual DbSet<Consumible> Consumibles { get; set; }
@@ -225,16 +224,6 @@ public partial class MantenimientoDbContext : DbContext
                 .WithOne(ic => ic.ReporteFalla)
                 .HasForeignKey(ic => ic.ReporteFallaId)
                 .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(r => r.InspeccionadoPor)
-                .WithMany()
-                .HasForeignKey(r => r.InspeccionadoPorId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasOne(r => r.ReenviadoPor)
-                .WithMany()
-                .HasForeignKey(r => r.ReenviadoPorId)
-                .OnDelete(DeleteBehavior.Restrict);
         });
 
         // ===== EVIDENCIA FOTOGRÁFICA =====
@@ -293,24 +282,6 @@ public partial class MantenimientoDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(o => o.ValidadoPorId)
                 .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasOne(o => o.TrasladoIngresoPor)
-                .WithMany()
-                .HasForeignKey(o => o.TrasladoIngresoPorId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasOne(o => o.TrasladoRetornoPor)
-                .WithMany()
-                .HasForeignKey(o => o.TrasladoRetornoPorId)
-                .OnDelete(DeleteBehavior.Restrict);
-        });
-
-        // ===== HISTORIAL DEL FLUJO (sin llaves foráneas: se conserva el nombre) =====
-        modelBuilder.Entity<HistorialFlujo>(entity =>
-        {
-            entity.HasKey(e => e.Id);
-            entity.HasIndex(e => e.ReporteFallaId);
-            entity.HasIndex(e => e.OrdenTrabajoId);
         });
 
         // ===== CHECKLIST TEMPLATE =====

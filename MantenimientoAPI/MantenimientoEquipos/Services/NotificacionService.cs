@@ -167,11 +167,6 @@ public class NotificacionService
         await _db.SaveChangesAsync();
     }
 
-    /// <summary>Una notificación igual para varios usuarios (sin repetir)</summary>
-    public Task CrearParaUsuariosAsync(IEnumerable<int> usuarioIds, TipoNotificacionEnum tipo, string titulo, string mensaje,
-        int? referenciaId = null, string? tipoReferencia = null, string? urlDestino = null) =>
-        CrearNotificacionesAsync(usuarioIds, tipo, titulo, mensaje, referenciaId, tipoReferencia, urlDestino);
-
     public async Task CrearNotificacionRolesAsync(
         TipoNotificacionEnum tipo,
         string titulo,

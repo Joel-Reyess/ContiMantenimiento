@@ -18,16 +18,17 @@ interface NavItem {
 const RUTAS_DE_CONFIGURACION = ['/usuarios', '/fallas-imagen', '/gestion-prefijos', '/archivo', '/asignacion-lideres'];
 
 const navItems: NavItem[] = [
-  { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Lider', 'Operador'] },
-  { label: 'Zona de Transición', href: '/recepcion', icon: <ClipboardList className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider', 'Operador'] },
-  { label: 'Órdenes de Trabajo', href: '/ordenes', icon: <Wrench className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider', 'Operador'] },
-  { label: 'Inventario y Materiales', href: '/materiales', icon: <Package className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico'] },
-  { label: 'Archivo Técnico (Planos)', href: '/archivo', icon: <FileText className="h-6 w-6" />, roles: ['Supervisor', 'Tecnico'], ocultarPara: ['SuperUsuario', 'Administrador'] },
+  { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Lider'] },
+  { label: 'Zona de Transición', href: '/recepcion', icon: <ClipboardList className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor'] },
+  { label: 'Entrega y Conformidad', href: '/entregas', icon: <CheckSquare className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Lider'] },
+  { label: 'Órdenes de Trabajo', href: '/ordenes', icon: <Wrench className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico'] },
+  { label: 'Inventario y Materiales', href: '/materiales', icon: <Package className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor'] },
+  { label: 'Archivo Técnico (Planos)', href: '/archivo', icon: <FileText className="h-6 w-6" />, roles: ['Supervisor'], ocultarPara: ['SuperUsuario', 'Administrador'] },
   { label: 'Control de Pagos', href: '/pagos', icon: <DollarSign className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador'] },
-  { label: 'Flota de Contenedores', href: '/vehiculos', icon: <Truck className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Lider'] },
+  { label: 'Flota de Contenedores', href: '/vehiculos', icon: <Truck className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor'] },
   { label: 'Reportes de Falla', href: '/reportes', icon: <AlertTriangle className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Operador', 'Lider'] },
   { label: 'Mis Órdenes', href: '/mis-ordenes', icon: <FileText className="h-6 w-6" />, roles: ['Tecnico'] },
-  { label: 'Validación y Aprobaciones', href: '/aprobaciones', icon: <CheckSquare className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Lider'] },
+  { label: 'Validación y Aprobaciones', href: '/aprobaciones', icon: <CheckSquare className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor'] },
   { label: 'Configuración del Sistema', href: '/configuracion', icon: <Settings className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador'], incluye: RUTAS_DE_CONFIGURACION }
 ];
 
