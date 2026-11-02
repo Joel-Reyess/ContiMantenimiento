@@ -48,6 +48,7 @@ public class LiderTipoVehiculoAsignacionController : ControllerBase
     }
 
     [HttpPost("batch")]
+    [Authorize(Roles = "SuperUsuario,Administrador,Supervisor")] // Igual que dar de alta una sola: antes cualquiera con sesión
     public async Task<IActionResult> CreateAsignaciones([FromBody] List<CreateLiderTipoVehiculoAsignacionRequest> request)
     {
         try

@@ -51,6 +51,7 @@ public class SolicitudActividadAdicionalController : ControllerBase
     }
 
     [HttpPost]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico")] // La pide el técnico desde la orden; antes cualquiera con sesión
     public async Task<IActionResult> Create([FromBody] CreateSolicitudActividadAdicionalDto request)
     {
         try
