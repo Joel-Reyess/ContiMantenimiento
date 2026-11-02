@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using MantenimientoEquipos.DTOs;
 using MantenimientoEquipos.Services;
+using MantenimientoEquipos.Middlewares;
 using MantenimientoEquipos.Models;
 
 namespace MantenimientoEquipos.Controllers;
@@ -26,6 +27,7 @@ public class VehiculoDocumentosController : ControllerBase
     }
 
     [HttpPost]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")] // Archivo Técnico; antes cualquiera con sesión podía subir
     [RequestSizeLimit(20_000_000)]
     public async Task<IActionResult> Upload(int vehiculoId, [FromForm] VehiculoDocumentoCreateRequest request, IFormFile? archivo)
     {
@@ -42,6 +44,7 @@ public class VehiculoDocumentosController : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")] // Antes cualquiera con sesión podía borrar
     public async Task<IActionResult> Delete(int vehiculoId, int id)
     {
         var ok = await _service.DeleteAsync(id);
