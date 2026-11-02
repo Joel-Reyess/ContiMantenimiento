@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button, LoadingCard, useConfirm, useToast } from '@/components/ui';
-import { dashboardService, usuariosService, refaccionesService } from '@/services';
+import { dashboardService, refaccionesService } from '@/services';
+import { tecnicoKPIsService } from '@/services/tecnicoKPIsService';
 import type { KPIs } from '@/interfaces';
 import type { OrdenSinFirma, ReporteAnual } from '@/services/dashboardService';
 import { getInitials, cn } from '@/lib/utils';
@@ -107,7 +108,8 @@ export function SupervisorDashboard() {
       const [kpisRes, resumenRes, usuariosRes, sinFirmaRes, anualRes] = await Promise.all([
         dashboardService.getKPIs(),
         dashboardService.getResumen(),
-        usuariosService.getAll({ pageSize: 20 }),
+        // Antes pedía la lista de usuarios (solo administración: 403) e inventaba las tareas activas
+        tecnicoKPIsService.getKPIs(),
         dashboardService.getOrdenesSinFirma(),
         dashboardService.getReporteAnual()
       ]);
@@ -143,17 +145,14 @@ export function SupervisorDashboard() {
         setEquipment([]);
       }
 
-      if (usuariosRes.data?.items) {
-        const tecnicos = usuariosRes.data.items.filter(
-          (u: any) => u.rolNombre === 'Tecnico' || u.rolNombre === 'Técnico'
-        );
+      if (usuariosRes.success && Array.isArray(usuariosRes.data)) {
         setTeam(
-          tecnicos.map((u: any) => ({
-            id: u.id,
-            nombre: u.nombreCompleto,
-            rol: u.rolNombre,
-            estado: 'Disponible',
-            tareasActivas: Math.floor(Math.random() * 5),
+          usuariosRes.data.map((t) => ({
+            id: t.tecnicoId,
+            nombre: t.nombreCompleto,
+            rol: 'Tecnico',
+            estado: t.ordenesActivas > 0 ? 'Ocupado' : 'Disponible',
+            tareasActivas: t.ordenesActivas,
           }))
         );
       }

@@ -31,17 +31,19 @@ public class TecnicoKPIsService
             .Where(m => m.Mes == mes && m.Anio == anio)
             .ToDictionaryAsync(m => m.UsuarioId, m => m.MetaMantenimientos);
 
-        // Obtener todas las órdenes finalizadas en el mes
+        // Obtener todas las órdenes finalizadas en el mes (también las ya entregadas: siguen siendo trabajo terminado)
         var ordenesCerradas = await _db.OrdenesTrabajo
             .Where(o => o.FechaFinalizacion >= fechaInicioMes && o.FechaFinalizacion <= fechaFinMes)
-            .Where(o => o.Estado == EstadoOrdenTrabajoEnum.Completada || o.Estado == EstadoOrdenTrabajoEnum.Validada)
+            .Where(o => o.Estado == EstadoOrdenTrabajoEnum.Completada || o.Estado == EstadoOrdenTrabajoEnum.Validada ||
+                        o.Estado == EstadoOrdenTrabajoEnum.Entregado)
             .ToListAsync();
 
-        // Obtener órdenes activas
+        // Obtener órdenes activas (las entregadas ya no son trabajo del técnico)
         var ordenesActivas = await _db.OrdenesTrabajo
             .Where(o => o.Estado != EstadoOrdenTrabajoEnum.Completada && 
                        o.Estado != EstadoOrdenTrabajoEnum.Validada && 
-                       o.Estado != EstadoOrdenTrabajoEnum.Cancelada)
+                       o.Estado != EstadoOrdenTrabajoEnum.Cancelada &&
+                       o.Estado != EstadoOrdenTrabajoEnum.Entregado)
             .ToListAsync();
 
         var result = new List<TecnicoKpiDto>();
@@ -136,7 +138,8 @@ public class TecnicoKPIsService
             .Include(o => o.Vehiculo)
             .Where(o => o.TecnicoAsignadoId == tecnicoId)
             .Where(o => o.FechaFinalizacion >= fechaInicioMes && o.FechaFinalizacion <= fechaFinMes)
-            .Where(o => o.Estado == EstadoOrdenTrabajoEnum.Completada || o.Estado == EstadoOrdenTrabajoEnum.Validada)
+            .Where(o => o.Estado == EstadoOrdenTrabajoEnum.Completada || o.Estado == EstadoOrdenTrabajoEnum.Validada ||
+                        o.Estado == EstadoOrdenTrabajoEnum.Entregado)
             .OrderByDescending(o => o.FechaFinalizacion)
             .ToListAsync();
 
@@ -144,7 +147,8 @@ public class TecnicoKPIsService
             .Where(o => o.TecnicoAsignadoId == tecnicoId)
             .Where(o => o.Estado != EstadoOrdenTrabajoEnum.Completada && 
                        o.Estado != EstadoOrdenTrabajoEnum.Validada && 
-                       o.Estado != EstadoOrdenTrabajoEnum.Cancelada)
+                       o.Estado != EstadoOrdenTrabajoEnum.Cancelada &&
+                       o.Estado != EstadoOrdenTrabajoEnum.Entregado)
             .ToListAsync();
 
         int aTiempo = 0;

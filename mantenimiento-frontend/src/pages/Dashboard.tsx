@@ -23,11 +23,14 @@ export function Dashboard() {
   const isSupervisor = normalizedRoles.some((r) => r.includes('supervisor'));
   const isLider = normalizedRoles.some((r) => r.includes('lider'));
   const isTecnico = normalizedRoles.some((r) => r.includes('tecnico'));
+  const isOperador = normalizedRoles.some((r) => r.includes('operador'));
 
   if (isAdmin) return <AdminDashboard />;
   if (isSupervisor) return <SupervisorDashboard />;
   if (isLider) return <LiderDashboard />;
   if (isTecnico) return <Navigate to="/ordenes" replace />;
+  // El Operador no tiene dashboard: su pantalla es Reportes de Falla (la única de su menú)
+  if (isOperador) return <Navigate to="/reportes" replace />;
 
   return (
     <div className="dashboard-wrapper">

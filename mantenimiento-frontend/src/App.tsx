@@ -72,7 +72,7 @@ function App() {
             <Route
               path="reportes"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider']}>
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider', 'Operador']}>
                   <ReportesPage />
                 </ProtectedRoute>
               }
@@ -80,7 +80,7 @@ function App() {
             <Route
               path="reportes/:id"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider']}>
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider', 'Operador']}>
                   <ReportesPage />
                 </ProtectedRoute>
               }
