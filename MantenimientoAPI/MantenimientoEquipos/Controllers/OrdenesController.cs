@@ -239,6 +239,8 @@ public class OrdenesController : ControllerBase
                 return NotFound(ApiResponse<string>.Error("Orden de trabajo no encontrada"));
 
             await _avisos.ReparacionConcluidaAsync(id, userId);
+            // Refacciones o consumibles que llegaron a su stock mínimo con lo que se usó
+            await _avisos.StockMinimoAsync(_ordenService.StockMinimoAlTerminar, userId);
             // Si la zona de reparados está llena, la unidad queda en fila y se avisa al taller, al Líder y al Gerente
             await _flujo.AvisarCambiosEnFilasAsync(filasAntes, userId);
 

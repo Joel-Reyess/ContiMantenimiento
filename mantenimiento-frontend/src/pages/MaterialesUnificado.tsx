@@ -88,6 +88,8 @@ export function MaterialesUnificadoPage() {
   const canImport = hasRole(['SuperUsuario', 'Administrador']);
   // El Técnico consulta el inventario y solicita materiales; aprobar, entregar y exportar es del Supervisor
   const puedeAprobar = hasRole(['SuperUsuario', 'Administrador', 'Supervisor']);
+  // El Gerente de Mantenimiento registra refacciones y consumibles y autoriza ajustes (PDF 29-oct); eliminar sigue siendo de administración
+  const puedeGestionarStock = hasRole(['SuperUsuario', 'Administrador', 'Supervisor']);
   const [importOpen, setImportOpen] = useState(false);
   const [exportando, setExportando] = useState(false);
   const [mensajeExcel, setMensajeExcel] = useState<{ tipo: 'success' | 'destructive'; texto: string } | null>(null);
@@ -528,8 +530,8 @@ export function MaterialesUnificadoPage() {
                   <Upload className="h-4 w-4 mr-1" /> Importar Excel
                 </Button>
               )}
-              {/* Dar de alta materiales: el servidor solo lo permite a administradores */}
-              {canImport && (
+              {/* Dar de alta materiales: administración y Gerente de Mantenimiento */}
+              {puedeGestionarStock && (
                 <Button onClick={() => { setErrorStock(''); setShowCreate(true); }}>
                   <Plus className="h-4 w-4 mr-1" /> Nuevo
                 </Button>
@@ -584,8 +586,8 @@ export function MaterialesUnificadoPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex gap-2">
-                            {/* Ajustar stock: el servidor solo lo permite a administradores (al supervisor le daba 403) */}
-                            {canImport && (
+                            {/* Ajustar stock: administración y Gerente de Mantenimiento */}
+                            {puedeGestionarStock && (
                               <Button size="sm" variant="outline" onClick={() => { setShowAdjust(c); setErrorStock(''); }}>
                                 Ajustar
                               </Button>

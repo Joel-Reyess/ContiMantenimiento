@@ -5,6 +5,8 @@ import { ChevronDown } from 'lucide-react';
 export interface SelectOption {
   value: string | number;
   label: string;
+  /** Se ve pero no se puede elegir (p. ej. material sin existencia) */
+  disabled?: boolean;
 }
 
 export interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'onChange'> {
@@ -52,7 +54,7 @@ const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
               </option>
             )}
             {options.map((option) => (
-              <option key={option.value} value={option.value}>
+              <option key={option.value} value={option.value} disabled={option.disabled}>
                 {option.label}
               </option>
             ))}

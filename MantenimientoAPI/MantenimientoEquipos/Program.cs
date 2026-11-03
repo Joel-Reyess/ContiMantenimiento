@@ -81,6 +81,8 @@ builder.Services.AddScoped<ExcelImportService>();
 builder.Services.AddScoped<EliminacionService>();
 builder.Services.AddScoped<FlujoService>();
 builder.Services.AddScoped<FlujoAvisos>();
+builder.Services.AddScoped<MaterialesOrdenService>();
+builder.Services.AddScoped<OrdenPagoService>();
 
 // Configuración CORS para permitir peticiones desde el frontend
 var allowedOrigins = new[] {

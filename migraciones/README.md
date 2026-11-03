@@ -8,6 +8,12 @@ Corre **`16_flujo_7_etapas.sql`** en la base de producción **antes** de publica
   órdenes abiertas = ya trasladadas; asignadas o más = aceptadas; completadas = ya entregadas en zona de reparados.
 - Se puede correr dos veces sin problema (no duplica ni cambia lo ya migrado). Haz respaldo antes.
 
+Después corre **`17_materiales_y_ordenes_pago.sql`** (también antes de publicar la API):
+- Tabla `MaterialesOrdenTrabajo` (refacciones y consumibles que el técnico usó en la orden; se descuentan
+  del inventario al terminar la reparación) y la columna `OrdenesTrabajo.AplicaGarantia`.
+- Las órdenes de pago se generan solas al validar la reparación. Para las órdenes que ya estaban validadas,
+  en Control de Pagos aparece el botón "Generar órdenes de pago pendientes".
+
 ---
 
 

@@ -186,7 +186,7 @@ function App() {
             <Route
               path="pagos"
               element={
-                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador']}>
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor']}>
                   <PagosPage />
                 </ProtectedRoute>
               }

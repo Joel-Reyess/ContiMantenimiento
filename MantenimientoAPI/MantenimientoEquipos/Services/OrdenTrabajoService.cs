@@ -24,11 +24,17 @@ public class OrdenTrabajoService
     private readonly MantenimientoDbContext _db;
     private readonly NotificacionService _notificacionService;
 
-    public OrdenTrabajoService(MantenimientoDbContext db, NotificacionService notificacionService)
+    private readonly MaterialesOrdenService _materiales;
+
+    public OrdenTrabajoService(MantenimientoDbContext db, NotificacionService notificacionService, MaterialesOrdenService materiales)
     {
         _db = db;
         _notificacionService = notificacionService;
+        _materiales = materiales;
     }
+
+    /// <summary>Artículos que llegaron a su stock mínimo al terminar la última orden (para avisar después de guardar)</summary>
+    public List<(int Id, string Nombre)> StockMinimoAlTerminar { get; private set; } = new();
 
     public async Task<List<OrdenTrabajoListDto>> GetAllAsync(
         EstadoOrdenTrabajoEnum? estado = null,
@@ -547,6 +553,14 @@ public class OrdenTrabajoService
             .Where(s => s.OrdenTrabajoId == ordenId && s.Estado == "Entregada")
             .SumAsync(s => s.CostoReal ?? s.CostoEstimado ?? 0);
 
+        // Refacciones y consumibles del inventario que usó el técnico (PDF 29-oct, 5.1): se descuentan ahora,
+        // en la misma transacción; si algo ya no alcanza, la orden no se termina
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        StockMinimoAlTerminar = await _materiales.DescontarAsync(orden, userId);
+        await _db.SaveChangesAsync();
+        costoRefacciones += await _materiales.CostoAsync(ordenId);
+        orden.AplicaGarantia = aplicaGarantia;
+
         // Si aplica garantía, el costo de las refacciones (y checklist) es 0 para fines de cobro
         if (aplicaGarantia)
         {
@@ -596,6 +610,7 @@ public class OrdenTrabajoService
         await FlujoHistorial.AgregarAsync(_db, orden.ReporteFallaId, orden.Id, "TALLER", "Terminada", userId,
             string.IsNullOrWhiteSpace(request.TrabajoRealizado) ? "Reparación concluida" : $"Reparación concluida: {request.TrabajoRealizado}");
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();
         return true;
     }
 

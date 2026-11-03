@@ -60,6 +60,7 @@ public partial class MantenimientoDbContext : DbContext
     // Consumibles
     public virtual DbSet<Consumible> Consumibles { get; set; }
     public virtual DbSet<ConsumoConsumible> ConsumosConsumibles { get; set; }
+    public virtual DbSet<MaterialOrdenTrabajo> MaterialesOrdenTrabajo { get; set; }
     public virtual DbSet<VehiculoDocumento> VehiculoDocumentos { get; set; }
 
     // Nueva entidad para la relación entre órdenes de trabajo y ítems del checklist
@@ -303,6 +304,18 @@ public partial class MantenimientoDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(o => o.TrasladoRetornoPorId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ===== MATERIALES USADOS EN LA ORDEN (PDF 29-oct, 5.1) =====
+        modelBuilder.Entity<MaterialOrdenTrabajo>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Cantidad).HasColumnType("decimal(12,2)");
+            entity.Property(e => e.CostoUnitario).HasColumnType("decimal(12,2)");
+            entity.HasIndex(e => e.OrdenTrabajoId);
+            entity.HasIndex(e => e.ConsumibleId);
+            entity.HasOne(e => e.OrdenTrabajo).WithMany(o => o.Materiales).HasForeignKey(e => e.OrdenTrabajoId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.Consumible).WithMany().HasForeignKey(e => e.ConsumibleId).OnDelete(DeleteBehavior.Restrict);
         });
 
         // ===== HISTORIAL DEL FLUJO (sin llaves foráneas: se conserva el nombre) =====

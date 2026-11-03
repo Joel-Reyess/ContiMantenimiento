@@ -154,6 +154,31 @@ public class FlujoAvisos
             $"La reparación de {Frase(u)} ha sido validada satisfactoriamente. La unidad está lista para regresar a operación.", u);
     });
 
+    // ===== Inventario y pagos (PDF 29-oct, 5.1 y 6.1) =====
+
+    /// <summary>Un artículo llegó (o quedó por debajo de) su stock mínimo: aviso al Gerente de Mantenimiento</summary>
+    public Task StockMinimoAsync(IEnumerable<(int Id, string Nombre)> articulos, int? actor) => SeguroAsync("stock mínimo", async () =>
+    {
+        var lista = articulos.ToList();
+        if (lista.Count == 0) return;
+        var ids = (await GerentesAsync()).Where(id => id != actor).ToList();
+        if (ids.Count == 0) ids = await ActivosConRol("Administrador");
+        foreach (var (id, nombre) in lista)
+            await _notificaciones.CrearParaUsuariosAsync(ids, TipoNotificacionEnum.SistemaGeneral, "Stock mínimo",
+                $"La refacción {nombre} ha alcanzado el nivel mínimo de inventario configurado. Se recomienda programar una reposición.",
+                id, "Consumible", "/materiales");
+    });
+
+    /// <summary>Nueva orden de pago generada al validar la reparación: aviso al Gerente de Mantenimiento</summary>
+    public Task OrdenPagoGeneradaAsync(int pagoId, string ordenFolio, int? actor) => SeguroAsync("orden de pago", async () =>
+    {
+        var ids = (await GerentesAsync()).Where(id => id != actor).ToList();
+        if (ids.Count == 0) return;
+        await _notificaciones.CrearParaUsuariosAsync(ids, TipoNotificacionEnum.SistemaGeneral, "Nueva orden de pago",
+            $"Se ha generado una nueva orden de pago asociada a la Orden de Trabajo {ordenFolio}. La documentación se encuentra disponible para revisión y autorización.",
+            pagoId, "RegistroPago", "/pagos");
+    });
+
     // ===== Capacidad: unidades que se quedan sin espacio o que ya pueden pasar =====
 
     /// <summary>

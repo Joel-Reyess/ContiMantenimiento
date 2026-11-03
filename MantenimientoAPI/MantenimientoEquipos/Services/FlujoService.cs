@@ -99,12 +99,16 @@ public class FlujoService
     private readonly FlujoAvisos _avisos;
     private readonly EliminacionService _eliminacion;
 
-    public FlujoService(MantenimientoDbContext db, OrdenTrabajoService ordenes, FlujoAvisos avisos, EliminacionService eliminacion)
+    private readonly OrdenPagoService _pagos;
+
+    public FlujoService(MantenimientoDbContext db, OrdenTrabajoService ordenes, FlujoAvisos avisos, EliminacionService eliminacion,
+        OrdenPagoService pagos)
     {
         _db = db;
         _ordenes = ordenes;
         _avisos = avisos;
         _eliminacion = eliminacion;
+        _pagos = pagos;
     }
 
     /// <summary>Qué órdenes de cada fila no caben hoy; se compara antes y después de un movimiento para avisar</summary>
@@ -1017,9 +1021,12 @@ public class FlujoService
             o.Vehiculo.UpdatedAt = ahora;
             Registrar(o.ReporteFallaId, o.Id, "VALIDACION", "Validado", u, obs ?? "Reparación validada");
             Registrar(o.ReporteFallaId, o.Id, "DISPONIBLE", "Liberada", u, "Unidad lista para regresar a operación");
+            // Orden de pago automática con lo que trae la orden (PDF 29-oct, 6.1); una sola por orden
+            var pago = await _pagos.GenerarAsync(o, u.Nombre);
             await _db.SaveChangesAsync();
             await tx.CommitAsync();
             await _avisos.UnidadDisponibleAsync(o.Id, u.Id);
+            if (pago != null) await _avisos.OrdenPagoGeneradaAsync(pago.Id, o.Folio, u.Id);
             await AvisarCambiosEnFilasAsync(filasAntes, u.Id);
             return new ResultadoFlujoDto { Mensaje = $"Reparación validada. La unidad {o.Vehiculo.Codigo} está disponible para operar.", OrdenId = o.Id, OrdenFolio = o.Folio };
         }
@@ -1067,6 +1074,8 @@ public class FlujoService
         o.Notas = string.IsNullOrWhiteSpace(o.Notas) ? $"Cancelada: {m}" : $"{o.Notas}\nCancelada: {m}";
         o.UpdatedAt = DateTime.UtcNow;
         Registrar(o.ReporteFallaId, o.Id, "ORDEN", "Cancelada", u, m);
+        // Materiales que aún no se descontaban: ya no se van a usar (lo descontado sí se usó y se queda)
+        await _db.MaterialesOrdenTrabajo.Where(x => x.OrdenTrabajoId == o.Id && !x.Descontado).ExecuteDeleteAsync();
         await _db.SaveChangesAsync();
         await _eliminacion.RegresarAlPisoAsync(new[] { o.VehiculoId });
         await AvisarCambiosEnFilasAsync(filasAntes, u.Id);

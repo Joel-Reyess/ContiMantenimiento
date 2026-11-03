@@ -57,6 +57,7 @@ public class EliminacionService
             .Where(e => e.OrdenTrabajoId.HasValue && ids.Contains(e.OrdenTrabajoId.Value))
             .ExecuteDeleteAsync();
         await _db.OrdenesTrabajoChecklistItems.Where(i => ids.Contains(i.OrdenTrabajoId)).ExecuteDeleteAsync();
+        await _db.MaterialesOrdenTrabajo.Where(m => ids.Contains(m.OrdenTrabajoId)).ExecuteDeleteAsync();
         await _db.HistorialFlujo.Where(h => h.OrdenTrabajoId != null && ids.Contains(h.OrdenTrabajoId.Value)).ExecuteDeleteAsync();
         await _db.ChecklistRespuestas.Where(r => ids.Contains(r.OrdenTrabajoId)).ExecuteDeleteAsync();
         await _db.SolicitudesRefaccion.Where(s => ids.Contains(s.OrdenTrabajoId)).ExecuteDeleteAsync();

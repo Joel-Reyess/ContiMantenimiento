@@ -31,7 +31,7 @@ export type { ReporteFilters } from './reportesService';
 export type { OrdenFilters } from './ordenesService';
 export type { DashboardFilters } from './dashboardService';
 export type { UserFilters } from './usuariosService';
-export type { PagoFilters, RegistroPago, CrearPagoRequest } from './pagosService';
+export type { PagoFilters, RegistroPago, DetalleOrdenPago } from './pagosService';
 export type { SolicitudRefaccion, SolicitudRefaccionCreateRequest } from './refaccionesService';
 export type { Consumible } from './consumiblesService';
 export type { AprobacionItem } from './aprobacionesService';

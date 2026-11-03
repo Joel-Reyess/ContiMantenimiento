@@ -105,6 +105,9 @@ public class OrdenTrabajo
     /// </summary>
     public decimal? CostoTotal { get; set; }
 
+    /// <summary>Mantenimiento a menos de 6 meses del anterior: las refacciones no tienen costo (se fija al terminar)</summary>
+    public bool AplicaGarantia { get; set; }
+
     // Datos adicionales
     public string? ChecklistRecepcionJson { get; set; }
     [MaxLength(300)]
@@ -170,5 +173,6 @@ public class OrdenTrabajo
     public virtual ICollection<SolicitudRefaccion> SolicitudesRefaccion { get; set; } = new HashSet<SolicitudRefaccion>();
     public virtual ICollection<SolicitudActividadAdicional> SolicitudesActividadAdicional { get; set; } = new HashSet<SolicitudActividadAdicional>();
     public virtual ICollection<OrdenTrabajoChecklistItem> ItemsChecklist { get; set; } = new HashSet<OrdenTrabajoChecklistItem>();
+    public virtual ICollection<MaterialOrdenTrabajo> Materiales { get; set; } = new HashSet<MaterialOrdenTrabajo>();
     public virtual RegistroPago? RegistroPago { get; set; }
 }

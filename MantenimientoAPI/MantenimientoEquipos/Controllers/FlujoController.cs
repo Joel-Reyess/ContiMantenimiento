@@ -20,10 +20,12 @@ namespace MantenimientoEquipos.Controllers;
 public class FlujoController : ControllerBase
 {
     private readonly FlujoService _flujo;
+    private readonly MaterialesOrdenService _materiales;
 
-    public FlujoController(FlujoService flujo)
+    public FlujoController(FlujoService flujo, MaterialesOrdenService materiales)
     {
         _flujo = flujo;
+        _materiales = materiales;
     }
 
     private async Task<IActionResult> Ejecutar<T>(Func<Task<T>> accion, Func<T, string?>? mensaje = null)
@@ -105,6 +107,18 @@ public class FlujoController : ControllerBase
     [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico")]
     public Task<IActionResult> Hallazgos(int id, [FromBody] HallazgosRequest req) =>
         Accion(() => _flujo.AgregarHallazgosAsync(id, req, User.UsuarioFlujo()));
+
+    /// <summary>Refacciones y consumibles usados en la orden, con costos (el Líder los consulta sin editar)</summary>
+    [HttpGet("ordenes/{id:int}/materiales")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico", "Lider")]
+    public Task<IActionResult> Materiales(int id) =>
+        Ejecutar(() => _materiales.GetAsync(id, User.UsuarioFlujo()));
+
+    /// <summary>El técnico registra lo que usa en la etapa TALLER; se descuenta del inventario al terminar (PDF 29-oct, 5.1)</summary>
+    [HttpPut("ordenes/{id:int}/materiales")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico")]
+    public Task<IActionResult> GuardarMateriales(int id, [FromBody] GuardarMaterialesRequest req) =>
+        Ejecutar(() => _materiales.GuardarAsync(id, req, User.UsuarioFlujo()), _ => "Materiales guardados");
 
     // ----- TRASLADO a zona de reparados (Técnico) -----
 

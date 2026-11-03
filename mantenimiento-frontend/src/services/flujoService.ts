@@ -156,6 +156,36 @@ export interface CorregirReporte {
   observaciones?: string;
 }
 
+/** Refacción o consumible usado en la orden (PDF 29-oct, 5.1) */
+export interface MaterialOrden {
+  id: number;
+  consumibleId: number;
+  codigo: string;
+  nombre: string;
+  categoria?: string;
+  esRefaccion: boolean;
+  unidad: string;
+  cantidad: number;
+  costoUnitario: number;
+  subtotal: number;
+  /** Ya se descontó del inventario (al terminar la reparación): no se edita */
+  descontado: boolean;
+  fechaDescuento?: string;
+  stockActual: number;
+}
+
+export interface MaterialesOrden {
+  ordenId: number;
+  ordenFolio: string;
+  editable: boolean;
+  bloqueo?: string;
+  aplicaGarantia: boolean;
+  items: MaterialOrden[];
+  totalRefacciones: number;
+  totalConsumibles: number;
+  total: number;
+}
+
 export const flujoService = {
   capacidad: () => httpClient.get<CapacidadZonas>('/flujo/capacidad'),
   guardarCapacidad: (danados: number, reparados: number) =>
@@ -178,4 +208,9 @@ export const flujoService = {
   confirmarRetorno: (ordenId: number) => httpClient.post<ResultadoFlujo>(`/flujo/ordenes/${ordenId}/retorno`),
   validarReparacion: (ordenId: number, aprobado: boolean, motivos: MotivoRechazo[] = [], observacion?: string) =>
     httpClient.post<ResultadoFlujo>(`/flujo/ordenes/${ordenId}/validar`, { aprobado, motivos, observacion }),
+
+  materiales: (ordenId: number) => httpClient.get<MaterialesOrden>(`/flujo/ordenes/${ordenId}/materiales`),
+  /** Reemplaza los materiales aún no descontados */
+  guardarMateriales: (ordenId: number, items: { consumibleId: number; cantidad: number }[]) =>
+    httpClient.put<MaterialesOrden>(`/flujo/ordenes/${ordenId}/materiales`, { items }),
 };

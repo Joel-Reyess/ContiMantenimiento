@@ -48,7 +48,7 @@ import { refaccionesService } from '@/services/refaccionesService';
 import { solicitudActividadAdicionalService } from '@/services/solicitudActividadAdicionalService';
 import { ordenTrabajoChecklistItemService } from '@/services/ordenTrabajoChecklistItemService';
 import { ReportFailureModal, RequestActivityModal } from '@/components/tecnico';
-import { PanelFlujo } from '@/components/flujo';
+import { MaterialesOrden, PanelFlujo } from '@/components/flujo';
 import { InteractiveVehicleImage } from '@/components/vehiculos/InteractiveVehicleImage';
 import { getFullImageUrl } from '@/lib/utils';
 import type { OrdenTrabajo, OrdenTrabajoList, ReporteFalla, Evidencia, VehicleImagePoint } from '@/interfaces';
@@ -1403,6 +1403,13 @@ export function OrdenesPage() {
             version={`${detalle.estado}-${detalle.tecnicoAsignadoId ?? ''}`}
           />
         </Card>
+
+        {/* Refacciones y consumibles usados, con costos (PDF 29-oct, 5.1); el Operador no ve costos */}
+        {hasRole(['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider']) && (
+          <Card className="p-6">
+            <MaterialesOrden ordenId={detalle.id} version={`${detalle.estado}-${detalle.tecnicoAsignadoId ?? ''}`} />
+          </Card>
+        )}
 
         <Card className="p-6 space-y-4">
           <div className="flex items-start justify-between gap-4">
