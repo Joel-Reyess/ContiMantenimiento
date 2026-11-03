@@ -153,7 +153,7 @@ public class ChecklistsController : ControllerBase
     /// Guarda las respuestas de un checklist
     /// </summary>
     [HttpPost("respuestas")]
-    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico")] // Antes cualquiera con sesión: el checklist lo llena el taller (Órdenes)
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico")]
     public async Task<IActionResult> GuardarRespuestas([FromBody] GuardarRespuestasChecklistRequest request)
     {
         try
@@ -203,7 +203,7 @@ public class ChecklistsController : ControllerBase
     }
 
     [HttpPost("asignaciones")]
-    [RolesAllowed("SuperUsuario", "Administrador")] // Configuración: antes cualquiera con sesión
+    [RolesAllowed("SuperUsuario", "Administrador")] // Modificar checklists: solo administración
     public async Task<IActionResult> AsignarChecklistVehiculo([FromBody] AsignarChecklistVehiculoRequest request)
     {
         try

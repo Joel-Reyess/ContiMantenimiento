@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState, type ReactNode } from 'react';
-import { Settings, Plus, Loader2, RefreshCcw, ListChecks, Trash2, Package, Users, AlertTriangle, Calendar, FileText, Download, FileSpreadsheet, MapPin, Truck, Tag, UserCheck, Database, ArrowLeft, History } from 'lucide-react';
+import { Settings, Plus, Loader2, RefreshCcw, ListChecks, Trash2, Package, Users, AlertTriangle, Calendar, FileText, Download, FileSpreadsheet, MapPin, Truck, Tag, UserCheck, Database, ArrowLeft, History, Warehouse } from 'lucide-react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getFullImageUrl } from '@/lib/utils';
 import {
@@ -24,6 +24,7 @@ import type { TipoVehiculoItem } from '@/services/catalogosService';
 import { ChecklistsPorTipo } from '@/components/configuracion/ChecklistsPorTipo';
 import { Bitacora } from '@/components/configuracion/Bitacora';
 import { ExcelCatalogoBotones } from '@/components/excel/ExcelCatalogoBotones';
+import { CapacidadZonaConfig } from '@/components/flujo';
 import { useAuth } from '@/contexts/AuthContext';
 import { excelService } from '@/services/excelService';
 
@@ -47,8 +48,8 @@ interface ProgramacionPreventiva {
   estado: string;
 }
 
-type Seccion = 'areas' | 'checklists' | 'tipos' | 'preventivos' | 'datos' | 'bitacora';
-const SECCIONES_INTERNAS: Seccion[] = ['areas', 'checklists', 'tipos', 'preventivos', 'datos', 'bitacora'];
+type Seccion = 'areas' | 'checklists' | 'tipos' | 'preventivos' | 'zona' | 'datos' | 'bitacora';
+const SECCIONES_INTERNAS: Seccion[] = ['areas', 'checklists', 'tipos', 'preventivos', 'zona', 'datos', 'bitacora'];
 
 const MODULOS: { titulo: string; descripcion: string; ruta: string; icono: ReactNode; soloReset?: boolean }[] = [
   { titulo: 'Gestión de usuarios', descripcion: 'Usuarios, roles, contraseñas y acceso.', ruta: '/usuarios', icono: <Users className="h-7 w-7" /> },
@@ -59,6 +60,7 @@ const MODULOS: { titulo: string; descripcion: string; ruta: string; icono: React
   { titulo: 'Fallas visuales', descripcion: 'Fallas y puntos sobre la imagen de cada tipo.', ruta: '/fallas-imagen', icono: <AlertTriangle className="h-7 w-7" /> },
   { titulo: 'Archivo técnico (planos)', descripcion: 'Planos y documentos técnicos de los vehículos.', ruta: '/archivo', icono: <FileText className="h-7 w-7" /> },
   { titulo: 'Programación preventiva', descripcion: 'Cada cuántos meses se da mantenimiento preventivo por tipo.', ruta: '/configuracion/preventivos', icono: <Calendar className="h-7 w-7" /> },
+  { titulo: 'Zona de Transición', descripcion: 'Cuántos vehículos dañados y reparados caben en la zona.', ruta: '/configuracion/zona', icono: <Warehouse className="h-7 w-7" /> },
   { titulo: 'Asignación de líderes', descripcion: 'Qué líder atiende cada tipo de vehículo.', ruta: '/asignacion-lideres', icono: <UserCheck className="h-7 w-7" /> },
   { titulo: 'Bitácora', descripcion: 'Quién eliminó, importó o reinició qué y cuándo.', ruta: '/configuracion/bitacora', icono: <History className="h-7 w-7" /> },
   { titulo: 'Respaldo y reinicio de datos', descripcion: 'Exportar todo a Excel y reiniciar los datos con la clave maestra.', ruta: '/configuracion/datos', icono: <Database className="h-7 w-7" />, soloReset: true }
@@ -981,6 +983,8 @@ export function ConfiguracionPage() {
       {activeTab === 'checklists' && <ChecklistsPorTipo />}
 
       {activeTab === 'bitacora' && <Bitacora />}
+
+      {activeTab === 'zona' && <CapacidadZonaConfig />}
 
       {activeTab === 'datos' && (
         <div className="flex items-center gap-2">

@@ -70,7 +70,7 @@ public class RefaccionesController : ControllerBase
     /// Crea una nueva solicitud de refacción
     /// </summary>
     [HttpPost]
-    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico")] // Solicitar materiales: el taller; antes cualquiera con sesión
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico")] // Solicitar materiales: Técnico (y quien administra el taller)
     public async Task<IActionResult> Create([FromBody] SolicitudRefaccionCreateRequest request)
     {
         try

@@ -22,15 +22,23 @@ public class ReportesController : ControllerBase
     private readonly LiderTipoVehiculoAsignacionService _asignacionService;
 
     private readonly EliminacionService _eliminacion;
+    private readonly FlujoAvisos _avisos;
 
-    public ReportesController(ReporteFallaService reporteService, NotificacionService notificacionService, IWebHostEnvironment env, LiderTipoVehiculoAsignacionService asignacionService, EliminacionService eliminacion)
+    public ReportesController(ReporteFallaService reporteService, NotificacionService notificacionService, IWebHostEnvironment env, LiderTipoVehiculoAsignacionService asignacionService, EliminacionService eliminacion, FlujoAvisos avisos)
     {
+        _avisos = avisos;
         _eliminacion = eliminacion;
         _reporteService = reporteService;
         _notificacionService = notificacionService;
         _env = env;
         _asignacionService = asignacionService;
     }
+
+    /// <summary>
+    /// En la lista el Operador ve solo los reportes que él levantó; el detalle sí lo abre
+    /// (lo necesita al consultar una orden de trabajo en solo lectura)
+    /// </summary>
+    private int? SoloPropiosId() => User.EsSoloOperador() ? User.UsuarioId() : null;
 
     [HttpGet]
     public async Task<IActionResult> GetAll(
@@ -54,7 +62,7 @@ public class ReportesController : ControllerBase
             }
         }
 
-        var reportes = await _reporteService.GetAllAsync(sinOrden, vehiculoId, desde, hasta, tiposPermitidos, busqueda, prioridad, categoriaId);
+        var reportes = await _reporteService.GetAllAsync(sinOrden, vehiculoId, desde, hasta, tiposPermitidos, busqueda, prioridad, categoriaId, SoloPropiosId());
         return Ok(ApiResponse<List<ReporteFallaListDto>>.Ok(reportes));
     }
 
@@ -77,14 +85,8 @@ public class ReportesController : ControllerBase
             var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var reporte = await _reporteService.CreateAsync(request, userId, force);
 
-            await _notificacionService.CrearNotificacionRolesAsync(
-                Models.Enums.TipoNotificacionEnum.NuevoReporte,
-                "Nuevo reporte de falla",
-                $"Folio {reporte.Folio} para vehiculo {reporte.Vehiculo?.Codigo ?? request.CodigoVehiculo}",
-                new[] { "superusuario", "administrador", "supervisor" },
-                reporte.Id,
-                "ReporteFalla",
-                $"/reportes/{reporte.Folio}");
+            // Aviso al Líder del tipo de vehículo para que haga la inspección (flujo de 7 etapas)
+            await _avisos.NuevoReporteAsync(reporte.Id, userId);
 
             return CreatedAtAction(nameof(GetById), new { id = reporte.Id },
                 ApiResponse<object>.Ok(new { reporte.Id, reporte.Folio }, "Reporte creado exitosamente"));
@@ -152,14 +154,8 @@ public class ReportesController : ControllerBase
             var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var reporte = await _reporteService.CreateWithAutoChecklistAsync(request, userId, force);
 
-            await _notificacionService.CrearNotificacionRolesAsync(
-                Models.Enums.TipoNotificacionEnum.NuevoReporte,
-                "Nuevo reporte de falla",
-                $"Folio {reporte.Folio} para vehiculo {reporte.Vehiculo?.Codigo ?? request.CodigoVehiculo}",
-                new[] { "superusuario", "administrador", "supervisor" },
-                reporte.Id,
-                "ReporteFalla",
-                $"/reportes/{reporte.Folio}");
+            // Aviso al Líder del tipo de vehículo para que haga la inspección (flujo de 7 etapas)
+            await _avisos.NuevoReporteAsync(reporte.Id, userId);
 
             return CreatedAtAction(nameof(GetById), new { id = reporte.Id },
                 ApiResponse<object>.Ok(new { reporte.Id, reporte.Folio }, "Reporte creado exitosamente con checklist automatico"));
@@ -232,7 +228,7 @@ public class ReportesController : ControllerBase
     [HttpGet("sin-atender")]
     public async Task<IActionResult> GetSinAtender()
     {
-        var reportes = await _reporteService.GetAllAsync(sinOrden: true, null, null, null);
+        var reportes = await _reporteService.GetAllAsync(sinOrden: true, reportadoPorId: SoloPropiosId());
         return Ok(ApiResponse<List<ReporteFallaListDto>>.Ok(reportes));
     }
 }

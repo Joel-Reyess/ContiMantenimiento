@@ -27,7 +27,7 @@ public class ConsumiblesController : ControllerBase
     private int? GetUserId() => int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
 
     [HttpGet]
-    [Authorize(Roles = "SuperUsuario,Administrador,Supervisor")]
+    [Authorize(Roles = "SuperUsuario,Administrador,Supervisor,Tecnico")] // El Técnico consulta el inventario
     public async Task<IActionResult> GetAll([FromQuery] bool? activo = null, [FromQuery] bool? bajoStock = null, [FromQuery] string? q = null)
     {
         var query = _db.Consumibles.AsQueryable();
@@ -218,7 +218,7 @@ public class ConsumiblesController : ControllerBase
     }
 
     [HttpGet("alertas")]
-    [Authorize(Roles = "SuperUsuario,Administrador,Supervisor")]
+    [Authorize(Roles = "SuperUsuario,Administrador,Supervisor,Tecnico")]
     public async Task<IActionResult> Alertas()
     {
         var items = await _db.Consumibles
