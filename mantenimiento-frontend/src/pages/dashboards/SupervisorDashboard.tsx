@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { CapacidadZonas } from '@/components/flujo';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button, LoadingCard, useConfirm, useToast } from '@/components/ui';
 import { dashboardService, refaccionesService } from '@/services';
@@ -230,6 +231,9 @@ export function SupervisorDashboard() {
           {todayLabel}
         </div>
       </div>
+
+      {/* Ocupación de la Zona de Transición con semáforo (PDF 23-oct-2026) */}
+      <CapacidadZonas />
 
       <div className="dashboard-kpi-grid">
         <OverviewCard

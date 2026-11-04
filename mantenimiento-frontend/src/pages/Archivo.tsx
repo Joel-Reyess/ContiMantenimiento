@@ -13,8 +13,10 @@ import { useAuth } from '@/contexts/AuthContext';
 export function ArchivoPage() {
   const { confirmar, pedirTexto } = useConfirm();
   const { hasRole } = useAuth();
-  // Eliminar solicitudes de cambio: solo administradores (el supervisor responde pero no elimina)
-  const canEliminarCambio = hasRole(['SuperUsuario', 'Administrador']);
+  // Eliminar documentos o solicitudes: solo administradores (el supervisor sube y responde pero no elimina).
+  // El Técnico consulta manuales y planos y puede pedir un cambio.
+  const canEliminar = hasRole(['SuperUsuario', 'Administrador']);
+  const puedeGestionar = hasRole(['SuperUsuario', 'Administrador', 'Supervisor']);
   const toast = useToast();
   const [vehiculos, setVehiculos] = useState<VehiculoList[]>([]);
   const [vehiculoSeleccionado, setVehiculoSeleccionado] = useState<SearchableSelectOption | null>(null);
@@ -336,7 +338,7 @@ export function ArchivoPage() {
               <GitPullRequest className="h-4 w-4" /> Solicitudes de Cambio
             </Button>
           </div>
-          {activeTab === 'docs' && (
+          {activeTab === 'docs' && puedeGestionar && (
             <Button
               className="flex items-center gap-2"
               onClick={() => { setErroresVentana({}); setShowUpload(true); }}
@@ -407,9 +409,11 @@ export function ArchivoPage() {
                     <p className="text-xs text-continental-gray-2 mt-2">Sin archivo adjunto</p>
                   )}
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => handleDelete(d.id)}>
-                  <Trash2 className="h-4 w-4 text-red-500" />
-                </Button>
+                {canEliminar && (
+                  <Button variant="ghost" size="sm" onClick={() => handleDelete(d.id)} aria-label={`Eliminar ${d.nombre}`}>
+                    <Trash2 className="h-4 w-4 text-red-500" />
+                  </Button>
+                )}
               </Card>
             ))}
           </div>
@@ -429,7 +433,7 @@ export function ArchivoPage() {
                     </Badge>
                   </div>
                   <div className="flex gap-2">
-                  {c.estado === 0 && (
+                  {c.estado === 0 && puedeGestionar && (
                     <>
                       <Button 
                         size="sm" 
@@ -453,7 +457,7 @@ export function ArchivoPage() {
                       </Button>
                     </>
                   )}
-                  {canEliminarCambio && (
+                  {canEliminar && (
                     <Button
                       size="sm"
                       variant="outline"

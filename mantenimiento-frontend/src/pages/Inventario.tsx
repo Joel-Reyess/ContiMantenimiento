@@ -26,8 +26,8 @@ interface InventarioProps {
 export function InventarioPage({ modoRefacciones = false, soloConsumibles = false }: InventarioProps) {
   const toast = useToast();
   const { hasRole } = useAuth();
-  // Ajustar stock: el servidor solo lo permite a administradores
-  const puedeAjustar = hasRole(['SuperUsuario', 'Administrador']);
+  // Ajustar stock: administración y Gerente de Mantenimiento (PDF 29-oct)
+  const puedeAjustar = hasRole(['SuperUsuario', 'Administrador', 'Supervisor']);
   const [items, setItems] = useState<Consumible[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');

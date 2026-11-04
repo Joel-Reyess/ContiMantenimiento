@@ -1,10 +1,14 @@
 import httpClient from './httpClient';
+import type { MaterialOrden } from './flujoService';
 import type { ApiResponse } from '@/interfaces';
 import type { PaginatedResponse } from './vehiculosService';
 
 export interface RegistroPago {
   id: number;
+  /** Folio de la orden de pago (OP-00125) */
+  folio?: string;
   ordenTrabajoId: number;
+  reporteFolio?: string;
   ordenTrabajoFolio?: string;
   vehiculoCodigo?: string;
   tecnicoId: number;
@@ -33,11 +37,37 @@ export interface PagoFilters {
   pageSize?: number;
 }
 
-export interface CrearPagoRequest {
+export interface ActividadPago {
+  descripcion: string;
+  cantidad: number;
+  costoUnitario: number;
+  subtotal: number;
+}
+
+/** Lo que la orden de pago hereda de la orden de trabajo (PDF 29-oct, 6.1) */
+export interface DetalleOrdenPago {
+  id: number;
+  folio: string;
+  estado: string;
+  estadoId: number;
   ordenTrabajoId: number;
+  ordenTrabajoFolio: string;
+  reporteFolio?: string;
+  vehiculoCodigo: string;
+  tipoVehiculo?: string;
+  area?: string;
   tecnicoId: number;
-  montoManoObra: number;
-  montoRefacciones?: number;
+  tecnico?: string;
+  fechaCreacionOrden: string;
+  fechaFinalizacionOrden?: string;
+  fechaRegistro: string;
+  fechaPago?: string;
+  aplicaGarantia: boolean;
+  actividades: ActividadPago[];
+  materiales: MaterialOrden[];
+  costoActividades: number;
+  costoMateriales: number;
+  total: number;
   notas?: string;
 }
 
@@ -78,8 +108,18 @@ export const pagosService = {
     return await httpClient.get<RegistroPago[]>(`/pagos/tecnico/${tecnicoId}`);
   },
 
-  async create(pago: CrearPagoRequest): Promise<ApiResponse<RegistroPago>> {
-    return await httpClient.post<RegistroPago>('/pagos', pago);
+  /** Ya no se capturan a mano: se generan al validar la reparación. Esto genera las de órdenes validadas antes del cambio */
+  async generarPendientes(): Promise<ApiResponse<{ generadas: number; folios: string[] }>> {
+    return await httpClient.post<{ generadas: number; folios: string[] }>('/pagos/generar-pendientes');
+  },
+
+  /** Órdenes ya validadas que aún no tienen su orden de pago */
+  async sinGenerar(): Promise<ApiResponse<number>> {
+    return await httpClient.get<number>('/pagos/sin-generar');
+  },
+
+  async detalle(id: number): Promise<ApiResponse<DetalleOrdenPago>> {
+    return await httpClient.get<DetalleOrdenPago>(`/pagos/${id}/detalle`);
   },
 
   async update(id: number, pago: ActualizarPagoRequest): Promise<ApiResponse<RegistroPago>> {

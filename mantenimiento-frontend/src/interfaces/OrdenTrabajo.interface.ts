@@ -135,6 +135,9 @@ export interface OrdenTrabajoList {
   tipoMantenimiento: string;
   fechaCreacion: string;
   fechaFinalizacion?: string;
+  /** 0 pendiente, 1 aprobado, 2 rechazado */
+  estadoAprobacionLider?: number;
+  estadoAprobacionSupervisor?: number;
 }
 
 export interface OrdenTrabajoCreateRequest {

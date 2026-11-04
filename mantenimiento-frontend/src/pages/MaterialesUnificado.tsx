@@ -86,6 +86,10 @@ export function MaterialesUnificadoPage() {
   // Eliminar solicitudes: solo administradores (estandarización de eliminación)
   const canEliminarSolicitud = hasRole(['SuperUsuario', 'Administrador']);
   const canImport = hasRole(['SuperUsuario', 'Administrador']);
+  // El Técnico consulta el inventario y solicita materiales; aprobar, entregar y exportar es del Supervisor
+  const puedeAprobar = hasRole(['SuperUsuario', 'Administrador', 'Supervisor']);
+  // El Gerente de Mantenimiento registra refacciones y consumibles y autoriza ajustes (PDF 29-oct); eliminar sigue siendo de administración
+  const puedeGestionarStock = hasRole(['SuperUsuario', 'Administrador', 'Supervisor']);
   const [importOpen, setImportOpen] = useState(false);
   const [exportando, setExportando] = useState(false);
   const [mensajeExcel, setMensajeExcel] = useState<{ tipo: 'success' | 'destructive'; texto: string } | null>(null);
@@ -496,6 +500,7 @@ export function MaterialesUnificadoPage() {
               <Button variant="outline" onClick={loadStock}>
                 <RefreshCcw className="h-4 w-4 mr-1" /> Actualizar
               </Button>
+              {puedeAprobar && (
               <Button
                 variant="outline"
                 disabled={exportando}
@@ -513,6 +518,7 @@ export function MaterialesUnificadoPage() {
               >
                 {exportando ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Download className="h-4 w-4 mr-1" />} Exportar Excel
               </Button>
+              )}
               {canImport && (
                 <Button
                   variant="outline"
@@ -524,9 +530,12 @@ export function MaterialesUnificadoPage() {
                   <Upload className="h-4 w-4 mr-1" /> Importar Excel
                 </Button>
               )}
-              <Button onClick={() => { setErrorStock(''); setShowCreate(true); }}>
-                <Plus className="h-4 w-4 mr-1" /> Nuevo
-              </Button>
+              {/* Dar de alta materiales: administración y Gerente de Mantenimiento */}
+              {puedeGestionarStock && (
+                <Button onClick={() => { setErrorStock(''); setShowCreate(true); }}>
+                  <Plus className="h-4 w-4 mr-1" /> Nuevo
+                </Button>
+              )}
             </div>
           </div>
 
@@ -577,8 +586,8 @@ export function MaterialesUnificadoPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex gap-2">
-                            {/* Ajustar stock: el servidor solo lo permite a administradores (al supervisor le daba 403) */}
-                            {canImport && (
+                            {/* Ajustar stock: administración y Gerente de Mantenimiento */}
+                            {puedeGestionarStock && (
                               <Button size="sm" variant="outline" onClick={() => { setShowAdjust(c); setErrorStock(''); }}>
                                 Ajustar
                               </Button>
@@ -664,7 +673,7 @@ export function MaterialesUnificadoPage() {
                     <div className="flex flex-col items-end gap-3">
                       <Badge variant={badgeVariant(item.estado)}>{item.estado}</Badge>
                       <div className="flex gap-3">
-                        {item.estado.toLowerCase().includes('pend') && (
+                        {puedeAprobar && item.estado.toLowerCase().includes('pend') && (
                           <>
                             <Button size="sm" onClick={() => handleAprobar(item.id)} disabled={accionando} className="flex items-center gap-1">
                               <CheckCircle className="h-4 w-4" />
@@ -676,7 +685,7 @@ export function MaterialesUnificadoPage() {
                             </Button>
                           </>
                         )}
-                        {item.estado.toLowerCase().includes('aprob') && (
+                        {puedeAprobar && item.estado.toLowerCase().includes('aprob') && (
                           <Button size="sm" onClick={() => handleEntregar(item.id)} disabled={accionando} className="flex items-center gap-1">
                             <CheckCircle className="h-4 w-4" />
                             Entregar

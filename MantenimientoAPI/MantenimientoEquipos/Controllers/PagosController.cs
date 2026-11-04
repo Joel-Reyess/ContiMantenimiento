@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.Models.Enums;
 using MantenimientoEquipos.Middlewares;
+using MantenimientoEquipos.DTOs;
 
 namespace MantenimientoEquipos.Controllers;
 
@@ -16,18 +17,31 @@ public class PagosController : ControllerBase
 {
     private readonly MantenimientoDbContext _db;
     private readonly EliminacionService _eliminacion;
+    private readonly OrdenPagoService _ordenesPago;
+    private readonly FlujoAvisos _avisos;
 
-    public PagosController(MantenimientoDbContext db, EliminacionService eliminacion)
+    public PagosController(MantenimientoDbContext db, EliminacionService eliminacion, OrdenPagoService ordenesPago, FlujoAvisos avisos)
     {
         _db = db;
         _eliminacion = eliminacion;
+        _ordenesPago = ordenesPago;
+        _avisos = avisos;
     }
+
+    /// <summary>Con orden, vehículo y reporte, para la lista de órdenes de pago</summary>
+    private IQueryable<RegistroPago> ConDetalle() => _db.RegistrosPago
+        .Include(p => p.OrdenTrabajo).ThenInclude(o => o.Vehiculo)
+        .Include(p => p.OrdenTrabajo).ThenInclude(o => o.ReporteFalla)
+        .Include(p => p.Tecnico);
 
     private object MapDto(RegistroPago p) => new
     {
         p.Id,
+        Folio = OrdenPagoService.Folio(p.Id),
         p.OrdenTrabajoId,
         OrdenTrabajoFolio = p.OrdenTrabajo?.Folio,
+        VehiculoCodigo = p.OrdenTrabajo?.Vehiculo?.Codigo,
+        ReporteFolio = p.OrdenTrabajo?.ReporteFalla?.Folio,
         p.TecnicoId,
         TecnicoNombre = p.Tecnico?.NombreCompleto,
         Estado = p.Estado,
@@ -70,10 +84,7 @@ public class PagosController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
-        var query = _db.RegistrosPago
-            .Include(p => p.OrdenTrabajo)
-            .Include(p => p.Tecnico)
-            .AsQueryable();
+        var query = ConDetalle().AsQueryable();
 
         if (tecnicoId.HasValue) query = query.Where(p => p.TecnicoId == tecnicoId.Value);
         if (estado.HasValue) query = query.Where(p => p.Estado == estado.Value);
@@ -98,22 +109,19 @@ public class PagosController : ControllerBase
     }
 
     [HttpGet("{id:int}")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")] // Antes cualquiera con sesión veía cualquier pago
     public async Task<IActionResult> GetById(int id)
     {
-        var pago = await _db.RegistrosPago
-            .Include(p => p.OrdenTrabajo)
-            .Include(p => p.Tecnico)
-            .FirstOrDefaultAsync(p => p.Id == id);
+        var pago = await ConDetalle().FirstOrDefaultAsync(p => p.Id == id);
         if (pago == null) return NotFound(ApiResponse<string>.Error("Pago no encontrado"));
         return Ok(ApiResponse<object>.Ok(MapDto(pago)));
     }
 
     [HttpGet("pendientes")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
     public async Task<IActionResult> GetPendientes()
     {
-        var list = await _db.RegistrosPago
-            .Include(p => p.OrdenTrabajo)
-            .Include(p => p.Tecnico)
+        var list = await ConDetalle()
             .Where(p => p.Estado == EstadoPagoEnum.Pendiente || p.Estado == EstadoPagoEnum.EnRevision)
             .OrderByDescending(p => p.FechaRegistro)
             .ToListAsync();
@@ -121,24 +129,19 @@ public class PagosController : ControllerBase
     }
 
     [HttpGet("tecnico/{tecnicoId:int}")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico")]
     public async Task<IActionResult> GetByTecnico(int tecnicoId)
     {
-        var list = await _db.RegistrosPago
-            .Include(p => p.OrdenTrabajo)
-            .Include(p => p.Tecnico)
+        // El técnico solo consulta sus propios pagos
+        var esGestor = User.IsInRole("SuperUsuario") || User.IsInRole("Administrador") || User.IsInRole("Supervisor");
+        if (!esGestor && User.UsuarioId() != tecnicoId)
+            return StatusCode(403, ApiResponse<string>.Error("Solo puedes consultar tus propios pagos."));
+
+        var list = await ConDetalle()
             .Where(p => p.TecnicoId == tecnicoId)
             .OrderByDescending(p => p.FechaRegistro)
             .ToListAsync();
         return Ok(ApiResponse<object>.Ok(list.Select(MapDto).ToList()));
-    }
-
-    public class CrearPagoRequest
-    {
-        public int OrdenTrabajoId { get; set; }
-        public int TecnicoId { get; set; }
-        public decimal MontoManoObra { get; set; }
-        public decimal? MontoRefacciones { get; set; }
-        public string? Notas { get; set; }
     }
 
     public class ActualizarPagoRequest
@@ -148,44 +151,62 @@ public class PagosController : ControllerBase
         public string? Notas { get; set; }
     }
 
+    /// <summary>
+    /// Ya no se capturan a mano (PDF 29-oct, 6.1): la orden de pago se genera sola cuando la orden de trabajo
+    /// llega a DISPONIBLE.
+    /// </summary>
     [HttpPost]
     [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
-    public async Task<IActionResult> Create([FromBody] CrearPagoRequest request)
+    public IActionResult Create() =>
+        StatusCode(410, ApiResponse<string>.Error(
+            "Las órdenes de pago ya no se capturan a mano: se generan automáticamente cuando la orden de trabajo se valida (DISPONIBLE)."));
+
+    /// <summary>Lo que hereda de la orden: actividades, refacciones y consumibles, vehículo, técnico, fechas y total</summary>
+    [HttpGet("{id:int}/detalle")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
+    public async Task<IActionResult> Detalle(int id)
     {
-        var orden = await _db.OrdenesTrabajo.FindAsync(request.OrdenTrabajoId);
-        if (orden == null) return NotFound(ApiResponse<string>.Error("Orden no encontrada"));
-
-        var tecnico = await _db.Users.FindAsync(request.TecnicoId);
-        if (tecnico == null) return NotFound(ApiResponse<string>.Error("Tecnico no encontrado"));
-
-        // Validacion: evitar doble pago para la misma orden
-        var pagoExistente = await _db.RegistrosPago
-            .AsNoTracking()
-            .AnyAsync(p => p.OrdenTrabajoId == request.OrdenTrabajoId);
-        if (pagoExistente)
-        {
-            return BadRequest(ApiResponse<string>.Error("Ya existe un pago registrado para esta orden de trabajo."));
-        }
-
-        var pago = new RegistroPago
-        {
-            OrdenTrabajoId = request.OrdenTrabajoId,
-            TecnicoId = request.TecnicoId,
-            HorasTrabajadas = 1,
-            TarifaHora = request.MontoManoObra,
-            CostoManoObra = request.MontoManoObra,
-            CostoRefacciones = request.MontoRefacciones ?? 0,
-            OtrosCostos = 0,
-            MontoTotal = request.MontoManoObra + (request.MontoRefacciones ?? 0),
-            Estado = EstadoPagoEnum.Pendiente,
-            Notas = request.Notas,
-            FechaRegistro = DateTime.UtcNow
-        };
-
-        _db.RegistrosPago.Add(pago);
-        await _db.SaveChangesAsync();
-        return Ok(ApiResponse<object>.Ok(MapDto(pago), "Pago registrado"));
+        var detalle = await _ordenesPago.DetalleAsync(id);
+        return detalle == null
+            ? NotFound(ApiResponse<string>.Error("Orden de pago no encontrada"))
+            : Ok(ApiResponse<DetalleOrdenPagoDto>.Ok(detalle));
     }
+
+    /// <summary>Órdenes ya validadas (DISPONIBLE) que aún no tienen su orden de pago, p.ej. las de antes de este cambio</summary>
+    [HttpGet("sin-generar")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
+    public async Task<IActionResult> SinGenerar()
+    {
+        var total = await OrdenesSinPago().CountAsync();
+        return Ok(ApiResponse<int>.Ok(total));
+    }
+
+    [HttpPost("generar-pendientes")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
+    public async Task<IActionResult> GenerarPendientes()
+    {
+        var ordenes = await OrdenesSinPago().Include(o => o.Vehiculo).ToListAsync();
+        var generadas = new List<(RegistroPago Pago, string Folio)>();
+        var nombre = User.NombreUsuario() ?? "Administración";
+        foreach (var o in ordenes)
+        {
+            var pago = await _ordenesPago.GenerarAsync(o, nombre);
+            if (pago != null) generadas.Add((pago, o.Folio));
+        }
+        await _db.SaveChangesAsync();
+        foreach (var (pago, folio) in generadas)
+            await _avisos.OrdenPagoGeneradaAsync(pago.Id, folio, User.UsuarioId());
+        var resultado = new ResultadoGenerarPagosDto { Generadas = generadas.Count, Folios = generadas.Select(g => OrdenPagoService.Folio(g.Pago.Id)).ToList() };
+        return Ok(ApiResponse<ResultadoGenerarPagosDto>.Ok(resultado,
+            resultado.Generadas == 0 ? "No había órdenes pendientes de generar" : $"{resultado.Generadas} orden(es) de pago generada(s)"));
+    }
+
+    // Las inspecciones rápidas (INS) nacen validadas y no son reparaciones: no llevan orden de pago
+    private IQueryable<OrdenTrabajo> OrdenesSinPago() => _db.OrdenesTrabajo
+        .Where(o => (o.Estado == EstadoOrdenTrabajoEnum.Validada || o.Estado == EstadoOrdenTrabajoEnum.Entregado)
+                    && o.TecnicoAsignadoId != null
+                    && o.TipoMantenimiento != "Inspección" && o.TipoMantenimiento != "Inspeccion"
+                    && !_db.RegistrosPago.Any(p => p.OrdenTrabajoId == o.Id));
 
     [HttpPut("{id:int}")]
     [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
@@ -231,7 +252,7 @@ public class PagosController : ControllerBase
     }
 
     [HttpPost("{id:int}/revertir")]
-    [RolesAllowed("SuperUsuario", "Administrador")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")] // El Gerente de Mantenimiento cambia el estatus de los pagos
     public async Task<IActionResult> Revertir(int id)
     {
         var pago = await _db.RegistrosPago.FindAsync(id);

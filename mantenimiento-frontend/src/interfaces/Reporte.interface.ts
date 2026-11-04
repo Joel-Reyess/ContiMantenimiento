@@ -31,6 +31,8 @@ export interface ReporteFalla {
   puedeOperar: boolean;
   fechaReporte: string;
   tieneOrdenTrabajo: boolean;
+  /** INSPECCIÓN: 0 en validación, 1 validado, 2 rechazado */
+  estadoInspeccion?: number;
   ordenTrabajoId?: number;
   evidencias: Evidencia[];
   itemsChecklist?: ReporteFallaChecklistItem[];
@@ -48,6 +50,8 @@ export interface ReporteFallaList {
   tipoMantenimiento?: string;
   fechaReporte: string;
   tieneOrdenTrabajo: boolean;
+  /** INSPECCIÓN: 0 en validación, 1 validado, 2 rechazado */
+  estadoInspeccion?: number;
   reportadoPorNombre?: string;
   cantidadEvidencias: number;
 }

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { CapacidadZonas } from '@/components/flujo';
 import { Link, useNavigate } from 'react-router-dom';
 import { LoadingCard, Alert, AlertTitle, AlertDescription, Card } from '@/components/ui';
 import { Info, Truck, Wrench, Clock, CheckCircle, AlertTriangle, Activity, Users, LayoutDashboard, FileText, History, Package, Box, Calendar } from 'lucide-react';
@@ -231,6 +232,9 @@ export function AdminDashboard() {
           Bienvenido a su Panel de Control. Desde aquí puede supervisar el estado general de la flota, atender reportes de falla urgentes y gestionar las órdenes de trabajo activas de manera eficiente.
         </p>
       </Card>
+
+      {/* Ocupación de la Zona de Transición con semáforo (PDF 23-oct-2026) */}
+      <CapacidadZonas />
       
       <section className="dashboard-card border-l-4 border-l-continental-yellow/80 p-6 md:p-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">

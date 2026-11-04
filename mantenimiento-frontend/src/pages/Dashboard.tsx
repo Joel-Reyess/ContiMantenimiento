@@ -29,8 +29,7 @@ export function Dashboard() {
   if (isSupervisor) return <SupervisorDashboard />;
   if (isLider) return <LiderDashboard />;
   if (isTecnico) return <Navigate to="/ordenes" replace />;
-  // El Operador no tiene dashboard: su pantalla es Reportes de Falla (la única de su menú)
-  if (isOperador) return <Navigate to="/reportes" replace />;
+  if (isOperador) return <LiderDashboard rol="Operador" />;
 
   return (
     <div className="dashboard-wrapper">

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { CapacidadZonas } from '@/components/flujo';
 import { Badge, Button, LoadingCard } from '@/components/ui';
 import { reportesService } from '@/services';
 import { formatDateTime } from '@/lib/utils';
@@ -17,6 +18,7 @@ interface ReporteReciente {
   prioridadNombre?: string;
   fechaReporte: string;
   tieneOrdenTrabajo: boolean;
+  estadoInspeccion?: number;
 }
 
 interface MantenimientoPreventivoPendiente {
@@ -28,7 +30,13 @@ interface MantenimientoPreventivoPendiente {
   estado: string;
 }
 
-export function LiderDashboard() {
+interface LiderDashboardProps {
+  /** El Operador usa el mismo portal: reporta fallas y consulta sus reportes (sin preventivos) */
+  rol?: 'Lider' | 'Operador';
+}
+
+export function LiderDashboard({ rol = 'Lider' }: LiderDashboardProps) {
+  const esOperador = rol === 'Operador';
   const navigate = useNavigate();
   const { user } = useAuth();
   const [reportes, setReportes] = useState<ReporteReciente[]>([]);
@@ -50,7 +58,7 @@ export function LiderDashboard() {
       const [reportesRes, sinAtenderRes, programacionRes] = await Promise.all([
         reportesService.getAll({ pageSize: 10 }),
         reportesService.getSinAtender(),
-        dashboardService.getProgramacionPreventiva()
+        esOperador ? Promise.resolve(null) : dashboardService.getProgramacionPreventiva()
       ]);
 
       if (reportesRes.success && reportesRes.data) {
@@ -72,7 +80,7 @@ export function LiderDashboard() {
         setStats(prev => ({ ...prev, sinAtender: sinAtenderRes.data?.length || 0 }));
       }
 
-      if (programacionRes.success && Array.isArray(programacionRes.data)) {
+      if (programacionRes?.success && Array.isArray(programacionRes.data)) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
@@ -115,8 +123,8 @@ export function LiderDashboard() {
     <div className="dashboard-wrapper">
       <div className="max-w-4xl mx-auto flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-sm uppercase tracking-[0.3em] text-continental-gray-1">Portal del Lider</p>
-          <h1 className="text-3xl font-semibold text-continental-black">Hola, {user?.nombreCompleto || 'Lider'}</h1>
+          <p className="text-sm uppercase tracking-[0.3em] text-continental-gray-1">{esOperador ? 'Portal del Operador' : 'Portal del Lider'}</p>
+          <h1 className="text-3xl font-semibold text-continental-black">Hola, {user?.nombreCompleto || (esOperador ? 'Operador' : 'Lider')}</h1>
           <p className="text-continental-gray-1">Reporta fallas de equipos de manera rapida y sencilla.</p>
         </div>
       </div>
@@ -126,6 +134,11 @@ export function LiderDashboard() {
           <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{error}</div>
         </div>
       )}
+
+      {/* Ocupación de la Zona de Transición con semáforo (PDF 23-oct-2026) */}
+      <div className="max-w-4xl mx-auto">
+        <CapacidadZonas />
+      </div>
 
       {/* Main Action Card - Prominent */}
       <div className="max-w-4xl mx-auto">
@@ -142,6 +155,7 @@ export function LiderDashboard() {
       </div>
 
       {/* Preventivos rapidos */}
+      {!esOperador && (
       <div className="max-w-4xl mx-auto dashboard-card p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -199,6 +213,7 @@ export function LiderDashboard() {
           </>
         )}
       </div>
+      )}
 
       {/* Stats Cards */}
       <div className="max-w-4xl mx-auto grid gap-5 sm:grid-cols-2">
@@ -234,7 +249,7 @@ export function LiderDashboard() {
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-lg font-semibold text-continental-black flex items-center gap-2">
             <AlertTriangle className="h-5 w-5" />
-            Reportes Recientes
+            {esOperador ? 'Mis reportes recientes' : 'Reportes Recientes'}
           </h2>
         </div>
 
@@ -254,8 +269,8 @@ export function LiderDashboard() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="font-semibold text-continental-black">{reporte.folio}</span>
-                      <Badge variant={reporte.tieneOrdenTrabajo ? 'success' : 'warning'}>
-                        {reporte.tieneOrdenTrabajo ? 'Atendido' : 'Pendiente'}
+                      <Badge variant={reporte.tieneOrdenTrabajo ? 'success' : reporte.estadoInspeccion === 2 ? 'destructive' : 'warning'}>
+                        {reporte.tieneOrdenTrabajo ? 'Con orden' : reporte.estadoInspeccion === 2 ? 'Rechazado' : 'En validación'}
                       </Badge>
                     </div>
                     <p className="text-continental-gray-1 text-sm">

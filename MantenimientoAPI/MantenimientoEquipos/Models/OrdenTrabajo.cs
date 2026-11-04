@@ -105,6 +105,9 @@ public class OrdenTrabajo
     /// </summary>
     public decimal? CostoTotal { get; set; }
 
+    /// <summary>Mantenimiento a menos de 6 meses del anterior: las refacciones no tienen costo (se fija al terminar)</summary>
+    public bool AplicaGarantia { get; set; }
+
     // Datos adicionales
     public string? ChecklistRecepcionJson { get; set; }
     [MaxLength(300)]
@@ -149,6 +152,18 @@ public class OrdenTrabajo
     [MaxLength(500)]
     public string? Notas { get; set; }
 
+    // ===== Flujo de 7 etapas: traslados a Zona de Transición y aceptación del taller =====
+    /// <summary>TRASLADO: Operador/Líder confirmó la entrega física en la zona de dañados</summary>
+    public DateTime? FechaTrasladoIngreso { get; set; }
+    public int? TrasladoIngresoPorId { get; set; }
+    public virtual User? TrasladoIngresoPor { get; set; }
+    /// <summary>TALLER: el técnico aceptó la orden (la unidad sale de la zona de dañados al taller)</summary>
+    public DateTime? FechaAceptacion { get; set; }
+    /// <summary>Segundo TRASLADO: el técnico confirmó la entrega en la zona de reparados</summary>
+    public DateTime? FechaTrasladoRetorno { get; set; }
+    public int? TrasladoRetornoPorId { get; set; }
+    public virtual User? TrasladoRetornoPor { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
 
@@ -158,5 +173,6 @@ public class OrdenTrabajo
     public virtual ICollection<SolicitudRefaccion> SolicitudesRefaccion { get; set; } = new HashSet<SolicitudRefaccion>();
     public virtual ICollection<SolicitudActividadAdicional> SolicitudesActividadAdicional { get; set; } = new HashSet<SolicitudActividadAdicional>();
     public virtual ICollection<OrdenTrabajoChecklistItem> ItemsChecklist { get; set; } = new HashSet<OrdenTrabajoChecklistItem>();
+    public virtual ICollection<MaterialOrdenTrabajo> Materiales { get; set; } = new HashSet<MaterialOrdenTrabajo>();
     public virtual RegistroPago? RegistroPago { get; set; }
 }

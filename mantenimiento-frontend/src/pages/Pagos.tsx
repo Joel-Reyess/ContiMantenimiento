@@ -1,6 +1,5 @@
-﻿import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { DollarSign, RefreshCcw, CheckCircle, XCircle, Plus, Loader2, Printer, Save, FileText, Trash2 } from 'lucide-react';
+﻿import { useEffect, useRef, useState } from 'react';
+import { DollarSign, RefreshCcw, CheckCircle, XCircle, Loader2, Printer, Save, FileText, Trash2 } from 'lucide-react';
 import {
   Alert,
   AlertDescription,
@@ -10,8 +9,6 @@ import {
   Card,
   Modal,
   ModalFooter,
-  SearchableSelect,
-  type SearchableSelectOption,
   Select,
   Spinner,
   Textarea,
@@ -21,12 +18,12 @@ import {
 import { pagosService } from '@/services/pagosService';
 import { ordenesService } from '@/services/ordenesService';
 import { reportesService } from '@/services/reportesService';
-import { usuariosService } from '@/services/usuariosService';
 import { useAuth } from '@/contexts/AuthContext';
 import { Undo } from 'lucide-react';
 import { ordenesCompraService } from '@/services/ordenesCompraService';
-import type { RegistroPago } from '@/services/pagosService';
-import { EstadoPago, EstadoOrdenTrabajo } from '@/interfaces/Api.interface';
+import type { DetalleOrdenPago, RegistroPago } from '@/services/pagosService';
+import { EstadoPago } from '@/interfaces/Api.interface';
+import { formatCurrency } from '@/lib/utils';
 import type { OrdenTrabajo, ReporteFalla, Evidencia } from '@/interfaces';
 
 const estadoOpciones = [
@@ -42,44 +39,33 @@ interface FiltersState {
   estado?: string;
 }
 
-interface CrearPagoForm {
-  ordenTrabajoId: string;
-  tecnicoId: string;
-  notas: string;
-}
-
 interface EditarPagoForm {
   notas: string;
 }
-
-type OrdenOption = SearchableSelectOption<{
-  folio?: string;
-  VehiculoCodigo?: string;
-  prioridad?: string;
-}>;
-
-type TecnicoOption = SearchableSelectOption<{
-  numeroEmpleado?: string;
-}>;
 
 export function PagosPage() {
   const { confirmar, pedirTexto } = useConfirm();
   const toast = useToast();
   const { hasRole } = useAuth();
-  const isAdmin = hasRole(['Administrador']);
-  const canRevert = hasRole(['Superusuario', 'Administrador']);
+  // Montos y cambio de estatus: administración y Gerente de Mantenimiento (Supervisor) (PDF 29-oct)
+  const isAdmin = hasRole(['SuperUsuario', 'Administrador', 'Supervisor']);
+  const canRevert = hasRole(['SuperUsuario', 'Administrador', 'Supervisor']);
+  const puedeGenerarPendientes = hasRole(['SuperUsuario', 'Administrador']);
+  // Órdenes validadas antes de la orden de pago automática: se generan con un botón
+  const [sinGenerar, setSinGenerar] = useState(0);
+  const [generando, setGenerando] = useState(false);
+  // Lo que la orden de pago hereda de la orden (actividades, materiales, totales)
+  const [detalleOP, setDetalleOP] = useState<DetalleOrdenPago | null>(null);
+  const pagoAbierto = useRef<number | null>(null);
+  // Eliminar sigue siendo solo de administración (el Gerente no elimina datos)
+  const puedeEliminarPago = hasRole(['SuperUsuario', 'Administrador']);
   const [filters, setFilters] = useState<FiltersState>({});
   const [pagos, setPagos] = useState<RegistroPago[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   // Error de la ventana abierta (nuevo pago / detalle): se muestra dentro de ella, no en el banner de la página (queda detrás)
   const [errorVentana, setErrorVentana] = useState('');
-  const [createOpen, setCreateOpen] = useState(false);
-  const [creando, setCreando] = useState(false);
   const [accionando, setAccionando] = useState(false);
-  const [ordenSeleccionada, setOrdenSeleccionada] = useState<OrdenOption | null>(null);
-  const [tecnicoSeleccionado, setTecnicoSeleccionado] = useState<TecnicoOption | null>(null);
-  const [detalleOrden, setDetalleOrden] = useState<OrdenTrabajo | null>(null);
   const [detalleOrdenPago, setDetalleOrdenPago] = useState<OrdenTrabajo | null>(null);
   const [reporteDetalle, setReporteDetalle] = useState<ReporteFalla | null>(null);
   const [detallePago, setDetallePago] = useState<RegistroPago | null>(null);
@@ -87,17 +73,6 @@ export function PagosPage() {
   const [guardandoDetalle, setGuardandoDetalle] = useState(false);
   const [pagando, setPagando] = useState(false);
   const [ordenInfoMap, setOrdenInfoMap] = useState<Record<number, { vehiculo?: string; descripcion?: string }>>({});
-  const [ordenYaTienePago, setOrdenYaTienePago] = useState(false);
-  const [costoCalculado, setCostoCalculado] = useState<{ checklist: number; refacciones: number; total: number }>({
-    checklist: 0,
-    refacciones: 0,
-    total: 0
-  });
-  const [form, setForm] = useState<CrearPagoForm>({
-    ordenTrabajoId: '',
-    tecnicoId: '',
-    notas: ''
-  });
   const [formDetalle, setFormDetalle] = useState<EditarPagoForm>({
     notas: ''
   });
@@ -112,105 +87,12 @@ export function PagosPage() {
     return match ? match.label : 'Estado';
   };
 
-    const fetchOrdenes = useCallback(async (busqueda: string): Promise<OrdenOption[]> => {
-    try {
-      const res = await ordenesService.getAll({
-        busqueda: busqueda || undefined,
-        estado: EstadoOrdenTrabajo.Validada,
-        page: 1,
-        pageSize: 10
-      });
-
-      if (res.success && res.data) {
-        const data: unknown = res.data as unknown;
-        const items =
-          (data as { items?: any[]; Items?: any[] }).items ||
-          (data as { items?: any[]; Items?: any[] }).Items ||
-          (Array.isArray(data) ? (data as unknown[]) : []);
-
-        return (items as any[]).map((o) => {
-          const vehiculoCodigo = o.VehiculoCodigo || o.vehiculoCodigo || '';
-          const vehiculoTipo = o.VehiculoTipo || o.vehiculoTipo || '';
-          const descripcion = o.descripcion || o.reporteFallaDescripcion || (o as any).reporteFalla?.descripcion || '';
-          const prioridad = o.prioridadNombre || '';
-          const detailParts = [
-            vehiculoCodigo ? `Vehiculo: ${vehiculoCodigo}${vehiculoTipo ? ` (${vehiculoTipo})` : ''}` : '',
-            prioridad ? `Prioridad: ${prioridad}` : '',
-            descripcion ? `Falla: ${descripcion}` : ''
-          ].filter(Boolean);
-
-          return {
-            value: o.id,
-            // Con el folio al inicio: el campo dice "Buscar por folio" y sin él no se distinguían dos órdenes del mismo vehículo
-            label: [o.folio, ...detailParts].filter(Boolean).join(' · '),
-            description: detailParts.join(' | '),
-            meta: {
-              folio: o.folio,
-              VehiculoCodigo: vehiculoCodigo,
-              prioridad: prioridad,
-              descripcion: descripcion
-            }
-          };
-        });
-      }
-    } catch (err) {
-      console.error('No se pudieron cargar ordenes', err);
-    }
-    return [];
-  }, []);
-
-  const calcularCostos = (orden?: OrdenTrabajo | null) => {
-    if (!orden) return { checklist: 0, refacciones: 0, total: 0 };
-    const respuestasSeleccionadas = (orden.respuestasChecklist || []).filter((r: any) => {
-      const val = (r.valor ?? '').toString().trim().toLowerCase();
-      return val !== '' && val !== 'no' && val !== 'false' && val !== '0';
-    });
-    const costoChecklist = respuestasSeleccionadas.reduce((acc, r: any) => {
-      const c = Number(r.costoEstimado || r.checklistItem?.costoEstimado || 0);
-      return acc + (Number.isNaN(c) ? 0 : c);
-    }, 0);
-    // Costo refacciones oculto en UI
-    const costoRefacciones = 0;
-    // Cambio: El total de la orden de pago es SOLO el checklist, sin refacciones
-    const total = costoChecklist; 
-    return { checklist: costoChecklist, refacciones: costoRefacciones, total };
-  };
-
-  const loadDetalleOrden = async (id: number) => {
-    try {
-      const res = await ordenesService.getById(id);
-      if (res.success && res.data) {
-        const ord = res.data as OrdenTrabajo;
-        setDetalleOrden(ord);
-        setTecnicoSeleccionado({
-          value: ord.tecnicoAsignadoId || ord.firmadoPorId || ord.creadoPorId,
-          label: ord.tecnicoNombre || ord.firmadoPorNombre || ord.creadoPorNombre || `Tecnico ${ord.tecnicoAsignadoId || ''}`
-        });
-        setForm((prev) => ({
-          ...prev,
-          tecnicoId: ord.tecnicoAsignadoId ? String(ord.tecnicoAsignadoId) : prev.tecnicoId
-        }));
-        const costs = calcularCostos(ord);
-        setCostoCalculado(costs);
-      } else {
-        setDetalleOrden(null);
-        setCostoCalculado({ checklist: 0, refacciones: 0, total: 0 });
-      }
-    } catch (err) {
-      console.error('No se pudo cargar detalle de orden', err);
-      setDetalleOrden(null);
-      setCostoCalculado({ checklist: 0, refacciones: 0, total: 0 });
-    }
-  };
-
   const loadDetalleOrdenPago = async (id: number) => {
     try {
       const res = await ordenesService.getById(id);
       if (res.success && res.data) {
         const ord = res.data as OrdenTrabajo;
         setDetalleOrdenPago(ord);
-        const costs = calcularCostos(ord);
-        setCostoCalculado(costs);
 
         // Cargar reporte de falla (con evidencias) para el "Crear reporte"
         if (ord.reporteFallaId) {
@@ -241,81 +123,13 @@ export function PagosPage() {
       } else {
         setDetalleOrdenPago(null);
         setReporteDetalle(null);
-        setCostoCalculado({ checklist: 0, refacciones: 0, total: 0 });
       }
     } catch (err) {
       console.error('No se pudo cargar detalle de orden', err);
       setDetalleOrdenPago(null);
       setReporteDetalle(null);
-      setCostoCalculado({ checklist: 0, refacciones: 0, total: 0 });
     }
   };
-
-    const fetchTecnicos = useCallback(async (busqueda: string): Promise<TecnicoOption[]> => {
-    const mapToOptions = (lista: any[]) => {
-      const filtrados = busqueda
-        ? lista.filter((t) =>
-            `${t.nombreCompleto || ''} ${t.username || ''} ${t.numeroEmpleado || ''}`
-              .toLowerCase()
-              .includes((busqueda || '').toLowerCase())
-          )
-        : lista;
-
-      return filtrados.map((u) => ({
-        value: u.id,
-        label: u.nombreCompleto || u.username || `Tecnico ${u.id}`,
-        description: u.numeroEmpleado ? `No. Emp: ${u.numeroEmpleado}` : u.rolNombre || '',
-        meta: { numeroEmpleado: u.numeroEmpleado }
-      }));
-    };
-
-    try {
-      // Preferimos endpoint directo de tecnicos si existe
-      const res = await usuariosService.getTecnicos();
-      if (res.success && res.data) {
-        const data = res.data as any;
-        const lista: any[] =
-          (data.items as any[]) ||
-          (data.Items as any[]) ||
-          (data.data?.items as any[]) ||
-          (data.Data?.items as any[]) ||
-          (Array.isArray(data) ? data : []);
-        if (lista.length) return mapToOptions(lista);
-      }
-      // fallback: consultar usuarios y filtrar rol tecnico
-      const resAll = await usuariosService.getAll({
-        busqueda: busqueda || undefined,
-        rolId: 4,
-        activo: true,
-        page: 1,
-        pageSize: 50
-      });
-      if (resAll.success && resAll.data) {
-        const data = resAll.data as any;
-        const items: any[] =
-          (data.items as any[]) ||
-          (data.Items as any[]) ||
-          (data.data?.items as any[]) ||
-          (data.Data?.items as any[]) ||
-          (Array.isArray(data) ? data : []);
-        return items
-          .filter(
-            (u) =>
-              (u.rolNombre || '').toLowerCase().includes('tecnico') ||
-              (u.roles || []).some((r: string) => (r || '').toLowerCase().includes('tecnico'))
-          )
-          .map((u) => ({
-            value: u.id,
-            label: u.nombreCompleto || u.username || `Tecnico ${u.id}`,
-            description: u.numeroEmpleado ? `No. Emp: ${u.numeroEmpleado}` : u.rolNombre || '',
-            meta: { numeroEmpleado: u.numeroEmpleado }
-          }));
-      }
-    } catch (err) {
-      console.error('No se pudieron cargar tecnicos', err);
-    }
-    return [];
-  }, []);
 
   const loadPagos = async () => {
     setLoading(true);
@@ -346,10 +160,35 @@ export function PagosPage() {
     }
   };
 
+  const cargarSinGenerar = async () => {
+    const res = await pagosService.sinGenerar();
+    setSinGenerar(res.success && typeof res.data === 'number' ? res.data : 0);
+  };
+
   useEffect(() => {
     loadPagos();
+    void cargarSinGenerar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const generarPendientes = async () => {
+    const ok = await confirmar({
+      titulo: 'Generar órdenes de pago pendientes',
+      mensaje: `Se generarán ${sinGenerar} orden(es) de pago de órdenes de trabajo que ya estaban validadas, con sus actividades, refacciones y consumibles.`,
+      textoConfirmar: 'Generar',
+      tono: 'info'
+    });
+    if (!ok) return;
+    setGenerando(true);
+    try {
+      const res = await pagosService.generarPendientes();
+      if (res.success) toast.exito(res.message || 'Órdenes de pago generadas');
+      else toast.error(res.message || 'No se pudieron generar las órdenes de pago');
+      await Promise.all([loadPagos(), cargarSinGenerar()]);
+    } finally {
+      setGenerando(false);
+    }
+  };
 
   useEffect(() => {
     // Recargar pagos cuando cambia el filtro de estado
@@ -388,15 +227,6 @@ export function PagosPage() {
     }
   }, [pagos, ordenInfoMap]);
 
-  const resetCrearForm = () => {
-    setForm({ ordenTrabajoId: '', tecnicoId: '', notas: '' });
-    setOrdenSeleccionada(null);
-    setTecnicoSeleccionado(null);
-    setDetalleOrden(null);
-    setCostoCalculado({ checklist: 0, refacciones: 0, total: 0 });
-    setOrdenYaTienePago(false);
-  };
-
   const abrirDetallePago = async (pago: RegistroPago) => {
     setErrorVentana('');
     setDetallePago(pago);
@@ -404,7 +234,13 @@ export function PagosPage() {
     setFormDetalle({
       notas: pago.notas || ''
     });
-    await loadDetalleOrdenPago(pago.ordenTrabajoId);
+    setDetalleOP(null);
+    pagoAbierto.current = pago.id;
+    const [op] = await Promise.all([pagosService.detalle(pago.id), loadDetalleOrdenPago(pago.ordenTrabajoId)]);
+    // Si mientras tanto se abrió otro pago, esta respuesta ya no le corresponde (no mezclar montos)
+    if (pagoAbierto.current !== pago.id) return;
+    if (op.success && op.data) setDetalleOP(op.data);
+    else setErrorVentana(op.message || 'No se pudo cargar el detalle de la orden de pago');
   };
 
   const guardarDetalle = async () => {
@@ -412,9 +248,10 @@ export function PagosPage() {
     setGuardandoDetalle(true);
     setErrorVentana('');
     try {
+      // Los montos no cambian: vienen de la orden de trabajo; aquí solo se guardan las notas
       const payload = {
-        montoManoObra: Number(costoCalculado.checklist || 0),
-        montoRefacciones: Number(costoCalculado.refacciones || 0),
+        montoManoObra: Number(detalleOP?.costoActividades ?? detallePago.montoManoObra ?? 0),
+        montoRefacciones: Number(detalleOP?.costoMateriales ?? detallePago.montoRefacciones ?? 0),
         notas: formDetalle.notas.trim() || undefined
       };
       const res = await pagosService.update(detallePago.id, payload);
@@ -454,12 +291,19 @@ export function PagosPage() {
     }
     ord = ord || detalleOrdenPago;
     if (!ord) return;
+    let op = detalleOP;
+    if (!op) {
+      const r = await pagosService.detalle(detallePago.id);
+      op = r.success && r.data ? r.data : null;
+    }
 
-    const refacciones = (ord.solicitudesRefaccion || [])
-      .filter((s: any) => s.estado === 'Entregada' || s.estado === 'Aprobada' || s.estado === 'Pendiente')
+    // Refacciones y consumibles que heredó la orden de pago (PDF 29-oct, 6.1)
+    const refacciones = (op?.materiales || [])
       .map(
-        (s: any) =>
-          `<tr><td>${s.nombreRefaccion}</td><td class="text-center">${s.cantidad}</td><td>${s.estado}</td></tr>`
+        (m) =>
+          `<tr><td>${m.nombre}${m.codigo ? ` (${m.codigo})` : ''}</td><td class="text-center">${m.cantidad} ${m.unidad}</td>${
+            isAdmin ? `<td class="text-right">${formatCurrency(m.costoUnitario)}</td><td class="text-right">${formatCurrency(m.subtotal)}</td>` : ''
+          }</tr>`
       )
       .join('');
 
@@ -476,19 +320,10 @@ export function PagosPage() {
       )
       .join('');
 
-    const costoChecklist =
-      ord.respuestasChecklist?.reduce((acc: number, r: any) => {
-        const val = (r.valor ?? '').toString().trim().toLowerCase();
-        if (val !== '' && val !== 'no' && val !== 'false' && val !== '0') {
-          const c = Number(r.costoEstimado || r.checklistItem?.costoEstimado || 0);
-          return acc + (Number.isNaN(c) ? 0 : c);
-        }
-        return acc;
-      }, 0) || 0;
-
-    const costoRefacciones = 0; // Oculto
-
-    const total = costoChecklist + costoRefacciones;
+    // Montos fijos de la orden de pago (no se recalculan al imprimir)
+    const costoChecklist = op?.costoActividades ?? detallePago.montoManoObra ?? 0;
+    const costoRefacciones = op?.costoMateriales ?? detallePago.montoRefacciones ?? 0;
+    const total = op?.total ?? detallePago.montoTotal ?? costoChecklist + costoRefacciones;
 
     const buildUrl = (url?: string) => {
       if (!url) return '';
@@ -562,7 +397,7 @@ export function PagosPage() {
     printWindow.document.write(`
       <html>
         <head>
-          <title>OT ${detallePago.ordenTrabajoFolio || detallePago.ordenTrabajoId}</title>
+          <title>${op?.folio || 'Orden de pago'} · OT ${detallePago.ordenTrabajoFolio || detallePago.ordenTrabajoId}</title>
           <style>
             * { box-sizing: border-box; }
             body { font-family: Arial, sans-serif; margin: 20px; color: #111; }
@@ -660,10 +495,10 @@ export function PagosPage() {
             </div>
 
             <div class="section">
-              <div class="title">Refacciones usadas</div>
+              <div class="title">Refacciones y consumibles utilizados</div>
               ${
                 refacciones
-                  ? `<table><thead><tr><th>Refacción</th><th>Cant.</th><th>Estado</th></tr></thead><tbody>${refacciones}</tbody></table>`
+                  ? `<table><thead><tr><th>Material</th><th>Cant.</th>${isAdmin ? '<th>Costo unitario</th><th>Subtotal</th>' : ''}</tr></thead><tbody>${refacciones}</tbody></table>`
                   : '<p style="font-size:12px;color:#666;">Sin refacciones registradas.</p>'
               }
             </div>
@@ -698,7 +533,8 @@ export function PagosPage() {
               <div class="title">Totales</div>
               <table>
                 <tbody>
-                  <tr><td>Checklist</td><td class="text-right">${costoChecklist.toFixed(2)}</td></tr>
+                  <tr><td>Actividades</td><td class="text-right">${costoChecklist.toFixed(2)}</td></tr>
+                  <tr><td>Refacciones y consumibles${op?.aplicaGarantia ? ' (garantía: sin costo)' : ''}</td><td class="text-right">${costoRefacciones.toFixed(2)}</td></tr>
                   <tr><td><strong>Total</strong></td><td class="text-right"><strong>${total.toFixed(2)}</strong></td></tr>
                 </tbody>
               </table>
@@ -709,47 +545,6 @@ export function PagosPage() {
       </html>
     `);
     printWindow.document.close();
-  };
-
-  const handleCreate = async () => {
-    setCreando(true);
-    setErrorVentana('');
-    try {
-      if (!form.ordenTrabajoId || !form.tecnicoId) {
-        setErrorVentana('Selecciona la orden y el técnico desde la lista.');
-        return;
-      }
-      if (ordenYaTienePago) {
-        setErrorVentana('Ya existe un pago para esta orden, no se puede duplicar.');
-        return;
-      }
-
-      const baseManoObra = Number(costoCalculado.checklist || 0) || 0;
-      // Cambio: No se incluyen costos de refacciones en la orden de pago
-      const baseRef = 0; 
-
-      const payload = {
-        ordenTrabajoId: Number(form.ordenTrabajoId),
-        tecnicoId: Number(form.tecnicoId),
-        montoManoObra: baseManoObra,
-        montoRefacciones: baseRef,
-        notas: form.notas.trim() || undefined
-      };
-      const res = await pagosService.create(payload);
-      if (res.success) {
-        setCreateOpen(false);
-        resetCrearForm();
-        toast.exito('Pago registrado');
-        loadPagos();
-      } else {
-        setErrorVentana(res.message || 'No se pudo crear el pago');
-      }
-    } catch (err) {
-      console.error(err);
-      setErrorVentana('Error al crear el pago');
-    } finally {
-      setCreando(false);
-    }
   };
 
   /** Ejecuta la acción, avisa éxito o error (antes el error de la API se ignoraba) y recarga la lista */
@@ -962,18 +757,17 @@ export function PagosPage() {
             <RefreshCcw className="h-4 w-4" />
             Actualizar
           </Button>
-          <Link to="/ordenes-compra">
-            <Button variant="outline" className="flex items-center gap-2">
-              <FileText className="h-4 w-4" />
-              Ver Órdenes de Compra
+          {puedeGenerarPendientes && sinGenerar > 0 && (
+            <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => void generarPendientes()} disabled={generando}>
+              {generando ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+              Generar órdenes de pago pendientes ({sinGenerar})
             </Button>
-          </Link>
-          <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => { setErrorVentana(''); setCreateOpen(true); }}>
-            <Plus className="h-4 w-4" />
-            Nuevo pago
-          </Button>
+          )}
         </div>
       </div>
+      <p className="text-sm text-continental-gray-1" style={{ marginBottom: 0 }}>
+        Las órdenes de pago se generan automáticamente cuando la orden de trabajo se valida (DISPONIBLE), con sus actividades, refacciones y consumibles.
+      </p>
 
       {selectedIds.size > 0 && (
         <div className="sticky top-4 z-10 bg-white border border-continental-gray-3 shadow-md rounded-lg p-3 flex items-center justify-between animate-in fade-in slide-in-from-top-2">
@@ -1006,13 +800,9 @@ export function PagosPage() {
         <Spinner />
       ) : pagos.length === 0 ? (
         <Card className="p-6 text-center space-y-3">
-          <p className="text-lg font-semibold text-continental-black">No hay pagos</p>
-          <p className="text-continental-gray-1">Aun no se han registrado pagos.</p>
+          <p className="text-lg font-semibold text-continental-black">No hay órdenes de pago</p>
+          <p className="text-continental-gray-1">Se generan solas al validar la reparación de una orden de trabajo.</p>
           <div className="flex justify-center gap-2">
-            <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => { setErrorVentana(''); setCreateOpen(true); }}>
-              <Plus className="h-4 w-4" />
-              Registrar pago
-            </Button>
             <Button variant="outline" onClick={loadPagos}>
               <RefreshCcw className="h-4 w-4" />
               Actualizar
@@ -1063,7 +853,9 @@ export function PagosPage() {
                       <>
                         <div className="flex items-center gap-2">
                           <DollarSign className="h-4 w-4 text-continental-green" />
-                          <p className="font-semibold text-continental-black">OT {pago.ordenTrabajoFolio || pago.ordenTrabajoId}</p>
+                          <p className="font-semibold text-continental-black">
+                            {pago.folio ? `${pago.folio} · ` : ''}OT {pago.ordenTrabajoFolio || pago.ordenTrabajoId}
+                          </p>
                         </div>
                         {vehiculo && <p className="text-sm text-continental-gray-1">Vehiculo: {vehiculo}</p>}
                         {falla && <p className="text-sm text-continental-gray-1">Falla: {falla}</p>}
@@ -1071,9 +863,7 @@ export function PagosPage() {
                     );
                   })()}
                   {pago.ordenCompraId && pago.ordenCompraFolio && (
-                    <Link to={`/ordenes-compra/${pago.ordenCompraId}`} className="text-sm text-continental-blue hover:underline">
-                      Orden Compra: {pago.ordenCompraFolio}
-                    </Link>
+                    <p className="text-sm text-continental-gray-1">Orden de compra: {pago.ordenCompraFolio}</p>
                   )}
                   <p className="text-sm text-continental-gray-1">Tecnico: {pago.tecnicoNombre || pago.tecnicoId}</p>
                   {isAdmin && (
@@ -1090,7 +880,8 @@ export function PagosPage() {
                     Ver/Imprimir
                   </Button>
                   <div className="flex gap-2">
-                    {pago.estado === EstadoPago.EnRevision && (
+                    {/* Las órdenes de pago nacen Pendientes: desde ahí se aprueban o se cancelan (rechazan) */}
+                    {(pago.estado === EstadoPago.Pendiente || pago.estado === EstadoPago.EnRevision) && (
                       <>
                         <Button size="sm" onClick={() => handleAprobar(pago.id)} disabled={accionando} className="flex items-center gap-1">
                           <CheckCircle className="h-4 w-4" />
@@ -1114,7 +905,7 @@ export function PagosPage() {
                         Revertir
                       </Button>
                     )}
-                    {canRevert && (
+                    {puedeEliminarPago && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -1173,140 +964,16 @@ export function PagosPage() {
       </Modal>
 
       <Modal
-        isOpen={createOpen}
-        onClose={() => {
-          setCreateOpen(false);
-          resetCrearForm();
-        }}
-        title="Nuevo registro de pago"
-        description="Captura un pago ligado a una orden de trabajo."
-      >
-        <div className="space-y-3">
-          {errorVentana && (
-            <Alert variant="destructive">
-              <AlertDescription>{errorVentana}</AlertDescription>
-            </Alert>
-          )}
-          <SearchableSelect
-            label="Orden de trabajo"
-            placeholder="Buscar por folio, Vehiculo o texto"
-            selected={ordenSeleccionada}
-            onSelect={(option) => {
-              setOrdenSeleccionada(option);
-              setForm((prev) => ({ ...prev, ordenTrabajoId: option ? String(option.value) : '' }));
-              if (option?.value) {
-                const yaExiste = pagos.some((p) => p.ordenTrabajoId === Number(option.value));
-                setOrdenYaTienePago(yaExiste);
-                loadDetalleOrden(Number(option.value));
-              } else {
-                setOrdenYaTienePago(false);
-              }
-            }}
-            fetchOptions={fetchOrdenes}
-            noResultsText="No se encontraron ordenes"
-          />
-            {ordenYaTienePago && (
-              <div className="w-full rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-red-900 shadow-sm">
-                <p className="m-0 font-semibold leading-tight">Pago existente</p>
-                <p className="m-0 mt-1 text-sm leading-relaxed">
-                  Ya existe un pago registrado para esta orden. Selecciona otra orden o revisa el pago existente.
-                </p>
-              </div>
-            )}
-          {detalleOrden && (
-            <Card className="p-3 border border-continental-gray-3/60 text-sm space-y-1">
-              <p className="font-semibold text-continental-black">Orden seleccionada</p>
-              <p>Folio: {detalleOrden.folio || detalleOrden.id}</p>
-              <p>Vehiculo: {detalleOrden.vehiculoCodigo || 'Sin dato'} {detalleOrden.vehiculoTipo ? `(${detalleOrden.vehiculoTipo})` : ''}</p>
-              {detalleOrden.descripcion && <p>Descripcion: {detalleOrden.descripcion}</p>}
-              {(detalleOrden as any).reporteFalla?.descripcion && <p>Falla reportada: {(detalleOrden as any).reporteFalla.descripcion}</p>}
-              {(detalleOrden as any).reporteFalla?.folio && <p>Folio falla: {(detalleOrden as any).reporteFalla.folio}</p>}
-              {detalleOrden.prioridadNombre && <p>Prioridad: {detalleOrden.prioridadNombre}</p>}
-            </Card>
-          )}
-          {detalleOrden && isAdmin && (
-            <Card className="p-3 bg-continental-bg border border-continental-gray-3/60 text-sm space-y-1">
-              <p className="font-semibold text-continental-black">Costo estimado</p>
-              <p>Checklist: ${costoCalculado.checklist.toFixed(2)}</p>
-              <p className="font-semibold">Total base: ${costoCalculado.total.toFixed(2)}</p>
-            </Card>
-          )}
-          {detalleOrden && (
-            <Card className="p-3 border border-continental-gray-3/60 text-sm space-y-2">
-              <p className="font-semibold text-continental-black">Refacciones usadas</p>
-              {(detalleOrden.solicitudesRefaccion || []).filter((s) => s.estado === 'Entregada' || s.estado === 'Aprobada' || s.estado === 'Pendiente').length === 0 ? (
-                <p className="text-continental-gray-1">Sin refacciones registradas</p>
-              ) : (
-                <ul className="list-disc pl-5 space-y-1">
-                  {(detalleOrden.solicitudesRefaccion || [])
-                    .filter((s) => s.estado === 'Entregada' || s.estado === 'Aprobada' || s.estado === 'Pendiente')
-                    .map((s) => (
-                      <li key={s.id}>
-                        {s.nombreRefaccion} (x{s.cantidad}) [{s.estado}]
-                      </li>
-                    ))}
-                </ul>
-              )}
-            </Card>
-          )}
-          {detalleOrden && (
-            <Card className="p-3 border border-continental-gray-3/60 text-sm space-y-2">
-              <p className="font-semibold text-continental-black">Checklist aplicado</p>
-              {(detalleOrden.respuestasChecklist || []).filter((r: any) => (r.valor || '').trim() !== '').length === 0 ? (
-                <p className="text-continental-gray-1">Sin respuestas de checklist.</p>
-              ) : (
-                <ul className="list-disc pl-5 space-y-1">
-                  {(detalleOrden.respuestasChecklist || [])
-                    .filter((r: any) => (r.valor || '').trim() !== '')
-                    .map((r: any, idx: number) => (
-                      <li key={`${r.id || idx}-${r.checklistItemId || idx}`}>
-                        {r.pregunta || r.checklistItem?.pregunta || 'Item'}: {r.valor || 'N/D'}
-                        {r.costoEstimado && isAdmin ? ` ($${Number(r.costoEstimado).toFixed(2)})` : ''}
-                      </li>
-                    ))}
-                </ul>
-              )}
-            </Card>
-          )}
-          <SearchableSelect
-            label="Tecnico"
-            placeholder="Buscar por nombre o numero de empleado"
-            selected={tecnicoSeleccionado}
-            onSelect={(option) => {
-              setTecnicoSeleccionado(option);
-              setForm((prev) => ({ ...prev, tecnicoId: option ? String(option.value) : '' }));
-            }}
-            fetchOptions={fetchTecnicos}
-            noResultsText="No se encontraron tecnicos"
-          />
-      
-          <Textarea
-            label="Notas"
-            value={form.notas}
-            onChange={(e) => setForm((prev) => ({ ...prev, notas: e.target.value }))}
-          />
-        </div>
-        <ModalFooter>
-          <Button variant="outline" onClick={() => setCreateOpen(false)}>
-            Cancelar
-          </Button>
-          <Button onClick={handleCreate} disabled={creando} className="flex items-center gap-2">
-            {creando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            Guardar
-          </Button>
-        </ModalFooter>
-      </Modal>
-
-      <Modal
         isOpen={detalleOpen}
         onClose={() => {
           setDetalleOpen(false);
           setDetallePago(null);
           setDetalleOrdenPago(null);
           setReporteDetalle(null);
+          setDetalleOP(null);
         }}
-        title={`Pago OT ${detallePago?.ordenTrabajoFolio || detallePago?.ordenTrabajoId || ''}`}
-        description="Consulta, edita e imprime el detalle del pago."
+        title={`Orden de pago ${detallePago?.folio || ''} · OT ${detallePago?.ordenTrabajoFolio || detallePago?.ordenTrabajoId || ''}`}
+        description="Generada automáticamente con lo que trae la orden de trabajo. Consulta, cambia el estatus e imprime."
       >
         {detallePago ? (
           <div className="space-y-3">
@@ -1315,49 +982,76 @@ export function PagosPage() {
                 <AlertDescription>{errorVentana}</AlertDescription>
               </Alert>
             )}
-            {isAdmin && (
-              <Card className="p-3 bg-continental-bg border border-continental-gray-3/60 text-sm space-y-1">
-                <p className="font-semibold text-continental-black">Desglose calculado</p>
-                <p>Checklist: ${costoCalculado.checklist.toFixed(2)}</p>
-                <p className="font-semibold">Total: ${costoCalculado.total.toFixed(2)}</p>
-              </Card>
-            )}
-            {detalleOrdenPago && (
-              <Card className="p-3 border border-continental-gray-3/60 text-sm space-y-2">
-                <p className="font-semibold text-continental-black">Refacciones usadas</p>
-                {(detalleOrdenPago.solicitudesRefaccion || []).filter((s) => s.estado === 'Entregada' || s.estado === 'Aprobada' || s.estado === 'Pendiente').length === 0 ? (
-                  <p className="text-continental-gray-1">Sin refacciones registradas</p>
-                ) : (
-                  <ul className="list-disc pl-5 space-y-1">
-                    {(detalleOrdenPago.solicitudesRefaccion || [])
-                      .filter((s) => s.estado === 'Entregada' || s.estado === 'Aprobada' || s.estado === 'Pendiente')
-                      .map((s) => (
-                        <li key={s.id}>
-                          {s.nombreRefaccion} (x{s.cantidad}) [{s.estado}]
-                        </li>
-                      ))}
-                  </ul>
+            {!detalleOP ? (
+              <Spinner />
+            ) : (
+              <div className="space-y-3 text-sm" data-testid="detalle-orden-pago">
+                {/* Lo que hereda de la orden de trabajo (PDF 29-oct, 6.1) */}
+                <div className="grid gap-x-4 gap-y-1 rounded-lg border border-continental-gray-3/60 p-3 sm:grid-cols-2">
+                  <p><span className="text-continental-gray-1">Orden de pago:</span> <strong>{detalleOP.folio}</strong></p>
+                  <p><span className="text-continental-gray-1">Orden de trabajo:</span> {detalleOP.ordenTrabajoFolio}</p>
+                  <p><span className="text-continental-gray-1">Reporte de falla:</span> {detalleOP.reporteFolio || 'N/D'}</p>
+                  <p><span className="text-continental-gray-1">Vehículo:</span> {detalleOP.vehiculoCodigo}{detalleOP.tipoVehiculo ? ` · ${detalleOP.tipoVehiculo}` : ''}</p>
+                  <p><span className="text-continental-gray-1">Área:</span> {detalleOP.area || 'Sin área'}</p>
+                  <p><span className="text-continental-gray-1">Técnico:</span> {detalleOP.tecnico || detalleOP.tecnicoId}</p>
+                  <p><span className="text-continental-gray-1">Creación de la orden:</span> {new Date(detalleOP.fechaCreacionOrden).toLocaleDateString()}</p>
+                  <p><span className="text-continental-gray-1">Finalización:</span> {detalleOP.fechaFinalizacionOrden ? new Date(detalleOP.fechaFinalizacionOrden).toLocaleDateString() : 'N/D'}</p>
+                </div>
+                <div>
+                  <p className="mb-1 font-semibold text-continental-black">Actividades o reparaciones realizadas</p>
+                  {detalleOP.actividades.length === 0 ? (
+                    <p className="text-continental-gray-1">Sin actividades registradas.</p>
+                  ) : (
+                    <table className="w-full">
+                      <thead className="text-left text-xs uppercase text-continental-gray-1">
+                        <tr><th className="py-1">Actividad</th><th className="py-1 text-right">Cant.</th>{isAdmin && <th className="py-1 text-right">Costo</th>}{isAdmin && <th className="py-1 text-right">Subtotal</th>}</tr>
+                      </thead>
+                      <tbody>
+                        {detalleOP.actividades.map((a, idx) => (
+                          <tr key={idx} className="border-t border-continental-gray-3/60">
+                            <td className="py-1">{a.descripcion}</td>
+                            <td className="py-1 text-right">{a.cantidad}</td>
+                            {isAdmin && <td className="py-1 text-right">{formatCurrency(a.costoUnitario)}</td>}
+                            {isAdmin && <td className="py-1 text-right">{formatCurrency(a.subtotal)}</td>}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+                <div>
+                  <p className="mb-1 font-semibold text-continental-black">Refacciones y consumibles utilizados</p>
+                  {detalleOP.materiales.length === 0 ? (
+                    <p className="text-continental-gray-1">Sin refacciones ni consumibles.</p>
+                  ) : (
+                    <table className="w-full">
+                      <thead className="text-left text-xs uppercase text-continental-gray-1">
+                        <tr><th className="py-1">Material</th><th className="py-1 text-right">Cant.</th>{isAdmin && <th className="py-1 text-right">Costo unitario</th>}{isAdmin && <th className="py-1 text-right">Subtotal</th>}</tr>
+                      </thead>
+                      <tbody>
+                        {detalleOP.materiales.map((m, idx) => (
+                          <tr key={idx} className="border-t border-continental-gray-3/60">
+                            <td className="py-1">{m.nombre}{m.codigo ? ` (${m.codigo})` : ''} · {m.esRefaccion ? 'Refacción' : 'Consumible'}</td>
+                            <td className="py-1 text-right">{m.cantidad} {m.unidad}</td>
+                            {isAdmin && <td className="py-1 text-right">{formatCurrency(m.costoUnitario)}</td>}
+                            {isAdmin && <td className="py-1 text-right">{formatCurrency(m.subtotal)}</td>}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                  {detalleOP.aplicaGarantia && (
+                    <p className="mt-1 text-xs text-continental-gray-1" style={{ marginBottom: 0 }}>Garantía (mantenimiento a menos de 6 meses): las refacciones no tienen costo.</p>
+                  )}
+                </div>
+                {isAdmin && (
+                  <div className="rounded-lg bg-continental-bg p-3">
+                    <p className="flex justify-between"><span>Actividades</span><span>{formatCurrency(detalleOP.costoActividades)}</span></p>
+                    <p className="flex justify-between"><span>Refacciones y consumibles</span><span>{formatCurrency(detalleOP.costoMateriales)}</span></p>
+                    <p className="flex justify-between font-semibold" data-testid="total-orden-pago"><span>Total de la reparación</span><span>{formatCurrency(detalleOP.total)}</span></p>
+                  </div>
                 )}
-              </Card>
-            )}
-            {detalleOrdenPago && (
-              <Card className="p-3 border border-continental-gray-3/60 text-sm space-y-2">
-                <p className="font-semibold text-continental-black">Checklist aplicado</p>
-                {(detalleOrdenPago.respuestasChecklist || []).filter((r: any) => (r.valor || '').trim() !== '').length === 0 ? (
-                  <p className="text-continental-gray-1">Sin respuestas de checklist.</p>
-                ) : (
-                  <ul className="list-disc pl-5 space-y-1">
-                    {(detalleOrdenPago.respuestasChecklist || [])
-                      .filter((r: any) => (r.valor || '').trim() !== '')
-                      .map((r: any, idx: number) => (
-                        <li key={`${r.id || idx}-${r.checklistItemId || idx}`}>
-                          {r.pregunta || r.checklistItem?.pregunta || 'Item'}: {r.valor || 'N/D'}
-                          {r.costoEstimado ? ` ($${Number(r.costoEstimado).toFixed(2)})` : ''}
-                        </li>
-                      ))}
-                  </ul>
-                )}
-              </Card>
+              </div>
             )}
 
             <Textarea

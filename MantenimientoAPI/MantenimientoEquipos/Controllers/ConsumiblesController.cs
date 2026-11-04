@@ -17,17 +17,25 @@ public class ConsumiblesController : ControllerBase
     private readonly MantenimientoDbContext _db;
 
     private readonly EliminacionService _eliminacion;
+    private readonly FlujoAvisos _avisos;
 
-    public ConsumiblesController(MantenimientoDbContext db, EliminacionService eliminacion)
+    public ConsumiblesController(MantenimientoDbContext db, EliminacionService eliminacion, FlujoAvisos avisos)
     {
         _db = db;
         _eliminacion = eliminacion;
+        _avisos = avisos;
     }
+
+    /// <summary>Si con este movimiento el artículo llegó a su stock mínimo, avisa al Gerente de Mantenimiento</summary>
+    private Task AvisarSiLlegoAlMinimo(Consumible c, decimal stockAntes) =>
+        stockAntes > c.StockMinimo && c.StockActual <= c.StockMinimo
+            ? _avisos.StockMinimoAsync(new[] { (c.Id, c.Nombre) }, GetUserId())
+            : Task.CompletedTask;
 
     private int? GetUserId() => int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
 
     [HttpGet]
-    [Authorize(Roles = "SuperUsuario,Administrador,Supervisor")]
+    [Authorize(Roles = "SuperUsuario,Administrador,Supervisor,Tecnico")] // El Técnico consulta el inventario
     public async Task<IActionResult> GetAll([FromQuery] bool? activo = null, [FromQuery] bool? bajoStock = null, [FromQuery] string? q = null)
     {
         var query = _db.Consumibles.AsQueryable();
@@ -92,7 +100,7 @@ public class ConsumiblesController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "SuperUsuario,Administrador")]
+    [Authorize(Roles = "SuperUsuario,Administrador,Supervisor")] // El Gerente registra refacciones y consumibles nuevos
     public async Task<IActionResult> Create([FromBody] ConsumibleCreateRequest request)
     {
         if (await _db.Consumibles.AnyAsync(c => c.Codigo == request.Codigo))
@@ -121,7 +129,7 @@ public class ConsumiblesController : ControllerBase
     }
 
     [HttpPut("{id:int}")]
-    [Authorize(Roles = "SuperUsuario,Administrador")]
+    [Authorize(Roles = "SuperUsuario,Administrador,Supervisor")]
     public async Task<IActionResult> Update(int id, [FromBody] ConsumibleUpdateRequest request)
     {
         var entity = await _db.Consumibles.FindAsync(id);
@@ -150,9 +158,16 @@ public class ConsumiblesController : ControllerBase
     {
         var entity = await _db.Consumibles.FindAsync(id);
         if (entity == null) return NotFound(ApiResponse<string>.Error("Consumible no encontrado"));
+        // Lo ya usado en reparaciones es parte del costo de esas órdenes (y de sus órdenes de pago): no se borra
+        var ordenesQueLoUsaron = await _db.MaterialesOrdenTrabajo.Where(m => m.ConsumibleId == id && m.Descontado)
+            .Select(m => m.OrdenTrabajo.Folio).Distinct().ToListAsync();
+        if (ordenesQueLoUsaron.Count > 0)
+            return Conflict(ApiResponse<string>.Error(
+                $"No se puede eliminar {entity.Codigo}: ya se usó en {ordenesQueLoUsaron.Count} orden(es) de trabajo ({string.Join(", ", ordenesQueLoUsaron.Take(5))}). Puedes desactivarlo para que ya no aparezca."));
 
         using var tx = await _db.Database.BeginTransactionAsync();
         var movimientos = await _db.ConsumosConsumibles.Where(m => m.ConsumibleId == id).ExecuteDeleteAsync();
+        await _db.MaterialesOrdenTrabajo.Where(m => m.ConsumibleId == id).ExecuteDeleteAsync();
         _db.Consumibles.Remove(entity);
         _eliminacion.Registrar(User.UsuarioId(), User.NombreUsuario(), "Consumible", id,
             $"Artículo {entity.Codigo} - {entity.Nombre} (stock {entity.StockActual}, {movimientos} movimiento(s))");
@@ -163,17 +178,21 @@ public class ConsumiblesController : ControllerBase
     }
 
     [HttpPost("{id:int}/ajuste")]
-    [Authorize(Roles = "SuperUsuario,Administrador")]
+    [Authorize(Roles = "SuperUsuario,Administrador,Supervisor")] // Ajustes extraordinarios autorizados por el Gerente
     public async Task<IActionResult> AjustarStock(int id, [FromBody] AjusteStockRequest request)
     {
-        var entity = await _db.Consumibles.FindAsync(id);
-        if (entity == null) return NotFound(ApiResponse<string>.Error("Consumible no encontrado"));
+        var antes = await _db.Consumibles.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id);
+        if (antes == null) return NotFound(ApiResponse<string>.Error("Consumible no encontrado"));
 
+        // En la base, en una sola instrucción: no pisa un descuento que otra orden haga al mismo tiempo
         var delta = request.Tipo == "ajuste-" ? -request.Cantidad : request.Cantidad;
-        entity.StockActual += delta;
-        if (entity.StockActual < 0) entity.StockActual = 0;
-        entity.AlertaActiva = entity.StockActual <= entity.StockMinimo;
-        entity.UpdatedAt = DateTime.UtcNow;
+        var ahora = DateTime.UtcNow;
+        await _db.Consumibles.Where(c => c.Id == id).ExecuteUpdateAsync(s => s
+            .SetProperty(c => c.StockActual, c => c.StockActual + delta < 0 ? 0 : c.StockActual + delta)
+            .SetProperty(c => c.AlertaActiva, c => (c.StockActual + delta < 0 ? 0 : c.StockActual + delta) <= c.StockMinimo)
+            .SetProperty(c => c.UpdatedAt, ahora));
+        var entity = await _db.Consumibles.AsNoTracking().FirstAsync(c => c.Id == id);
+        var stockAntes = request.Tipo == "ajuste-" ? entity.StockActual + request.Cantidad : entity.StockActual - request.Cantidad;
 
         _db.ConsumosConsumibles.Add(new ConsumoConsumible
         {
@@ -185,6 +204,7 @@ public class ConsumiblesController : ControllerBase
         });
 
         await _db.SaveChangesAsync();
+        await AvisarSiLlegoAlMinimo(entity, stockAntes);
         return Ok(ApiResponse<bool>.Ok(true));
     }
 
@@ -192,15 +212,19 @@ public class ConsumiblesController : ControllerBase
     [Authorize(Roles = "SuperUsuario,Administrador,Supervisor,Tecnico")]
     public async Task<IActionResult> RegistrarConsumo(int id, [FromBody] ConsumoRequest request)
     {
-        var entity = await _db.Consumibles.FindAsync(id);
-        if (entity == null) return NotFound(ApiResponse<string>.Error("Consumible no encontrado"));
-
+        if (!await _db.Consumibles.AnyAsync(c => c.Id == id)) return NotFound(ApiResponse<string>.Error("Consumible no encontrado"));
         if (request.Cantidad <= 0) return BadRequest(ApiResponse<string>.Error("Cantidad inválida"));
-        if (entity.StockActual < request.Cantidad) return BadRequest(ApiResponse<string>.Error("Stock insuficiente"));
 
-        entity.StockActual -= request.Cantidad;
-        entity.AlertaActiva = entity.StockActual <= entity.StockMinimo;
-        entity.UpdatedAt = DateTime.UtcNow;
+        // Descuento condicionado en la base: nunca queda en negativo aunque otra orden descuente al mismo tiempo
+        var cantidad = request.Cantidad;
+        var ahora = DateTime.UtcNow;
+        var descontados = await _db.Consumibles.Where(c => c.Id == id && c.StockActual >= cantidad).ExecuteUpdateAsync(s => s
+            .SetProperty(c => c.StockActual, c => c.StockActual - cantidad)
+            .SetProperty(c => c.AlertaActiva, c => c.StockActual - cantidad <= c.StockMinimo)
+            .SetProperty(c => c.UpdatedAt, ahora));
+        if (descontados == 0) return BadRequest(ApiResponse<string>.Error("Stock insuficiente"));
+        var entity = await _db.Consumibles.AsNoTracking().FirstAsync(c => c.Id == id);
+        var stockAntes = entity.StockActual + cantidad;
 
         _db.ConsumosConsumibles.Add(new ConsumoConsumible
         {
@@ -214,11 +238,12 @@ public class ConsumiblesController : ControllerBase
         });
 
         await _db.SaveChangesAsync();
+        await AvisarSiLlegoAlMinimo(entity, stockAntes);
         return Ok(ApiResponse<bool>.Ok(true));
     }
 
     [HttpGet("alertas")]
-    [Authorize(Roles = "SuperUsuario,Administrador,Supervisor")]
+    [Authorize(Roles = "SuperUsuario,Administrador,Supervisor,Tecnico")]
     public async Task<IActionResult> Alertas()
     {
         var items = await _db.Consumibles

@@ -78,7 +78,7 @@ public class ReporteFallaChecklistItemsController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
+    [RolesAllowed("SuperUsuario", "Administrador")] // El Supervisor no elimina datos
     public async Task<ActionResult> Delete(int id)
     {
         try

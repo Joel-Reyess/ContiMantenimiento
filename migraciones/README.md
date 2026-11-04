@@ -1,5 +1,22 @@
 # migraciones — Poner tu base de datos al día (SQL manual)
 
+## ⭐ Nuevo (oct-2026): flujo de 7 etapas y capacidad de la Zona de Transición
+Corre **`16_flujo_7_etapas.sql`** en la base de producción **antes** de publicar la versión nueva de la API.
+- Agrega las columnas de inspección (reportes), traslados y aceptación (órdenes), hallazgos del taller,
+  la tabla `HistorialFlujo` y la capacidad de cada zona (15 y 15; se cambia en Configuración → Zona de Transición).
+- Acomoda lo que ya existe: reportes con orden = validados; reportes sin orden = pendientes de inspección del Líder;
+  órdenes abiertas = ya trasladadas; asignadas o más = aceptadas; completadas = ya entregadas en zona de reparados.
+- Se puede correr dos veces sin problema (no duplica ni cambia lo ya migrado). Haz respaldo antes.
+
+Después corre **`17_materiales_y_ordenes_pago.sql`** (también antes de publicar la API):
+- Tabla `MaterialesOrdenTrabajo` (refacciones y consumibles que el técnico usó en la orden; se descuentan
+  del inventario al terminar la reparación) y la columna `OrdenesTrabajo.AplicaGarantia`.
+- Las órdenes de pago se generan solas al validar la reparación. Para las órdenes que ya estaban validadas,
+  en Control de Pagos aparece el botón "Generar órdenes de pago pendientes".
+
+---
+
+
 Tu base `MantenimientoEquiposDB` está **atrasada** respecto al código del repo.
 Le faltan **8 tablas**. Se dividen en dos grupos por la forma correcta de aplicarlas.
 
