@@ -26,6 +26,7 @@ const MODULOS: Record<string, string> = {
 
 const ACCIONES: Record<string, string> = {
   Eliminar: 'Eliminación',
+  DescartarPago: 'Orden de pago eliminada',
   Importar: 'Importación',
   Reiniciar: 'Reinicio de datos'
 };
