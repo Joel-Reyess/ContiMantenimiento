@@ -109,6 +109,7 @@ public class PagosController : ControllerBase
     }
 
     [HttpGet("{id:int}")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")] // Antes cualquiera con sesión veía cualquier pago
     public async Task<IActionResult> GetById(int id)
     {
         var pago = await ConDetalle().FirstOrDefaultAsync(p => p.Id == id);
@@ -117,6 +118,7 @@ public class PagosController : ControllerBase
     }
 
     [HttpGet("pendientes")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
     public async Task<IActionResult> GetPendientes()
     {
         var list = await ConDetalle()
@@ -127,8 +129,14 @@ public class PagosController : ControllerBase
     }
 
     [HttpGet("tecnico/{tecnicoId:int}")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Tecnico")]
     public async Task<IActionResult> GetByTecnico(int tecnicoId)
     {
+        // El técnico solo consulta sus propios pagos
+        var esGestor = User.IsInRole("SuperUsuario") || User.IsInRole("Administrador") || User.IsInRole("Supervisor");
+        if (!esGestor && User.UsuarioId() != tecnicoId)
+            return StatusCode(403, ApiResponse<string>.Error("Solo puedes consultar tus propios pagos."));
+
         var list = await ConDetalle()
             .Where(p => p.TecnicoId == tecnicoId)
             .OrderByDescending(p => p.FechaRegistro)
@@ -193,9 +201,11 @@ public class PagosController : ControllerBase
             resultado.Generadas == 0 ? "No había órdenes pendientes de generar" : $"{resultado.Generadas} orden(es) de pago generada(s)"));
     }
 
+    // Las inspecciones rápidas (INS) nacen validadas y no son reparaciones: no llevan orden de pago
     private IQueryable<OrdenTrabajo> OrdenesSinPago() => _db.OrdenesTrabajo
         .Where(o => (o.Estado == EstadoOrdenTrabajoEnum.Validada || o.Estado == EstadoOrdenTrabajoEnum.Entregado)
                     && o.TecnicoAsignadoId != null
+                    && o.TipoMantenimiento != "Inspección" && o.TipoMantenimiento != "Inspeccion"
                     && !_db.RegistrosPago.Any(p => p.OrdenTrabajoId == o.Id));
 
     [HttpPut("{id:int}")]

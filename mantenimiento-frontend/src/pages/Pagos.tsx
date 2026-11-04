@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import { DollarSign, RefreshCcw, CheckCircle, XCircle, Loader2, Printer, Save, FileText, Trash2 } from 'lucide-react';
 import {
   Alert,
@@ -56,6 +56,9 @@ export function PagosPage() {
   const [generando, setGenerando] = useState(false);
   // Lo que la orden de pago hereda de la orden (actividades, materiales, totales)
   const [detalleOP, setDetalleOP] = useState<DetalleOrdenPago | null>(null);
+  const pagoAbierto = useRef<number | null>(null);
+  // Eliminar sigue siendo solo de administración (el Gerente no elimina datos)
+  const puedeEliminarPago = hasRole(['SuperUsuario', 'Administrador']);
   const [filters, setFilters] = useState<FiltersState>({});
   const [pagos, setPagos] = useState<RegistroPago[]>([]);
   const [loading, setLoading] = useState(false);
@@ -232,7 +235,10 @@ export function PagosPage() {
       notas: pago.notas || ''
     });
     setDetalleOP(null);
+    pagoAbierto.current = pago.id;
     const [op] = await Promise.all([pagosService.detalle(pago.id), loadDetalleOrdenPago(pago.ordenTrabajoId)]);
+    // Si mientras tanto se abrió otro pago, esta respuesta ya no le corresponde (no mezclar montos)
+    if (pagoAbierto.current !== pago.id) return;
     if (op.success && op.data) setDetalleOP(op.data);
     else setErrorVentana(op.message || 'No se pudo cargar el detalle de la orden de pago');
   };
@@ -528,7 +534,7 @@ export function PagosPage() {
               <table>
                 <tbody>
                   <tr><td>Actividades</td><td class="text-right">${costoChecklist.toFixed(2)}</td></tr>
-                  <tr><td>Refacciones y consumibles</td><td class="text-right">${costoRefacciones.toFixed(2)}</td></tr>
+                  <tr><td>Refacciones y consumibles${op?.aplicaGarantia ? ' (garantía: sin costo)' : ''}</td><td class="text-right">${costoRefacciones.toFixed(2)}</td></tr>
                   <tr><td><strong>Total</strong></td><td class="text-right"><strong>${total.toFixed(2)}</strong></td></tr>
                 </tbody>
               </table>
@@ -874,7 +880,8 @@ export function PagosPage() {
                     Ver/Imprimir
                   </Button>
                   <div className="flex gap-2">
-                    {pago.estado === EstadoPago.EnRevision && (
+                    {/* Las órdenes de pago nacen Pendientes: desde ahí se aprueban o se cancelan (rechazan) */}
+                    {(pago.estado === EstadoPago.Pendiente || pago.estado === EstadoPago.EnRevision) && (
                       <>
                         <Button size="sm" onClick={() => handleAprobar(pago.id)} disabled={accionando} className="flex items-center gap-1">
                           <CheckCircle className="h-4 w-4" />
@@ -898,7 +905,7 @@ export function PagosPage() {
                         Revertir
                       </Button>
                     )}
-                    {canRevert && (
+                    {puedeEliminarPago && (
                       <Button
                         size="sm"
                         variant="outline"

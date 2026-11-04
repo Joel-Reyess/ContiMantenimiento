@@ -49,6 +49,7 @@ import { solicitudActividadAdicionalService } from '@/services/solicitudActivida
 import { ordenTrabajoChecklistItemService } from '@/services/ordenTrabajoChecklistItemService';
 import { ReportFailureModal, RequestActivityModal } from '@/components/tecnico';
 import { MaterialesOrden, PanelFlujo } from '@/components/flujo';
+import { flujoService, type MaterialOrden } from '@/services/flujoService';
 import { InteractiveVehicleImage } from '@/components/vehiculos/InteractiveVehicleImage';
 import { getFullImageUrl } from '@/lib/utils';
 import type { OrdenTrabajo, OrdenTrabajoList, ReporteFalla, Evidencia, VehicleImagePoint } from '@/interfaces';
@@ -201,9 +202,10 @@ export function OrdenesPage() {
   const [refItems, setRefItems] = useState<
     Array<{ nombre: string; cantidad: string; justificacion: string; seleccion?: SearchableSelectOption | null }>
   >([{ nombre: '', cantidad: '1', justificacion: '', seleccion: null }]);
-  const [consumibles, setConsumibles] = useState<{ value: number; label: string; stock: number }[]>([]);
-  const [consumos, setConsumos] = useState<{ consumibleId?: number; cantidad: string }[]>([]);
-  const [loadingConsumibles, setLoadingConsumibles] = useState(false);
+  // Al terminar: lo que se descontará del inventario (lo guardado en "Refacciones y consumibles utilizados")
+  const [materialesAlTerminar, setMaterialesAlTerminar] = useState<MaterialOrden[] | null>(null);
+  // Sube con cada acción del flujo para que la tarjeta de materiales se recargue (p. ej. al aceptar la orden)
+  const [versionFlujo, setVersionFlujo] = useState(0);
   const [asignandoTecnico, setAsignandoTecnico] = useState(false);
   const [tecnicoAsignado, setTecnicoAsignado] = useState<SearchableSelectOption | null>(null);
   const [firmaError, setFirmaError] = useState('');
@@ -456,30 +458,6 @@ export function OrdenesPage() {
     } catch (err) {
       console.error('No se pudieron cargar tecnicos', err);
       setTecnicos([]);
-    }
-  };
-
-  const loadConsumibles = async () => {
-    setLoadingConsumibles(true);
-    try {
-      const res = await consumiblesService.getDisponibles();
-      if (res.success && res.data) {
-        const lista = res.data as any[];
-        setConsumibles(
-          lista.map((c) => ({
-            value: c.id,
-            label: `${c.nombre} (${c.codigo}) - Stock: ${c.stockActual}`,
-            stock: c.stockActual
-          }))
-        );
-      } else {
-        setConsumibles([]);
-      }
-    } catch (err) {
-      console.error('No se pudieron cargar consumibles', err);
-      setConsumibles([]);
-    } finally {
-      setLoadingConsumibles(false);
     }
   };
 
@@ -1321,10 +1299,10 @@ export function OrdenesPage() {
       setCompError('');
       setCompTrabajo(detalle.trabajoRealizado || '');
       setCompHoras(detalle.horasTrabajadas ? String(detalle.horasTrabajadas) : '1');
-      setConsumos([{ consumibleId: undefined, cantidad: '1' }]);
       setCompEvidFile(null);
       setCompEvidDesc('');
-      loadConsumibles();
+      setMaterialesAlTerminar(null);
+      void flujoService.materiales(detalle.id).then((r) => setMaterialesAlTerminar(r.success && r.data ? r.data.items.filter((m) => !m.descontado) : []));
     };
 
     const nombreTecnicoAsignado =
@@ -1399,7 +1377,7 @@ export function OrdenesPage() {
           <PanelFlujo
             ordenId={detalle.id}
             onTerminar={abrirCompletar}
-            onCambio={() => void loadOrdenes()}
+            onCambio={() => { setVersionFlujo((v) => v + 1); void loadOrdenes(); }}
             version={`${detalle.estado}-${detalle.tecnicoAsignadoId ?? ''}`}
           />
         </Card>
@@ -1407,7 +1385,7 @@ export function OrdenesPage() {
         {/* Refacciones y consumibles usados, con costos (PDF 29-oct, 5.1); el Operador no ve costos */}
         {hasRole(['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider']) && (
           <Card className="p-6">
-            <MaterialesOrden ordenId={detalle.id} version={`${detalle.estado}-${detalle.tecnicoAsignadoId ?? ''}`} />
+            <MaterialesOrden ordenId={detalle.id} version={`${detalle.estado}-${detalle.tecnicoAsignadoId ?? ''}-${versionFlujo}`} />
           </Card>
         )}
 
@@ -2621,63 +2599,25 @@ export function OrdenesPage() {
             </div>
           </div>
 
-          <div className="border rounded-lg p-3 space-y-3 bg-continental-bg/60">
+          {/* Lo que se descuenta del inventario al terminar (PDF 29-oct, 5.1): lo guardado en "Refacciones y consumibles utilizados" */}
+          <div className="border rounded-lg p-3 space-y-2 bg-continental-bg/60" data-testid="materiales-al-terminar">
             <div className="flex items-center gap-2">
               <Package className="h-4 w-4 text-continental-gray-1" />
-              <p className="text-sm font-semibold text-continental-black">Consumibles usados (opcional)</p>
+              <p className="text-sm font-semibold text-continental-black">Se descontará del inventario</p>
             </div>
-            {consumos.map((c, idx) => (
-              <div key={idx} className="grid md:grid-cols-2 gap-2 items-center">
-                <SearchableSelect
-                  label={`Consumible ${idx + 1}`}
-                  placeholder="Buscar por nombre o codigo"
-                  selected={
-                    c.consumibleId
-                      ? consumibles
-                          .map((opt) => ({ value: opt.value, label: opt.label }))
-                          .find((opt) => opt.value === c.consumibleId) || null
-                      : null
-                  }
-                  onSelect={(opt) =>
-                    setConsumos((prev) =>
-                      prev.map((item, i) => (i === idx ? { ...item, consumibleId: opt ? Number(opt.value) : undefined } : item))
-                    )
-                  }
-                  fetchOptions={async (q) =>
-                    consumibles
-                      .filter((opt) => opt.label.toLowerCase().includes(q.toLowerCase()))
-                      .map((opt) => ({ value: opt.value, label: opt.label }))
-                  }
-                  noResultsText={loadingConsumibles ? 'Cargando...' : 'Sin consumibles'}
-                />
-                <div className="flex items-center gap-2">
-                  <Input
-                    label="Cantidad"
-                    type="number"
-                    min="0"
-                    value={c.cantidad}
-                    onChange={(e) =>
-                      setConsumos((prev) =>
-                        prev.map((item, i) => (i === idx ? { ...item, cantidad: e.target.value } : item))
-                      )
-                    }
-                  />
-                  {consumos.length > 1 && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setConsumos((prev) => prev.filter((_, i) => i !== idx))}
-                      className="mt-6 text-red-600"
-                    >
-                      Eliminar
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
-            <Button variant="outline" size="sm" onClick={() => setConsumos((prev) => [...prev, { consumibleId: undefined, cantidad: '1' }])}>
-              <Plus className="h-4 w-4" /> Agregar consumible
-            </Button>
+            {materialesAlTerminar === null ? (
+              <p className="text-sm text-continental-gray-1">Cargando...</p>
+            ) : materialesAlTerminar.length === 0 ? (
+              <p className="text-sm text-continental-gray-1">
+                No hay refacciones ni consumibles por descontar. Si usaste alguno, regístralo y guárdalo en "Refacciones y consumibles utilizados" antes de terminar.
+              </p>
+            ) : (
+              <ul className="list-disc pl-5 text-sm text-continental-black">
+                {materialesAlTerminar.map((m) => (
+                  <li key={m.id}>{m.nombre} ({m.codigo}): {m.cantidad} {m.unidad}</li>
+                ))}
+              </ul>
+            )}
           </div>
           <div className="space-y-2 border-t pt-3 mt-3">
             <p className="text-sm font-semibold text-continental-black">Evidencias adicionales (opcional)</p>
@@ -2734,7 +2674,6 @@ export function OrdenesPage() {
                   : 'Trabajo completado (ver checklist)';
 
                 const horas = Number(compHoras) || 1; // Default a 1 si estaba vacío
-                const consumosValidos = consumos.filter((c) => c.consumibleId && Number(c.cantidad) > 0);
 
               const completada = await doAccion(async () => {
                 if (compEvidFile) {
@@ -2754,23 +2693,6 @@ export function OrdenesPage() {
                   horasTrabajadas: horas
                 });
                 if (!res.success) return res;
-                const sinRegistrar: string[] = [];
-                for (const c of consumosValidos) {
-                  try {
-                    const r = await consumiblesService.registrarConsumo(c.consumibleId!, {
-                      ordenTrabajoId: detalle.id,
-                      cantidad: Number(c.cantidad),
-                      comentario: `Consumo OT ${detalle.folio}`
-                    });
-                    if (r && (r as { success?: boolean }).success === false) sinRegistrar.push(String(c.consumibleId));
-                  } catch (err) {
-                    console.error('No se pudo registrar consumo', err);
-                    sinRegistrar.push(String(c.consumibleId));
-                  }
-                }
-                if (sinRegistrar.length > 0) {
-                  toast.error(`La orden se completó, pero no se registró el consumo de ${sinRegistrar.length} material(es). Regístralo en Inventario.`);
-                }
                 return res;
               }, { exito: 'Trabajo completado', alFallar: setCompError });
               if (completada) setShowCompletar(false);

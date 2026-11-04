@@ -111,6 +111,13 @@ public class MaterialesOrdenService
             throw new FlujoException($"{MensajeSinExistencia} ({string.Join(", ", sinExistencia.Select(c => $"{c.Nombre}: hay {c.StockActual:0.##} {c.Unidad}"))})",
                 400, "SinExistencia");
 
+        // Todo o nada, y uno a la vez por orden: se toma la orden (sigue en TALLER) antes de reemplazar la lista;
+        // otro guardado o el término de la reparación esperan a que este termine
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        var tomada = await _db.OrdenesTrabajo
+            .Where(x => x.Id == ordenId && x.FechaAceptacion != null && EnTaller.Contains(x.Estado))
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.UpdatedAt, DateTime.UtcNow));
+        if (tomada == 0) throw new FlujoException("La orden cambió de estado mientras guardabas. Actualiza la pantalla.");
         await _db.MaterialesOrdenTrabajo.Where(m => m.OrdenTrabajoId == ordenId && !m.Descontado).ExecuteDeleteAsync();
         foreach (var (consumibleId, cantidad) in pedidos)
         {
@@ -129,6 +136,7 @@ public class MaterialesOrdenService
                 ? "Quitó los materiales pendientes"
                 : "Materiales: " + string.Join(", ", pedidos.Select(p => $"{inventario[p.Key].Nombre} x{p.Value:0.##}")));
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();
         return await GetAsync(ordenId, u);
     }
 
@@ -144,7 +152,7 @@ public class MaterialesOrdenService
             .ToListAsync();
         var minimos = new List<(int, string)>();
         var ahora = DateTime.UtcNow;
-        foreach (var g in pendientes.GroupBy(m => m.ConsumibleId))
+        foreach (var g in pendientes.GroupBy(m => m.ConsumibleId).OrderBy(g => g.Key))
         {
             var cantidad = g.Sum(m => m.Cantidad);
             var c = g.First().Consumible;

@@ -556,9 +556,19 @@ public class OrdenTrabajoService
         // Refacciones y consumibles del inventario que usó el técnico (PDF 29-oct, 5.1): se descuentan ahora,
         // en la misma transacción; si algo ya no alcanza, la orden no se termina
         await using var tx = await _db.Database.BeginTransactionAsync();
+        // Toma la orden: si llega otra vez (doble clic, reintento) espera a la primera y ya no la encuentra en taller,
+        // así el inventario no se descuenta dos veces
+        var tomada = await _db.OrdenesTrabajo
+            .Where(o => o.Id == ordenId && o.FechaAceptacion != null
+                        && (o.Estado == EstadoOrdenTrabajoEnum.Asignada || o.Estado == EstadoOrdenTrabajoEnum.EnProceso || o.Estado == EstadoOrdenTrabajoEnum.EsperandoRefacciones))
+            .ExecuteUpdateAsync(s => s.SetProperty(o => o.UpdatedAt, DateTime.UtcNow));
+        if (tomada == 0) throw new InvalidOperationException("La orden ya se terminó o cambió de estado. Actualiza la pantalla.");
         StockMinimoAlTerminar = await _materiales.DescontarAsync(orden, userId);
         await _db.SaveChangesAsync();
         costoRefacciones += await _materiales.CostoAsync(ordenId);
+        // Si la validación la regresó al taller, la garantía que se calculó la primera vez se conserva
+        // (el primer término ya movió la fecha del último mantenimiento)
+        aplicaGarantia = aplicaGarantia || orden.AplicaGarantia;
         orden.AplicaGarantia = aplicaGarantia;
 
         // Si aplica garantía, el costo de las refacciones (y checklist) es 0 para fines de cobro

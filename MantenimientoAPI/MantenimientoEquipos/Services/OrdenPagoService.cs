@@ -81,12 +81,12 @@ public class OrdenPagoService
 
         var solicitadas = await _db.SolicitudesRefaccion.AsNoTracking()
             .Where(s => s.OrdenTrabajoId == ordenId && s.Estado == "Entregada")
-            .Select(s => new { s.Id, s.NumeroParte, s.Justificacion, s.Cantidad, Costo = s.CostoReal ?? s.CostoEstimado ?? 0 })
+            .Select(s => new { s.Id, s.NumeroParte, s.NombreRefaccion, s.Cantidad, Costo = s.CostoReal ?? s.CostoEstimado ?? 0 })
             .ToListAsync();
         lista.AddRange(solicitadas.Select(s => new MaterialOrdenDto
         {
             Codigo = s.NumeroParte ?? "",
-            Nombre = string.IsNullOrWhiteSpace(s.Justificacion) ? $"Refacción solicitada {s.NumeroParte}".Trim() : s.Justificacion!,
+            Nombre = s.NombreRefaccion,
             Categoria = "Refaccion",
             EsRefaccion = true,
             Unidad = "pz",
@@ -109,13 +109,17 @@ public class OrdenPagoService
         if (await _db.RegistrosPago.AnyAsync(p => p.OrdenTrabajoId == o.Id)) return null;
 
         var actividades = (await ActividadesAsync(o.Id)).Sum(a => a.Subtotal);
-        // Garantía (mantenimiento a menos de 6 meses): las refacciones no tienen costo
-        var materiales = o.AplicaGarantia ? 0m : (await MaterialesAsync(o.Id)).Sum(m => m.Subtotal);
+        var materiales = (await MaterialesAsync(o.Id)).Sum(m => m.Subtotal);
+        // Garantía (mantenimiento a menos de 6 meses): las refacciones no tienen costo. En órdenes de antes de este
+        // cambio la marca era el costo total en 0 aunque hubiera refacciones entregadas.
+        var garantia = o.AplicaGarantia || (o.CostoTotal == 0 && materiales > 0);
+        if (garantia) materiales = 0m;
         var pago = new RegistroPago
         {
             OrdenTrabajoId = o.Id,
             TecnicoId = o.TecnicoAsignadoId.Value,
-            HorasTrabajadas = o.HorasTrabajadas ?? 1,
+            // Igual que el pago capturado: 1 "hora" con la tarifa = actividades
+            HorasTrabajadas = 1,
             TarifaHora = actividades,
             CostoManoObra = actividades,
             CostoRefacciones = materiales,
@@ -123,7 +127,7 @@ public class OrdenPagoService
             MontoTotal = actividades + materiales,
             Estado = EstadoPagoEnum.Pendiente,
             Notas = $"Generada automáticamente al validar {o.Folio} ({generadaPor})"
-                    + (o.AplicaGarantia ? ". Garantía: refacciones sin costo." : ""),
+                    + (garantia ? ". Garantía: refacciones sin costo." : ""),
             FechaRegistro = DateTime.UtcNow
         };
         _db.RegistrosPago.Add(pago);

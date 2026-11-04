@@ -250,6 +250,11 @@ public class OrdenesController : ControllerBase
         {
             return BadRequest(ApiResponse<string>.Error(ex.Message));
         }
+        catch (Exception ex) when (ex is DbUpdateException || ex is Microsoft.Data.SqlClient.SqlException || ex.InnerException is Microsoft.Data.SqlClient.SqlException)
+        {
+            // Otra orden se llevó el mismo inventario en el mismo instante
+            return Conflict(ApiResponse<string>.Error("Otro usuario hizo un cambio en este momento. Actualiza la pantalla e inténtalo de nuevo."));
+        }
     }
 
     /// <summary>

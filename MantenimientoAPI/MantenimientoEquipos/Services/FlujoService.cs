@@ -1074,9 +1074,9 @@ public class FlujoService
         o.Notas = string.IsNullOrWhiteSpace(o.Notas) ? $"Cancelada: {m}" : $"{o.Notas}\nCancelada: {m}";
         o.UpdatedAt = DateTime.UtcNow;
         Registrar(o.ReporteFallaId, o.Id, "ORDEN", "Cancelada", u, m);
+        await _db.SaveChangesAsync();
         // Materiales que aún no se descontaban: ya no se van a usar (lo descontado sí se usó y se queda)
         await _db.MaterialesOrdenTrabajo.Where(x => x.OrdenTrabajoId == o.Id && !x.Descontado).ExecuteDeleteAsync();
-        await _db.SaveChangesAsync();
         await _eliminacion.RegresarAlPisoAsync(new[] { o.VehiculoId });
         await AvisarCambiosEnFilasAsync(filasAntes, u.Id);
         return new ResultadoFlujoDto { Mensaje = $"Orden {o.Folio} cancelada.", OrdenId = o.Id, OrdenFolio = o.Folio };
