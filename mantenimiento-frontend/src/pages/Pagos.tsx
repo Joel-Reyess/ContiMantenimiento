@@ -20,7 +20,6 @@ import { ordenesService } from '@/services/ordenesService';
 import { reportesService } from '@/services/reportesService';
 import { useAuth } from '@/contexts/AuthContext';
 import { Undo } from 'lucide-react';
-import { ordenesCompraService } from '@/services/ordenesCompraService';
 import type { DetalleOrdenPago, RegistroPago } from '@/services/pagosService';
 import { EstadoPago } from '@/interfaces/Api.interface';
 import { formatCurrency } from '@/lib/utils';
@@ -681,36 +680,6 @@ export function PagosPage() {
     }
   };
 
-  const handleBatchPagar = async () => {
-    if (selectedIds.size === 0) return;
-    const ok = await confirmar({
-      titulo: 'Generar orden de compra',
-      mensaje: `Se generará una Orden de Compra para ${selectedIds.size} pago(s) y quedarán marcados como PAGADOS. ¿Continuar?`,
-      textoConfirmar: 'Generar',
-      tono: 'advertencia'
-    });
-    if (!ok) return;
-
-    setAccionando(true);
-    setError('');
-    try {
-      // Usar servicio de Orden de Compra
-      const res = await ordenesCompraService.create({ pagoIds: Array.from(selectedIds) });
-      if (res.success) {
-        setSelectedIds(new Set());
-        await loadPagos();
-        toast.exito(`Orden de Compra ${res.data?.folio ?? ''} generada`);
-      } else {
-        toast.error(res.message || 'No se pudo generar la orden de compra');
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error('Error al generar la orden de compra');
-    } finally {
-      setAccionando(false);
-    }
-  };
-
   const handleVerResumen = () => {
     const selectedPagos = pagos.filter(p => selectedIds.has(p.id));
     // Agrupar por tecnico
@@ -780,10 +749,6 @@ export function PagosPage() {
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={handleVerResumen}>
               Ver Resumen / Prefactura
-            </Button>
-            <Button className="bg-continental-gradient text-white" size="sm" onClick={handleBatchPagar} disabled={accionando}>
-              {accionando ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle className="h-4 w-4 mr-2" />}
-              Generar Orden de Compra (Pagar)
             </Button>
           </div>
         </div>
@@ -954,12 +919,6 @@ export function PagosPage() {
         </div>
         <ModalFooter>
           <Button onClick={() => setResumenOpen(false)}>Cerrar</Button>
-          <Button className="bg-continental-gradient text-white" onClick={() => {
-            setResumenOpen(false);
-            handleBatchPagar();
-          }}>
-            Generar Órdenes de Compra
-          </Button>
         </ModalFooter>
       </Modal>
 

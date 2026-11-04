@@ -206,7 +206,9 @@ public class PagosController : ControllerBase
         .Where(o => (o.Estado == EstadoOrdenTrabajoEnum.Validada || o.Estado == EstadoOrdenTrabajoEnum.Entregado)
                     && o.TecnicoAsignadoId != null
                     && o.TipoMantenimiento != "Inspección" && o.TipoMantenimiento != "Inspeccion"
-                    && !_db.RegistrosPago.Any(p => p.OrdenTrabajoId == o.Id));
+                    && !_db.RegistrosPago.Any(p => p.OrdenTrabajoId == o.Id)
+                    // Su orden de pago se eliminó a propósito: no se vuelve a ofrecer
+                    && !_db.LogAcciones.Any(l => l.Entidad == "OrdenTrabajo" && l.Accion == EliminacionService.AccionPagoDescartado && l.EntidadId == o.Id));
 
     [HttpPut("{id:int}")]
     [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]

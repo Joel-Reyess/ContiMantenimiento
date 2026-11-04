@@ -219,11 +219,14 @@ public class EliminacionService
     /// Elimina un pago. Si ya está en una orden de compra no se permite (el total de la OC quedaría mal):
     /// primero hay que eliminar la orden de compra, que libera sus pagos.
     /// </summary>
+    /// <summary>Acción en la bitácora que marca una orden cuya orden de pago se eliminó a propósito</summary>
+    public const string AccionPagoDescartado = "DescartarPago";
+
     public async Task<string?> EliminarPagoAsync(int id, int? usuarioId, string? nombreUsuario)
     {
         var pago = await _db.RegistrosPago
             .Where(p => p.Id == id)
-            .Select(p => new { p.Id, p.MontoTotal, p.Estado, p.OrdenCompraId, Tecnico = p.Tecnico.NombreCompleto, Orden = p.OrdenTrabajo.Folio })
+            .Select(p => new { p.Id, p.MontoTotal, p.Estado, p.OrdenCompraId, p.OrdenTrabajoId, Tecnico = p.Tecnico.NombreCompleto, Orden = p.OrdenTrabajo.Folio })
             .FirstOrDefaultAsync();
         if (pago == null) return null;
 
@@ -237,6 +240,9 @@ public class EliminacionService
         await _db.RegistrosPago.Where(p => p.Id == id).ExecuteDeleteAsync();
         Registrar(usuarioId, nombreUsuario, "RegistroPago", id,
             $"Pago de {pago.Tecnico} por {Moneda(pago.MontoTotal)} de la orden {pago.Orden} (estaba {pago.Estado})");
+        // Marca en la orden: se eliminó a propósito, "Generar órdenes de pago pendientes" ya no la vuelve a crear
+        Registrar(usuarioId, nombreUsuario, "OrdenTrabajo", pago.OrdenTrabajoId,
+            $"Se eliminó la orden de pago {OrdenPagoService.Folio(pago.Id)} de {pago.Orden}; ya no se vuelve a generar", AccionPagoDescartado);
         await _db.SaveChangesAsync();
         return $"Pago de {pago.Tecnico} por {Moneda(pago.MontoTotal)} eliminado";
     }
