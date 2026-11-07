@@ -52,10 +52,22 @@ public class GuardarMaterialesRequest
 
 public class ActividadPagoDto
 {
+    public int? ChecklistItemId { get; set; }
     public string Descripcion { get; set; } = string.Empty;
     public decimal Cantidad { get; set; }
     public decimal CostoUnitario { get; set; }
     public decimal Subtotal { get; set; }
+}
+
+/// <summary>Refacción o consumible usado, solo informativo en la orden de pago (PDF 06-nov, OT-24): sin costos</summary>
+public class MaterialInformativoDto
+{
+    public string Codigo { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+    public string? Categoria { get; set; }
+    public bool EsRefaccion { get; set; }
+    public string Unidad { get; set; } = string.Empty;
+    public decimal Cantidad { get; set; }
 }
 
 public class DetalleOrdenPagoDto
@@ -67,20 +79,33 @@ public class DetalleOrdenPagoDto
     public int OrdenTrabajoId { get; set; }
     public string OrdenTrabajoFolio { get; set; } = string.Empty;
     public string? ReporteFolio { get; set; }
+    public DateTime? FechaReporte { get; set; }
     public string VehiculoCodigo { get; set; } = string.Empty;
     public string? TipoVehiculo { get; set; }
     public string? Area { get; set; }
     public int TecnicoId { get; set; }
     public string? Tecnico { get; set; }
+    /// <summary>Empresa responsable: la del técnico cuando se generó (PDF 06-nov, PAG-02/PAG-03)</summary>
+    public int? EmpresaId { get; set; }
+    public string? Empresa { get; set; }
+    public string? EmpresaIdentificador { get; set; }
     public DateTime FechaCreacionOrden { get; set; }
     public DateTime? FechaFinalizacionOrden { get; set; }
+    public DateTime? FechaValidacionOrden { get; set; }
     public DateTime FechaRegistro { get; set; }
+    public DateTime? FechaAprobacion { get; set; }
     public DateTime? FechaPago { get; set; }
+    public string? NumeroFactura { get; set; }
     public bool AplicaGarantia { get; set; }
     public List<ActividadPagoDto> Actividades { get; set; } = new();
-    public List<MaterialOrdenDto> Materiales { get; set; } = new();
+    /// <summary>Las actividades son las guardadas al generarse (false = orden de pago anterior, recalculada)</summary>
+    public bool ImportesFijos { get; set; }
+    /// <summary>Solo informativos: no suman al total (OT-24)</summary>
+    public List<MaterialInformativoDto> Materiales { get; set; } = new();
     public decimal CostoActividades { get; set; }
+    /// <summary>0 en las órdenes de pago nuevas; solo las aprobadas antes del cambio pueden traer cargo por refacciones</summary>
     public decimal CostoMateriales { get; set; }
+    public decimal OtrosCostos { get; set; }
     public decimal Total { get; set; }
     public string? Notas { get; set; }
 }

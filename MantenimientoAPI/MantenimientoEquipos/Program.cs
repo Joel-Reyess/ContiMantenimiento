@@ -83,6 +83,7 @@ builder.Services.AddScoped<FlujoService>();
 builder.Services.AddScoped<FlujoAvisos>();
 builder.Services.AddScoped<MaterialesOrdenService>();
 builder.Services.AddScoped<OrdenPagoService>();
+builder.Services.AddScoped<EmpresasService>();
 
 // Configuración CORS para permitir peticiones desde el frontend
 var allowedOrigins = new[] {

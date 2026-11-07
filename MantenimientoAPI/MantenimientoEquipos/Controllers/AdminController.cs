@@ -38,8 +38,8 @@ public class AdminController : ControllerBase
     /// <summary>
     /// Reinicia los datos operativos del sistema.
     /// Se conservan: todos los usuarios con sus roles y metas, áreas, tipos de vehículo, prefijos,
-    /// checklists, fallas visuales, categorías de falla, la asignación de líderes y la bitácora
-    /// (el reinicio mismo queda registrado ahí).
+    /// checklists, fallas visuales, categorías de falla, la asignación de líderes, las empresas proveedoras con su
+    /// tarifario y la bitácora (el reinicio mismo queda registrado ahí).
     /// Se eliminan: vehículos, reportes, órdenes, evidencias, inventario, refacciones, pagos, órdenes de
     /// compra, notificaciones e historial.
     /// </summary>
@@ -156,6 +156,8 @@ public class AdminController : ControllerBase
             // Intentamos limpiar ambas posibles tablas para ser robustos ante inconsistencias de nombres en diferentes entornos
             try { await _db.Database.ExecuteSqlRawAsync("UPDATE ConsumosConsumibles SET OrdenTrabajoId = NULL"); await _db.Database.ExecuteSqlRawAsync("DELETE FROM ConsumosConsumibles"); } catch { }
             try { await _db.Database.ExecuteSqlRawAsync("UPDATE ConsumosConsumible SET OrdenTrabajoId = NULL"); await _db.Database.ExecuteSqlRawAsync("DELETE FROM ConsumosConsumible"); } catch { }
+            // Renglones de las órdenes de pago (la llave ya borra en cascada; se limpian explícitamente por si acaso)
+            await _db.RegistroPagoActividades.ExecuteDeleteAsync();
             await _db.RegistrosPago.ExecuteDeleteAsync();
             await _db.Notificaciones.ExecuteDeleteAsync();
             await _db.HistorialMantenimiento.ExecuteDeleteAsync();
@@ -177,7 +179,7 @@ public class AdminController : ControllerBase
 
             // Se conservan: Users, Roles, MetasTecnico, Areas, TiposVehiculo, VehiculoPrefijoConfigs,
             // ChecklistTemplates e Items, ImageFaults, VehicleImagePoints, CategoriasFalla,
-            // LiderTipoVehiculoAsignaciones y LogAcciones.
+            // LiderTipoVehiculoAsignaciones, Empresas con TarifasEmpresa (configuración, como los checklists) y LogAcciones.
             _eliminacion.Registrar(User.UsuarioId(), User.NombreUsuario(), "Sistema", null,
                 $"Reinicio de datos: {vehiculosAntes} vehículo(s), {reportesAntes} reporte(s) y {ordenesAntes} orden(es) eliminados",
                 accion: "Reiniciar");
@@ -188,7 +190,7 @@ public class AdminController : ControllerBase
             // Queda en el log de Serilog (Logs/mantenimiento-*.log), que no se borra con el reinicio.
             // No se usa ConfiguracionSistema porque ningún script crea esa tabla y no existe en todas las BD.
             _logger.LogWarning("Reinicio de datos completado. UsuarioId={UserId}", userIdClaim);
-            return Ok(ApiResponse<string>.Ok("Datos operativos reiniciados. Se conservaron todos los usuarios, la configuración (áreas, tipos, prefijos, checklists y fallas visuales) y la bitácora."));
+            return Ok(ApiResponse<string>.Ok("Datos operativos reiniciados. Se conservaron todos los usuarios, la configuración (áreas, tipos, prefijos, checklists, fallas visuales y empresas proveedoras con sus tarifas) y la bitácora."));
         }
         catch (Exception ex)
         {

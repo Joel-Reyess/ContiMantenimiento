@@ -48,7 +48,8 @@ export const usuariosService = {
       numeroEmpleado: usuario.numeroEmpleado,
       telefono: usuario.telefono,
       areaId: usuario.areaId,
-      roleIds: usuario.rolId ? [usuario.rolId] : []
+      roleIds: usuario.rolId ? [usuario.rolId] : [],
+      empresaId: usuario.empresaId ?? null
     };
     return await httpClient.post<User>('/auth/register', payload);
   },

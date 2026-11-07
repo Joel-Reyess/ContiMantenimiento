@@ -21,6 +21,7 @@ const MODULOS: Record<string, string> = {
   SolicitudRefaccion: 'Solicitud de refacción',
   SolicitudActividadAdicional: 'Actividad adicional',
   SolicitudCambio: 'Solicitud de cambio',
+  Empresa: 'Empresa proveedora',
   Sistema: 'Sistema'
 };
 

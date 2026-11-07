@@ -1,5 +1,4 @@
 import httpClient from './httpClient';
-import type { MaterialOrden } from './flujoService';
 import type { ApiResponse } from '@/interfaces';
 import type { PaginatedResponse } from './vehiculosService';
 
@@ -13,6 +12,9 @@ export interface RegistroPago {
   vehiculoCodigo?: string;
   tecnicoId: number;
   tecnicoNombre?: string;
+  /** Empresa responsable: la del técnico cuando se generó la orden de pago (PDF 06-nov) */
+  empresaId?: number | null;
+  empresaNombre?: string | null;
   estado: number;
   estadoNombre?: string;
   montoManoObra: number;
@@ -30,6 +32,8 @@ export interface RegistroPago {
 
 export interface PagoFilters {
   tecnicoId?: number;
+  /** 0 = técnicos sin empresa (tarifa base) */
+  empresaId?: number;
   estado?: number;
   fechaDesde?: string;
   fechaHasta?: string;
@@ -38,10 +42,21 @@ export interface PagoFilters {
 }
 
 export interface ActividadPago {
+  checklistItemId?: number | null;
   descripcion: string;
   cantidad: number;
   costoUnitario: number;
   subtotal: number;
+}
+
+/** Refacción o consumible usado: solo informativo en la orden de pago (PDF 06-nov, OT-24), sin costos */
+export interface MaterialInformativo {
+  codigo: string;
+  nombre: string;
+  categoria?: string;
+  esRefaccion: boolean;
+  unidad: string;
+  cantidad: number;
 }
 
 /** Lo que la orden de pago hereda de la orden de trabajo (PDF 29-oct, 6.1) */
@@ -53,20 +68,33 @@ export interface DetalleOrdenPago {
   ordenTrabajoId: number;
   ordenTrabajoFolio: string;
   reporteFolio?: string;
+  fechaReporte?: string;
   vehiculoCodigo: string;
   tipoVehiculo?: string;
   area?: string;
   tecnicoId: number;
   tecnico?: string;
+  /** Empresa responsable (PDF 06-nov, PAG-02) */
+  empresaId?: number | null;
+  empresa?: string | null;
+  empresaIdentificador?: string | null;
   fechaCreacionOrden: string;
   fechaFinalizacionOrden?: string;
+  fechaValidacionOrden?: string;
   fechaRegistro: string;
+  fechaAprobacion?: string;
   fechaPago?: string;
+  numeroFactura?: string;
   aplicaGarantia: boolean;
   actividades: ActividadPago[];
-  materiales: MaterialOrden[];
+  /** Actividades guardadas al generarse (false = orden de pago anterior, recalculada con el costo base) */
+  importesFijos: boolean;
+  /** Solo informativos: no suman al total */
+  materiales: MaterialInformativo[];
   costoActividades: number;
+  /** 0 en las nuevas; solo órdenes de pago aprobadas antes del cambio pueden traer cargo por refacciones */
   costoMateriales: number;
+  otrosCostos?: number;
   total: number;
   notas?: string;
 }
@@ -83,6 +111,7 @@ export const pagosService = {
 
     if (filters) {
       if (filters.tecnicoId !== undefined) params.append('tecnicoId', filters.tecnicoId.toString());
+      if (filters.empresaId !== undefined) params.append('empresaId', filters.empresaId.toString());
       if (filters.estado !== undefined) params.append('estado', filters.estado.toString());
       if (filters.fechaDesde) params.append('fechaDesde', filters.fechaDesde);
       if (filters.fechaHasta) params.append('fechaHasta', filters.fechaHasta);

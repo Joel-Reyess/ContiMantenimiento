@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState, type ReactNode } from 'react';
-import { Settings, Plus, Loader2, RefreshCcw, ListChecks, Trash2, Package, Users, AlertTriangle, Calendar, FileText, Download, FileSpreadsheet, MapPin, Truck, Tag, UserCheck, Database, ArrowLeft, History, Warehouse } from 'lucide-react';
+import { Settings, Plus, Loader2, RefreshCcw, ListChecks, Trash2, Package, Users, AlertTriangle, Calendar, FileText, Download, FileSpreadsheet, MapPin, Truck, Tag, UserCheck, Database, ArrowLeft, History, Warehouse, Building2 } from 'lucide-react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getFullImageUrl } from '@/lib/utils';
 import {
@@ -54,7 +54,8 @@ const SECCIONES_INTERNAS: Seccion[] = ['areas', 'checklists', 'tipos', 'preventi
 const MODULOS: { titulo: string; descripcion: string; ruta: string; icono: ReactNode; soloReset?: boolean }[] = [
   { titulo: 'Gestión de usuarios', descripcion: 'Usuarios, roles, contraseñas y acceso.', ruta: '/usuarios', icono: <Users className="h-7 w-7" /> },
   { titulo: 'Catálogo de áreas', descripcion: 'Áreas o ubicaciones y su supervisor.', ruta: '/configuracion/areas', icono: <MapPin className="h-7 w-7" /> },
-  { titulo: 'Checklists', descripcion: 'Un checklist por tipo de vehículo, con sus ítems y costos.', ruta: '/configuracion/checklists', icono: <ListChecks className="h-7 w-7" /> },
+  { titulo: 'Checklists', descripcion: 'Un checklist por tipo de vehículo, con sus ítems, costo base y tarifas por empresa.', ruta: '/configuracion/checklists', icono: <ListChecks className="h-7 w-7" /> },
+  { titulo: 'Empresas proveedoras', descripcion: 'Empresas que hacen las reparaciones; cada una con sus tarifas.', ruta: '/empresas-proveedoras', icono: <Building2 className="h-7 w-7" /> },
   { titulo: 'Tipos de vehículo', descripcion: 'Tipos de contenedor, imágenes y capacidad del taller.', ruta: '/configuracion/tipos', icono: <Truck className="h-7 w-7" /> },
   { titulo: 'Prefijos de vehículos', descripcion: 'Prefijos del código para detectar el tipo automáticamente.', ruta: '/gestion-prefijos', icono: <Tag className="h-7 w-7" /> },
   { titulo: 'Fallas visuales', descripcion: 'Fallas y puntos sobre la imagen de cada tipo.', ruta: '/fallas-imagen', icono: <AlertTriangle className="h-7 w-7" /> },

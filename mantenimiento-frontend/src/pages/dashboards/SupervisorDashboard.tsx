@@ -25,7 +25,8 @@ import {
   EquipmentStatusPanel, 
   RecurrentFailuresChart, 
   LocationMatrix,
-  FailuresByTypeChart
+  FailuresByTypeChart,
+  GastoProveedores
 } from '@/components/dashboard';
 
 interface TeamMember {
@@ -350,6 +351,9 @@ export function SupervisorDashboard() {
             </div>
           </section>
         )}
+
+      {/* Dashboard financiero por proveedor (PDF 06-nov, DSH-02) */}
+      <GastoProveedores />
 
       <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
         <div className="dashboard-card p-6">

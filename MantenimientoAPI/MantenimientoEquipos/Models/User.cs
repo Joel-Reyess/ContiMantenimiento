@@ -52,6 +52,13 @@ public class User
 
     public decimal? TarifaHora { get; set; }
 
+    /// <summary>
+    /// Empresa proveedora del técnico (PDF 06-nov, USR-02): define el tarifario de sus órdenes de pago.
+    /// Sin empresa se usa el costo base de cada actividad.
+    /// </summary>
+    public int? EmpresaId { get; set; }
+    public virtual Empresa? Empresa { get; set; }
+
     [MaxLength(200)]
     public string? Especialidades { get; set; }
 

@@ -15,10 +15,12 @@ namespace MantenimientoEquipos.Controllers;
 public class UsuariosController : ControllerBase
 {
     private readonly MantenimientoDbContext _db;
+    private readonly Services.EmpresasService _empresas;
 
-    public UsuariosController(MantenimientoDbContext db)
+    public UsuariosController(MantenimientoDbContext db, Services.EmpresasService empresas)
     {
         _db = db;
+        _empresas = empresas;
     }
 
     [HttpGet]
@@ -59,7 +61,10 @@ public class UsuariosController : ControllerBase
                 AreaNombre = u.Area != null ? u.Area.Nombre : null,
                 u.NumeroEmpleado,
                 RolNombre = u.Roles.Select(r => r.Nombre).FirstOrDefault(),
-                Activo = u.Status == UserStatusEnum.Activo
+                Activo = u.Status == UserStatusEnum.Activo,
+                // Empresa proveedora del técnico (PDF 06-nov, USR-02)
+                u.EmpresaId,
+                EmpresaNombre = u.Empresa != null ? u.Empresa.Nombre : null
             })
             .ToListAsync();
 
@@ -153,6 +158,21 @@ public class UsuariosController : ControllerBase
                 user.Roles.Clear();
                 user.Roles.Add(role);
             }
+        }
+
+        // Empresa proveedora: solo técnicos (si deja de ser técnico, se le quita). Las órdenes de pago ya generadas
+        // conservan la empresa con la que se calcularon.
+        try
+        {
+            var esTecnico = user.Roles.Any(r => r.Nombre == "Tecnico");
+            var empresa = await _empresas.EmpresaParaUsuarioAsync(request.EmpresaId, esTecnico, user.EmpresaId);
+            // Copia del nombre en el campo de texto anterior (lo siguen leyendo las exportaciones)
+            if (esTecnico || user.EmpresaId != null) user.EmpresaExterna = empresa?.Nombre;
+            user.EmpresaId = empresa?.Id;
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponse<string>.Error(ex.Message));
         }
 
         await _db.SaveChangesAsync();

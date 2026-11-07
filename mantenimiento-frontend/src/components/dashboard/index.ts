@@ -5,4 +5,5 @@ export { EquipmentStatusPanel } from './EquipmentStatusPanel';
 export { MaintenanceAlerts } from './MaintenanceAlerts';
 export { WeeklyStatsTable } from './WeeklyStatsTable';
 export { LocationMatrix } from './LocationMatrix';
+export { GastoProveedores } from './GastoProveedores';
 export * from './charts';
