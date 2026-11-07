@@ -89,6 +89,11 @@ public partial class MantenimientoDbContext : DbContext
     // Solicitudes de Cambio
     public virtual DbSet<SolicitudCambio> SolicitudesCambio { get; set; }
 
+    // Empresas proveedoras y sus tarifas (PDF 06-nov, CFG-07 y CFG-08)
+    public virtual DbSet<Empresa> Empresas { get; set; }
+    public virtual DbSet<TarifaEmpresa> TarifasEmpresa { get; set; }
+    public virtual DbSet<RegistroPagoActividad> RegistroPagoActividades { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // ===== USER Y ROLES =====
@@ -676,6 +681,49 @@ public partial class MantenimientoDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.UsuarioId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ===== EMPRESAS PROVEEDORAS Y TARIFAS (PDF 06-nov) =====
+        modelBuilder.Entity<Empresa>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Identificador).IsUnique();
+            entity.Property(e => e.Nombre).IsRequired().HasMaxLength(150);
+            entity.Property(e => e.Identificador).IsRequired().HasMaxLength(30);
+        });
+
+        modelBuilder.Entity<TarifaEmpresa>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.EmpresaId, e.ChecklistItemId }).IsUnique();
+            entity.HasIndex(e => e.ChecklistItemId);
+            entity.Property(e => e.Costo).HasColumnType("decimal(12,2)");
+            entity.HasOne(e => e.Empresa).WithMany(x => x.Tarifas).HasForeignKey(e => e.EmpresaId).OnDelete(DeleteBehavior.Cascade);
+            // Al quitar una actividad del checklist se van sus tarifas
+            entity.HasOne(e => e.ChecklistItem).WithMany().HasForeignKey(e => e.ChecklistItemId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<User>()
+            .HasOne(u => u.Empresa)
+            .WithMany(e => e.Tecnicos)
+            .HasForeignKey(u => u.EmpresaId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<RegistroPago>(entity =>
+        {
+            entity.HasIndex(p => p.EmpresaId);
+            entity.HasOne(p => p.Empresa).WithMany().HasForeignKey(p => p.EmpresaId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany(p => p.Actividades).WithOne(a => a.RegistroPago).HasForeignKey(a => a.RegistroPagoId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RegistroPagoActividad>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.RegistroPagoId);
+            entity.Property(e => e.Descripcion).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.Cantidad).HasColumnType("decimal(12,2)");
+            entity.Property(e => e.CostoUnitario).HasColumnType("decimal(12,2)");
+            entity.Property(e => e.Subtotal).HasColumnType("decimal(12,2)");
         });
 
         OnModelCreatingPartial(modelBuilder);

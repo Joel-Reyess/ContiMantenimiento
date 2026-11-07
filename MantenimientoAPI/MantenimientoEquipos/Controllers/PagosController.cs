@@ -32,7 +32,8 @@ public class PagosController : ControllerBase
     private IQueryable<RegistroPago> ConDetalle() => _db.RegistrosPago
         .Include(p => p.OrdenTrabajo).ThenInclude(o => o.Vehiculo)
         .Include(p => p.OrdenTrabajo).ThenInclude(o => o.ReporteFalla)
-        .Include(p => p.Tecnico);
+        .Include(p => p.Tecnico)
+        .Include(p => p.Empresa);
 
     private object MapDto(RegistroPago p) => new
     {
@@ -44,6 +45,9 @@ public class PagosController : ControllerBase
         ReporteFolio = p.OrdenTrabajo?.ReporteFalla?.Folio,
         p.TecnicoId,
         TecnicoNombre = p.Tecnico?.NombreCompleto,
+        // Empresa responsable: la del técnico cuando se generó (PDF 06-nov)
+        p.EmpresaId,
+        EmpresaNombre = p.Empresa?.Nombre,
         Estado = p.Estado,
         EstadoNombre = p.Estado.ToString(),
         MontoManoObra = p.CostoManoObra,
@@ -52,6 +56,7 @@ public class PagosController : ControllerBase
         p.FechaRegistro,
         p.FechaAprobacion,
         p.FechaPago,
+        p.NumeroFactura,
         p.Notas,
         // Para saber en la pantalla si el pago ya está en una orden de compra (no se puede eliminar suelto)
         p.OrdenCompraId
@@ -82,11 +87,15 @@ public class PagosController : ControllerBase
         [FromQuery] DateTime? fechaDesde = null,
         [FromQuery] DateTime? fechaHasta = null,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 20)
+        [FromQuery] int pageSize = 20,
+        [FromQuery] int? empresaId = null)
     {
         var query = ConDetalle().AsQueryable();
 
         if (tecnicoId.HasValue) query = query.Where(p => p.TecnicoId == tecnicoId.Value);
+        // 0 = órdenes de pago de técnicos sin empresa (tarifa base)
+        if (empresaId == 0) query = query.Where(p => p.EmpresaId == null);
+        else if (empresaId.HasValue) query = query.Where(p => p.EmpresaId == empresaId.Value);
         if (estado.HasValue) query = query.Where(p => p.Estado == estado.Value);
         if (fechaDesde.HasValue) query = query.Where(p => p.FechaRegistro >= fechaDesde.Value);
         if (fechaHasta.HasValue) query = query.Where(p => p.FechaRegistro <= fechaHasta.Value);
@@ -142,6 +151,16 @@ public class PagosController : ControllerBase
             .OrderByDescending(p => p.FechaRegistro)
             .ToListAsync();
         return Ok(ApiResponse<object>.Ok(list.Select(MapDto).ToList()));
+    }
+
+    public class RechazarPagoRequest
+    {
+        public string? Motivo { get; set; }
+    }
+
+    public class PagarRequest
+    {
+        public string? NumeroFactura { get; set; }
     }
 
     public class ActualizarPagoRequest
@@ -214,13 +233,11 @@ public class PagosController : ControllerBase
     [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
     public async Task<IActionResult> Update(int id, [FromBody] ActualizarPagoRequest request)
     {
-        var pago = await _db.RegistrosPago.FindAsync(id);
+        var pago = await ConDetalle().FirstOrDefaultAsync(p => p.Id == id);
         if (pago == null) return NotFound(ApiResponse<string>.Error("Pago no encontrado"));
 
-        pago.CostoManoObra = request.MontoManoObra;
-        pago.CostoRefacciones = request.MontoRefacciones ?? 0;
-        pago.TarifaHora = request.MontoManoObra;
-        pago.MontoTotal = request.MontoManoObra + (request.MontoRefacciones ?? 0);
+        // Los importes se fijan al generarse con el tarifario de la empresa del técnico (PDF 06-nov, PAG-03) y las
+        // refacciones ya no se cobran (OT-24): aquí solo se guardan las notas; los montos que lleguen se ignoran
         pago.Notas = request.Notas ?? pago.Notas;
 
         await _db.SaveChangesAsync();
@@ -242,13 +259,15 @@ public class PagosController : ControllerBase
 
     [HttpPost("{id:int}/rechazar")]
     [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
-    public async Task<IActionResult> Rechazar(int id, [FromBody] dynamic body)
+    public async Task<IActionResult> Rechazar(int id, [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] RechazarPagoRequest? body)
     {
         var pago = await _db.RegistrosPago.FindAsync(id);
         if (pago == null) return NotFound(ApiResponse<string>.Error("Pago no encontrado"));
 
+        // Antes el cuerpo era `dynamic` y leer el motivo tronaba (500): no se podía rechazar
         pago.Estado = EstadoPagoEnum.Rechazado;
-        pago.Notas = (string?)body?.motivo ?? pago.Notas;
+        var motivo = string.IsNullOrWhiteSpace(body?.Motivo) ? null : body!.Motivo!.Trim();
+        if (motivo != null) pago.Notas = motivo.Length > 300 ? motivo[..300] : motivo;
         await _db.SaveChangesAsync();
         return Ok(ApiResponse<object>.Ok(MapDto(pago), "Pago rechazado"));
     }
@@ -286,13 +305,19 @@ public class PagosController : ControllerBase
 
     [HttpPost("{id:int}/pagar")]
     [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
-    public async Task<IActionResult> Pagar(int id, [FromBody] dynamic body)
+    public async Task<IActionResult> Pagar(int id, [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] PagarRequest? body)
     {
         var pago = await _db.RegistrosPago.FindAsync(id);
         if (pago == null) return NotFound(ApiResponse<string>.Error("Pago no encontrado"));
 
         pago.Estado = EstadoPagoEnum.Pagado;
         pago.FechaPago = DateTime.UtcNow;
+        // El número de factura que se captura al marcar pagado (antes se ignoraba); sale en la orden de pago impresa
+        if (!string.IsNullOrWhiteSpace(body?.NumeroFactura))
+        {
+            var factura = body!.NumeroFactura!.Trim();
+            pago.NumeroFactura = factura.Length > 50 ? factura[..50] : factura;
+        }
         await _db.SaveChangesAsync();
         return Ok(ApiResponse<object>.Ok(MapDto(pago), "Pago marcado como pagado"));
     }

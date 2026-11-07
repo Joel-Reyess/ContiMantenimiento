@@ -444,7 +444,8 @@ public class DashboardService
                 Vehiculo = o.Vehiculo.Codigo,
                 Tecnico = o.TecnicoAsignado != null ? o.TecnicoAsignado.NombreCompleto : "Sin asignar",
                 FechaFinalizacion = o.FechaFinalizacion ?? DateTime.MinValue,
-                CostoTotal = o.CostoTotal ?? 0,
+                // Con orden de pago, su importe (tarifas de la empresa, sin refacciones; PDF 06-nov); sin ella, el costo de la orden
+                CostoTotal = o.RegistroPago != null ? o.RegistroPago.MontoTotal : (o.CostoTotal ?? 0),
                 EstadoPago = o.RegistroPago != null ? o.RegistroPago.Estado.ToString() : "Sin Registro"
             })
             .ToListAsync();

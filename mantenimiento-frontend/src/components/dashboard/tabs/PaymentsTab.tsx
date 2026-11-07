@@ -41,7 +41,8 @@ export function PaymentsTab({ stats }: PaymentsTabProps) {
     }).format(amount);
   };
 
-  const totalPendingAmount = ordenes.reduce((acc, curr) => acc + curr.costoTotal, 0);
+  // Las que ya tienen orden de pago pendiente ya van en montoPagosPendientes: aquí solo las que aún no la tienen
+  const totalPendingAmount = ordenes.filter((o) => o.estadoPago === 'Sin Registro').reduce((acc, curr) => acc + curr.costoTotal, 0);
 
   if (isLoading) {
     return <div className="p-8 text-center text-continental-gray-1">Cargando informacion de pagos...</div>;

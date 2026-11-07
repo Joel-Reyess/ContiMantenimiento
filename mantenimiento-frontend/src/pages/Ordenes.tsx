@@ -762,7 +762,7 @@ export function OrdenesPage() {
     const filasMateriales = materiales.map((m) =>
       `<tr><td>${esc(m.nombre)}</td><td>${esc(m.codigo)}</td><td class="c">${esc(m.cantidad)} ${esc(m.unidad)}</td></tr>`
     ).join('');
-    const empresa = (detalle as any).empresaNombre || (detalle as any).tecnicoEmpresa || '—';
+    const empresa = detalle.empresaNombre || '—';
     const dato = (etiqueta: string, valor: string) => `<div class="dato"><span>${etiqueta}</span><b>${valor}</b></div>`;
     ventana.document.open();
     ventana.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Orden de trabajo ${esc(detalle.folio)}</title>

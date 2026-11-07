@@ -25,6 +25,7 @@ export { ordenesCompraService } from './ordenesCompraService';
 export { adminService } from './adminService';
 export { imageFaultsService } from './imageFaultsService';
 export { vehicleImagePointsService } from './vehicleImagePointsService';
+export { empresasService } from './empresasService';
 
 export type { VehiculoFilters, PaginatedResponse } from './vehiculosService';
 export type { ReporteFilters } from './reportesService';
@@ -44,3 +45,4 @@ export type {
   TecnicoItem
 } from './catalogosService';
 export type { VehiculoPrefijoConfig } from './vehiculoPrefijoConfigsService';
+export type { Empresa, EmpresaRequest, TarifaEmpresa } from './empresasService';

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.DTOs;
 using MantenimientoEquipos.Services;
+using MantenimientoEquipos.Middlewares;
 using System.Security.Claims;
 
 namespace MantenimientoEquipos.Controllers;
@@ -13,10 +14,28 @@ namespace MantenimientoEquipos.Controllers;
 public class DashboardController : ControllerBase
 {
     private readonly DashboardService _dashboardService;
+    private readonly EmpresasService _empresas;
 
-    public DashboardController(DashboardService dashboardService)
+    public DashboardController(DashboardService dashboardService, EmpresasService empresas)
     {
         _dashboardService = dashboardService;
+        _empresas = empresas;
+    }
+
+    /// <summary>
+    /// Dashboard financiero por proveedor (PDF 06-nov, DSH-02): reparaciones, costo total y costo promedio por empresa,
+    /// por semana, quincena o mes. empresaId vacío = todas; 0 = técnicos sin empresa. zona = getTimezoneOffset() del navegador.
+    /// </summary>
+    [HttpGet("gasto-proveedores")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
+    public async Task<IActionResult> GetGastoProveedores(
+        [FromQuery] string periodicidad = "mensual",
+        [FromQuery] int periodos = 6,
+        [FromQuery] int? empresaId = null,
+        [FromQuery] int zona = 0)
+    {
+        var gasto = await _empresas.GastoPorProveedorAsync(periodicidad, periodos, empresaId, zona);
+        return Ok(ApiResponse<GastoProveedoresDto>.Ok(gasto));
     }
 
     /// <summary>

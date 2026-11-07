@@ -154,6 +154,7 @@ public class OrdenTrabajoService
                 ReporteFallaId = o.ReporteFallaId,
                 ReporteFallaFolio = o.ReporteFalla != null ? o.ReporteFalla.Folio : null,
                 ReporteFechaReporte = o.ReporteFalla != null ? o.ReporteFalla.FechaReporte : null,
+                EmpresaNombre = o.TecnicoAsignado != null && o.TecnicoAsignado.Empresa != null ? o.TecnicoAsignado.Empresa.Nombre : null,
                 VehiculoId = o.VehiculoId,
                 VehiculoCodigo = o.Vehiculo.Codigo,
                 VehiculoTipo = _db.TiposVehiculo.Where(t => t.Id == (int)o.Vehiculo.Tipo).Select(t => t.Nombre).FirstOrDefault() ?? o.Vehiculo.Tipo.ToString(),
@@ -585,7 +586,12 @@ public class OrdenTrabajoService
         // PDF 06-nov: el costo de la actividad ya incluye materiales y mano de obra; las refacciones solo son
         // trazabilidad de inventario y no suman al costo (por eso la garantía ya no cambia el importe)
         _ = costoRefacciones;
-        orden.CostoTotal = costoChecklist;
+        // Con la tarifa de la empresa del técnico (GEN-05), igual que la orden de pago
+        var empresaTecnico = orden.TecnicoAsignadoId == null ? null
+            : await _db.Users.Where(u => u.Id == orden.TecnicoAsignadoId).Select(u => u.EmpresaId).FirstOrDefaultAsync();
+        orden.CostoTotal = empresaTecnico == null
+            ? costoChecklist
+            : (await new OrdenPagoService(_db).ActividadesAsync(ordenId, empresaTecnico)).Sum(a => a.Subtotal);
 
         // La unidad sigue en el taller hasta que el técnico confirma su entrega en la zona de reparados;
         // vuelve a estar operativa cuando se valida la reparación (DISPONIBLE)

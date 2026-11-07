@@ -9,6 +9,8 @@ export interface OrdenTrabajo {
   reporteFallaFolio?: string;
   /** Fecha del reporte de falla (impresión de la orden, PDF 06-nov) */
   reporteFechaReporte?: string;
+  /** Empresa proveedora del técnico (GEN-05) */
+  empresaNombre?: string;
   reporteFalla?: ReporteFalla;
   vehiculoId: number;
   vehiculoCodigo?: string;

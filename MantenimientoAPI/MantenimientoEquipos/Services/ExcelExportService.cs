@@ -180,16 +180,17 @@ public class ExcelExportService
                     .OrderByDescending(p => p.FechaRegistro)
                     .Select(p => new
                     {
-                        Orden = p.OrdenTrabajo.Folio, Tecnico = p.Tecnico.NombreCompleto, p.HorasTrabajadas, p.TarifaHora,
+                        Orden = p.OrdenTrabajo.Folio, Tecnico = p.Tecnico.NombreCompleto, Empresa = p.Empresa != null ? p.Empresa.Nombre : null,
+                        p.HorasTrabajadas, p.TarifaHora,
                         p.CostoManoObra, p.CostoRefacciones, p.OtrosCostos, p.MontoTotal, p.Estado, p.NumeroFactura,
                         OrdenCompra = p.OrdenCompra != null ? p.OrdenCompra.Folio : null,
                         p.FechaRegistro, p.FechaAprobacion, p.FechaPago, p.Notas
                     })
                     .ToListAsync();
                 return EscribirHoja(wb, hoja, filas,
-                    new[] { "Orden de trabajo", "Técnico", "Horas", "Tarifa por hora", "Mano de obra", "Refacciones", "Otros costos",
+                    new[] { "Orden de trabajo", "Técnico", "Empresa", "Horas", "Tarifa por hora", "Mano de obra", "Refacciones", "Otros costos",
                             "Total", "Estado", "Factura", "Orden de compra", "Fecha de registro", "Fecha de aprobación", "Fecha de pago", "Notas" },
-                    p => new object?[] { p.Orden, p.Tecnico, p.HorasTrabajadas, p.TarifaHora, p.CostoManoObra, p.CostoRefacciones,
+                    p => new object?[] { p.Orden, p.Tecnico, p.Empresa, p.HorasTrabajadas, p.TarifaHora, p.CostoManoObra, p.CostoRefacciones,
                             p.OtrosCostos, p.MontoTotal, Humanizar(p.Estado), p.NumeroFactura, p.OrdenCompra, p.FechaRegistro,
                             p.FechaAprobacion, p.FechaPago, p.Notas });
             }
@@ -261,7 +262,7 @@ public class ExcelExportService
                         u.Username, u.NombreCompleto, u.NumeroEmpleado, u.Email, u.Telefono,
                         Roles = u.Roles.Select(r => r.Nombre).ToList(),
                         Area = u.Area != null ? u.Area.Nombre : null,
-                        u.Status, u.TipoTecnico, u.EmpresaExterna, u.UltimoInicioSesion, u.CreatedAt
+                        u.Status, u.TipoTecnico, EmpresaExterna = u.Empresa != null ? u.Empresa.Nombre : u.EmpresaExterna, u.UltimoInicioSesion, u.CreatedAt
                     })
                     .ToListAsync();
                 return EscribirHoja(wb, hoja, filas,

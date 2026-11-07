@@ -52,7 +52,45 @@ export interface OrdenSinPago {
   estadoPago: string;
 }
 
+/** Dashboard financiero por proveedor (PDF 06-nov, DSH-02) */
+export type Periodicidad = 'semanal' | 'quincenal' | 'mensual';
+
+export interface GastoProveedorFila {
+  /** null = técnicos sin empresa (tarifa base) */
+  empresaId: number | null;
+  empresa: string;
+  reparaciones: number;
+  costoTotal: number;
+  costoPromedio: number;
+}
+
+export interface GastoPeriodo {
+  clave: string;
+  /** "Septiembre 2026", "1–15 sep 2026", "3–9 nov 2026" */
+  etiqueta: string;
+  desde: string;
+  hasta: string;
+  proveedores: GastoProveedorFila[];
+  reparaciones: number;
+  costoTotal: number;
+  costoPromedio: number;
+}
+
+export interface GastoProveedores {
+  periodicidad: Periodicidad;
+  empresaId?: number | null;
+  /** Del más reciente al más antiguo */
+  periodos: GastoPeriodo[];
+}
+
 export const dashboardService = {
+  /** Periodos cortados en la hora local del navegador; empresaId 0 = sin empresa, sin empresaId = todas */
+  async getGastoProveedores(periodicidad: Periodicidad, periodos = 6, empresaId?: number): Promise<ApiResponse<GastoProveedores>> {
+    const params = new URLSearchParams({ periodicidad, periodos: String(periodos), zona: String(new Date().getTimezoneOffset()) });
+    if (empresaId !== undefined) params.append('empresaId', String(empresaId));
+    return await httpClient.get<GastoProveedores>(`/dashboard/gasto-proveedores?${params.toString()}`);
+  },
+
   async getStats(): Promise<ApiResponse<DashboardStats>> {
     return await httpClient.get<DashboardStats>('/dashboard/stats');
   },
