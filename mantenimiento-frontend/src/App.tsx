@@ -26,6 +26,7 @@ import { GestionVehiculosPrefijosPage } from '@/pages/GestionVehiculosPrefijos';
 import { GestionAsignacionLideresPage } from '@/pages/GestionAsignacionLideres';
 import { FallasImagenPage } from '@/pages/FallasImagen';
 import { ReportarReparacionPage } from '@/pages/ReportarReparacion';
+import { EmpresasProveedorasPage } from '@/pages/EmpresasProveedoras';
 
 function App() {
   return (
@@ -217,6 +218,17 @@ function App() {
               element={
                 <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador']}>
                   <UsuariosPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Empresas proveedoras (PDF 06-nov, CFG-07): administración desde Configuración; el Gerente de
+                Mantenimiento (Supervisor) desde el menú */}
+            <Route
+              path="empresas-proveedoras"
+              element={
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor']}>
+                  <EmpresasProveedorasPage />
                 </ProtectedRoute>
               }
             />

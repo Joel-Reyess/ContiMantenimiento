@@ -9,6 +9,10 @@ public class OrdenTrabajoDto
     public required string Folio { get; set; }
     public int? ReporteFallaId { get; set; }
     public string? ReporteFallaFolio { get; set; }
+    /// <summary>Fecha del reporte de falla (impresión de la orden, PDF 06-nov)</summary>
+    public DateTime? ReporteFechaReporte { get; set; }
+    /// <summary>Empresa proveedora del técnico (impresión de la orden: "Empresa responsable")</summary>
+    public string? EmpresaNombre { get; set; }
     public int VehiculoId { get; set; }
     public string? VehiculoCodigo { get; set; }
     public string? VehiculoTipo { get; set; }

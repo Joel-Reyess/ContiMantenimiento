@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, ClipboardPlus, ListChecks, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, Building2, ClipboardPlus, ListChecks, Loader2, Pencil, Plus, Save, Trash2 } from 'lucide-react';
 import {
   Alert,
   AlertDescription,
@@ -14,9 +14,10 @@ import {
   useConfirm,
   useToast
 } from '@/components/ui';
-import { catalogosService, checklistService } from '@/services';
+import { catalogosService, checklistService, empresasService } from '@/services';
 import type { TipoVehiculoItem } from '@/services/catalogosService';
 import type { ChecklistTemplate, ChecklistTemplateRequest } from '@/services/checklistService';
+import type { Empresa } from '@/services/empresasService';
 
 interface ItemDraft {
   id?: number;
@@ -41,6 +42,8 @@ const normalizar = (texto: string) => texto.trim().toLowerCase().replace(/\s+/g,
  * Requerimientos 12.3, 12.3.1 y 12.3.2: un checklist por tipo de vehículo, que usan
  * automáticamente todos los vehículos de ese tipo (incluidos los que se den de alta después).
  * El nombre lo pone el tipo y los ítems se agregan en una ventana aparte.
+ * PDF 06-nov (CFG-08): con el selector "Tarifario" se captura el precio de cada actividad para cada empresa
+ * proveedora; las actividades y sus títulos son los mismos para todas (se editan en "Tarifa base").
  */
 export function ChecklistsPorTipo() {
   const { confirmar } = useConfirm();
@@ -65,6 +68,20 @@ export function ChecklistsPorTipo() {
   const [errorItem, setErrorItem] = useState('');
   const preguntaRef = useRef<HTMLInputElement>(null);
 
+  // Tarifario por empresa ('' = tarifa base)
+  const [empresas, setEmpresas] = useState<Empresa[]>([]);
+  const [empresaSel, setEmpresaSel] = useState('');
+  const [tarifas, setTarifas] = useState<Record<number, number>>({});
+  const [cargandoTarifas, setCargandoTarifas] = useState(false);
+  const [errorTarifasCarga, setErrorTarifasCarga] = useState('');
+  const peticionTarifas = useRef(0);
+  // Ventana de tarifas de un checklist para la empresa elegida
+  const [tarifasDe, setTarifasDe] = useState<ChecklistTemplate | null>(null);
+  const [borrador, setBorrador] = useState<Record<number, string>>({});
+  const [errorTarifas, setErrorTarifas] = useState('');
+  const [guardandoTarifas, setGuardandoTarifas] = useState(false);
+  const empresa = empresas.find((e) => String(e.id) === empresaSel) || null;
+
   const cargar = async () => {
     setLoading(true);
     setErrorCarga('');
@@ -83,7 +100,77 @@ export function ChecklistsPorTipo() {
 
   useEffect(() => {
     void cargar();
+    empresasService.getAll().then((r) => {
+      if (r.success && r.data) setEmpresas(r.data);
+    });
   }, []);
+
+  const cargarTarifas = async (id: string) => {
+    const peticion = ++peticionTarifas.current;
+    setTarifas({});
+    setErrorTarifasCarga('');
+    if (!id) {
+      setCargandoTarifas(false);
+      return;
+    }
+    setCargandoTarifas(true);
+    try {
+      const res = await empresasService.getTarifas(Number(id));
+      if (peticion !== peticionTarifas.current) return;
+      if (!res.success) throw new Error(res.message || 'No se pudieron cargar las tarifas');
+      setTarifas(Object.fromEntries((res.data || []).map((t) => [t.checklistItemId, Number(t.costo)])));
+    } catch (err) {
+      if (peticion === peticionTarifas.current) setErrorTarifasCarga(err instanceof Error ? err.message : 'No se pudieron cargar las tarifas');
+    } finally {
+      if (peticion === peticionTarifas.current) setCargandoTarifas(false);
+    }
+  };
+
+  const elegirEmpresa = (id: string) => {
+    setEmpresaSel(id);
+    void cargarTarifas(id);
+  };
+
+  const abrirTarifas = (tpl: ChecklistTemplate) => {
+    setBorrador(Object.fromEntries(tpl.items.map((it) => [it.id, tarifas[it.id] !== undefined ? String(tarifas[it.id]) : ''])));
+    setErrorTarifas('');
+    setTarifasDe(tpl);
+  };
+
+  const guardarTarifas = async () => {
+    if (!tarifasDe || !empresa) return;
+    const items: { checklistItemId: number; costo: number | null }[] = [];
+    for (const [idx, it] of tarifasDe.items.entries()) {
+      const texto = (borrador[it.id] ?? '').trim().replace(',', '.');
+      if (texto === '') {
+        items.push({ checklistItemId: it.id, costo: null });
+        continue;
+      }
+      const valor = Number(texto);
+      if (Number.isNaN(valor) || valor < 0) {
+        setErrorTarifas(`La tarifa del ítem #${idx + 1} (${it.pregunta}) no es un importe válido.`);
+        return;
+      }
+      items.push({ checklistItemId: it.id, costo: Math.round(valor * 100) / 100 });
+    }
+    setGuardandoTarifas(true);
+    setErrorTarifas('');
+    try {
+      const res = await empresasService.guardarTarifas(empresa.id, items);
+      if (!res.success) {
+        setErrorTarifas(res.message || 'No se pudieron guardar las tarifas');
+        return;
+      }
+      setTarifas(Object.fromEntries((res.data || []).map((t) => [t.checklistItemId, Number(t.costo)])));
+      toast.exito(`Tarifas de ${empresa.nombre} para ${tarifasDe.nombre} guardadas`);
+      setTarifasDe(null);
+    } catch (err) {
+      console.error(err);
+      setErrorTarifas('Error al guardar las tarifas. Revisa tu conexión e inténtalo de nuevo.');
+    } finally {
+      setGuardandoTarifas(false);
+    }
+  };
 
   const tiposConChecklist = new Set(plantillas.filter((p) => p.tipoVehiculo).map((p) => Number(p.tipoVehiculo)));
   const tipoActual = editId ? plantillas.find((p) => p.id === editId)?.tipoVehiculo : undefined;
@@ -283,11 +370,49 @@ export function ChecklistsPorTipo() {
             </p>
           </div>
         </div>
-        <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={abrirNuevo}>
-          <ClipboardPlus className="h-4 w-4" />
-          Nuevo checklist
-        </Button>
+        {!empresa && (
+          <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={abrirNuevo}>
+            <ClipboardPlus className="h-4 w-4" />
+            Nuevo checklist
+          </Button>
+        )}
       </div>
+
+      {/* Tarifario: costo base o el de una empresa proveedora (PDF 06-nov, CFG-08) */}
+      <Card className="flex flex-col gap-2 border-l-4 border-continental-yellow">
+        <div className="flex flex-wrap items-end gap-3">
+          <div style={{ width: 360, maxWidth: '100%' }}>
+            <Select
+              label="Tarifario"
+              value={empresaSel}
+              onChange={elegirEmpresa}
+              options={[
+                { value: '', label: 'Tarifa base (costo estimado)' },
+                ...empresas.map((e) => ({ value: String(e.id), label: `${e.nombre}${e.activo ? '' : ' (inactiva)'}` }))
+              ]}
+            />
+          </div>
+          {cargandoTarifas && <Loader2 className="h-5 w-5 animate-spin text-continental-gray-1" />}
+        </div>
+        <p className="text-sm text-continental-gray-1" style={{ marginBottom: 0 }}>
+          {empresa ? (
+            <>
+              <Building2 className="inline h-4 w-4" /> Precios de <strong>{empresa.nombre}</strong>: las órdenes de pago de sus técnicos usan
+              estos importes. Las actividades sin tarifa de la empresa usan el costo base. Para agregar o quitar actividades elige
+              "Tarifa base".
+            </>
+          ) : empresas.length > 0 ? (
+            'Costo base de cada actividad: lo usan los técnicos sin empresa y las actividades sin tarifa de su empresa. Elige una empresa para capturar sus precios.'
+          ) : (
+            'Costo base de cada actividad. Para precios distintos por proveedor registra las empresas en Configuración → Empresas proveedoras.'
+          )}
+        </p>
+        {errorTarifasCarga && (
+          <Alert variant="destructive">
+            <AlertDescription>{errorTarifasCarga}</AlertDescription>
+          </Alert>
+        )}
+      </Card>
 
       {errorCarga && (
         <Alert variant="destructive">
@@ -314,20 +439,36 @@ export function ChecklistsPorTipo() {
                     <Badge variant="secondary">{tpl.items.length} ítem(s)</Badge>
                   </div>
                   <div className="flex flex-shrink-0 gap-2">
-                    <Button size="sm" variant="outline" onClick={() => abrirEditar(tpl)} className="flex items-center gap-1">
-                      <Pencil className="h-4 w-4" />
-                      Editar
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      aria-label={`Eliminar checklist de ${tpl.nombre}`}
-                      title="Eliminar checklist"
-                      onClick={() => eliminar(tpl)}
-                      className="border-red-300 text-red-700 hover:bg-red-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {empresa ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => abrirTarifas(tpl)}
+                        disabled={cargandoTarifas || !!errorTarifasCarga}
+                        aria-label={`Tarifas de ${empresa.nombre} para ${tpl.nombre}`}
+                        className="flex items-center gap-1"
+                      >
+                        <Pencil className="h-4 w-4" />
+                        Tarifas
+                      </Button>
+                    ) : (
+                      <>
+                        <Button size="sm" variant="outline" onClick={() => abrirEditar(tpl)} className="flex items-center gap-1">
+                          <Pencil className="h-4 w-4" />
+                          Editar
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          aria-label={`Eliminar checklist de ${tpl.nombre}`}
+                          title="Eliminar checklist"
+                          onClick={() => eliminar(tpl)}
+                          className="border-red-300 text-red-700 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
                 {aviso && (
@@ -343,7 +484,14 @@ export function ChecklistsPorTipo() {
                       <span className="text-continental-black">
                         <span className="text-continental-gray-2">#{idx + 1}</span> {item.pregunta}
                       </span>
-                      <span className="flex-shrink-0 text-continental-gray-1">{moneda(Number(item.costoEstimado ?? 0))}</span>
+                      {empresa && tarifas[item.id] !== undefined ? (
+                        <span className="flex-shrink-0 font-semibold text-continental-black">{moneda(tarifas[item.id])}</span>
+                      ) : (
+                        <span className="flex-shrink-0 text-continental-gray-1" title={empresa ? 'Sin tarifa de la empresa: usa el costo base' : undefined}>
+                          {moneda(Number(item.costoEstimado ?? 0))}
+                          {empresa && ' (base)'}
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -393,7 +541,7 @@ export function ChecklistsPorTipo() {
                 <div className="flex gap-2 text-xs font-semibold text-continental-gray-1">
                   <span className="w-6" />
                   <span className="flex-1">Ítem</span>
-                  <span className="w-32">Costo estimado (MXN)</span>
+                  <span className="w-32">Costo base (MXN)</span>
                   <span className="w-12" />
                 </div>
                 {items.map((item, idx) => (
@@ -444,6 +592,59 @@ export function ChecklistsPorTipo() {
           <Button onClick={guardar} disabled={guardando} className="flex items-center gap-2">
             {guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardPlus className="h-4 w-4" />}
             {editId ? 'Guardar cambios' : 'Guardar checklist'}
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      <Modal
+        isOpen={!!tarifasDe}
+        onClose={() => !guardandoTarifas && setTarifasDe(null)}
+        title={tarifasDe && empresa ? `Tarifas de ${empresa.nombre} · ${tarifasDe.nombre}` : 'Tarifas'}
+        description="Mismas actividades para todas las empresas. Deja vacía una tarifa para usar el costo base."
+      >
+        {tarifasDe && (
+          <div className="flex flex-col gap-2 max-h-96 overflow-y-auto pr-1" data-testid="tarifas-empresa">
+            <div className="flex gap-2 text-xs font-semibold text-continental-gray-1">
+              <span className="w-6" />
+              <span className="flex-1">Actividad</span>
+              <span className="w-28 text-right">Costo base</span>
+              <span className="w-36">Tarifa de la empresa (MXN)</span>
+            </div>
+            {tarifasDe.items.map((item, idx) => (
+              <div key={item.id} className="flex items-center gap-2 rounded-lg border border-continental-gray-3" style={{ padding: 8 }}>
+                <span className="text-xs text-continental-gray-2 w-6 text-right">#{idx + 1}</span>
+                <span className="flex-1 min-w-0 text-sm text-continental-black break-words">{item.pregunta}</span>
+                <span className="w-28 text-right text-sm text-continental-gray-1">{moneda(Number(item.costoEstimado ?? 0))}</span>
+                <div className="w-36">
+                  <Input
+                    aria-label={`Tarifa del ítem ${idx + 1}`}
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    placeholder={String(Number(item.costoEstimado ?? 0))}
+                    value={borrador[item.id] ?? ''}
+                    onChange={(e) => {
+                      setBorrador((b) => ({ ...b, [item.id]: e.target.value }));
+                      setErrorTarifas('');
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {errorTarifas && (
+          <Alert variant="destructive" style={{ marginTop: 12 }}>
+            <AlertDescription>{errorTarifas}</AlertDescription>
+          </Alert>
+        )}
+        <ModalFooter>
+          <Button variant="outline" onClick={() => setTarifasDe(null)} disabled={guardandoTarifas}>
+            Cancelar
+          </Button>
+          <Button onClick={() => void guardarTarifas()} disabled={guardandoTarifas} className="flex items-center gap-2">
+            {guardandoTarifas ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Guardar tarifas
           </Button>
         </ModalFooter>
       </Modal>

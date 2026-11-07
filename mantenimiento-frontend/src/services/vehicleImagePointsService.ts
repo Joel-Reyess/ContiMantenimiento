@@ -32,6 +32,11 @@ export const vehicleImagePointsService = {
     return await httpClient.put<VehicleImagePoint>(`/vehicleimagepoints/${payload.id}`, payload);
   },
 
+  /** Liga el componente con la actividad del checklist que genera al reportarlo (null = automática por nombre) */
+  async ligarActividad(id: number, checklistItemId: number | null): Promise<ApiResponse<number | null>> {
+    return await httpClient.put<number | null>(`/vehicleimagepoints/${id}/actividad`, { checklistItemId });
+  },
+
   async delete(id: number): Promise<ApiResponse<boolean>> {
     return await httpClient.delete<boolean>(`/vehicleimagepoints/${id}`);
   },

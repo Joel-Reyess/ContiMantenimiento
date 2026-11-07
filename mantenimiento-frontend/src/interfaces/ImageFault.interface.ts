@@ -26,6 +26,10 @@ export interface VehicleImagePoint {
   radiusPct?: number;
   imageFaultId: number;
   imageFaultName?: string;
+  /** Descripción del componente: se muestra debajo del nombre al elegir fallas (PDF 06-nov) */
+  imageFaultDescription?: string;
+  /** Actividad del checklist ligada a mano; sin valor se liga por nombre */
+  checklistItemId?: number | null;
   active: boolean;
 }
 

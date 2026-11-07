@@ -28,7 +28,7 @@ public class RecepcionController : ControllerBase
             .Include(r => r.Vehiculo)
             .Include(r => r.ItemsChecklist)
                 .ThenInclude(ic => ic.ChecklistItem)
-            .Where(r => !r.TieneOrdenTrabajo && !_db.OrdenesTrabajo.Any(o => o.ReporteFallaId == r.Id))
+            .Where(r => !r.TieneOrdenTrabajo && r.EstadoInspeccion != EstadoInspeccionEnum.Cancelado && !_db.OrdenesTrabajo.Any(o => o.ReporteFallaId == r.Id))
             .OrderBy(r => r.FechaReporte)
             .Select(r => new
             {

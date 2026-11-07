@@ -19,7 +19,8 @@ import { catalogosService } from '@/services';
 import { ReportFailureModal } from '@/components/tecnico';
 import { InteractiveVehicleImage } from '@/components/vehiculos/InteractiveVehicleImage';
 import { PanelFlujo } from '@/components/flujo';
-import type { CategoriaFalla, ReporteFalla, ReporteFallaList, VehicleImagePoint } from '@/interfaces';
+import { flujoService } from '@/services/flujoService';
+import type { ReporteFalla, ReporteFallaList, VehicleImagePoint } from '@/interfaces';
 import { PrioridadNombres } from '@/interfaces/Api.interface';
 import { getFullImageUrl } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -27,12 +28,11 @@ import { useAuth } from '@/contexts/AuthContext';
 interface FiltersState {
   busqueda: string;
   prioridad?: string;
-  categoriaId?: string;
 }
 
-/** Estado del reporte en el flujo: con orden, en validación del Líder o rechazado para corregir */
+/** Estado del reporte en el flujo: con orden, en validación del Líder, rechazado para corregir o cancelado (PDF 06-nov) */
 const estadoReporte = (r: { tieneOrdenTrabajo: boolean; estadoInspeccion?: number }) =>
-  r.tieneOrdenTrabajo ? 'Con orden' : r.estadoInspeccion === 2 ? 'Rechazado: en corrección' : 'En validación';
+  r.tieneOrdenTrabajo ? 'Con orden' : r.estadoInspeccion === 3 ? 'Cancelado' : r.estadoInspeccion === 2 ? 'Rechazado: en corrección' : 'En validación';
 
 export function ReportesPage() {
   const { id: reporteIdParam } = useParams();
@@ -49,7 +49,8 @@ export function ReportesPage() {
   const [filters, setFilters] = useState<FiltersState>({ busqueda: '' });
   const [reportes, setReportes] = useState<ReporteFallaList[]>([]);
   const [detalle, setDetalle] = useState<ReporteFalla | null>(null);
-  const [categorias, setCategorias] = useState<CategoriaFalla[]>([]);
+  // PDF 06-nov: el reporte solo se imprime cuando su orden llegó a DISPONIBLE
+  const [disponible, setDisponible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [crearOpen, setCrearOpen] = useState(false);
@@ -62,13 +63,6 @@ export function ReportesPage() {
     { value: '3', label: 'Alta' },
     { value: '4', label: 'Urgente' }
   ];
-
-  const loadCategorias = async () => {
-    const res = await reportesService.getCategorias();
-    if (res.success && res.data) {
-      setCategorias(res.data);
-    }
-  };
 
   const loadReportes = async () => {
     setLoading(true);
@@ -87,6 +81,8 @@ export function ReportesPage() {
             // ignore
           }
           setDetalle({ ...detalleData, evidencias: detalleData.evidencias || [] });
+          const flujo = await flujoService.deReporte(reporteId);
+          setDisponible(Boolean(flujo.success && flujo.data?.etapas.find((e) => e.clave === 'DISPONIBLE')?.estado === 'completada'));
         } else {
           setDetalle(null);
           setError(res.message || 'No se pudo cargar el reporte');
@@ -95,7 +91,6 @@ export function ReportesPage() {
         const res = await reportesService.getAll({
           busqueda: filters.busqueda || undefined,
           prioridad: filters.prioridad ? Number(filters.prioridad) : undefined,
-          categoriaId: filters.categoriaId ? Number(filters.categoriaId) : undefined,
           page: 1,
           pageSize: 20
         });
@@ -121,10 +116,6 @@ export function ReportesPage() {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    loadCategorias();
-  }, []);
 
   useEffect(() => {
     loadReportes();
@@ -308,12 +299,11 @@ export function ReportesPage() {
                   Prioridad: {rep.prioridadNombre || PrioridadNombres[rep.prioridad]} · Tipo: {rep.tipoMantenimiento || 'Correctivo'} · Reportado por {rep.reportadoPorNombre || 'N/D'}
                 </p>
                 <p className="text-xs text-continental-gray-2">
-                  {rep.categoriaNombre ? `Categoria: ${rep.categoriaNombre} · ` : ''}
                   {new Date(rep.fechaReporte).toLocaleString()}
                 </p>
               </div>
               <div className="flex flex-col items-end gap-2">
-                <Badge variant={rep.tieneOrdenTrabajo ? 'default' : rep.estadoInspeccion === 2 ? 'destructive' : 'warning'}>
+                <Badge variant={rep.tieneOrdenTrabajo ? 'default' : rep.estadoInspeccion === 3 ? 'secondary' : rep.estadoInspeccion === 2 ? 'destructive' : 'warning'}>
                   {estadoReporte(rep)}
                 </Badge>
                 <Badge variant="secondary">{rep.cantidadEvidencias} evidencia(s)</Badge>
@@ -375,7 +365,6 @@ export function ReportesPage() {
             </div>
             <div className="flex items-center gap-2">
               <Badge>{estadoReporte(detalle)}</Badge>
-              <Badge variant="secondary">{detalle.categoriaNombre || 'Sin categoria'}</Badge>
             </div>
           </div>
 
@@ -390,7 +379,7 @@ export function ReportesPage() {
             <div className="space-y-2 text-sm text-continental-gray-1">
               <p className="font-semibold text-continental-black">Ubicacion</p>
               <p className="text-continental-black">{detalle.ubicacion || 'No especificada'}</p>
-              <p>Puede operar: {detalle.puedeOperar ? 'Si' : 'No'}</p>
+              <p>{detalle.puedeOperar ? 'El vehículo puede continuar operando' : 'El vehículo no puede operar'} (tipo {detalle.tipoMantenimiento || 'Correctivo'})</p>
               <p>Fecha: {new Date(detalle.fechaReporte).toLocaleString()}</p>
               <p>Reportado por: {detalle.reportadoPorNombre || 'N/D'}</p>
             </div>
@@ -494,10 +483,12 @@ export function ReportesPage() {
           </div>
 
           <div className="flex flex-wrap gap-2 print:hidden">
-            <Button variant="outline" onClick={() => window.print()} className="flex items-center gap-2">
-              <Printer className="h-4 w-4" />
-              Imprimir
-            </Button>
+            {disponible && (
+              <Button variant="outline" onClick={() => window.print()} className="flex items-center gap-2">
+                <Printer className="h-4 w-4" />
+                Imprimir
+              </Button>
+            )}
             {canEliminar && (
               <Button
                 variant="outline"
@@ -644,7 +635,7 @@ export function ReportesPage() {
       </div>
 
       {!reporteId && (
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-3">
           <SearchInput
             placeholder="Buscar por folio, vehiculo o texto"
             value={filters.busqueda}
@@ -655,11 +646,6 @@ export function ReportesPage() {
             options={[{ value: '', label: 'Todas las prioridades' }, ...prioridadOptions]}
             value={filters.prioridad || ''}
             onChange={(value) => setFilters((prev) => ({ ...prev, prioridad: value }))}
-          />
-          <Select
-            options={[{ value: '', label: 'Todas las categorias' }, ...categorias.map((c) => ({ value: c.id, label: c.nombre }))]}
-            value={filters.categoriaId || ''}
-            onChange={(value) => setFilters((prev) => ({ ...prev, categoriaId: value }))}
           />
           <div className="flex gap-2">
             <Button variant="secondary" className="w-full" onClick={resetFilters}>

@@ -314,10 +314,12 @@ public class FlujoService
         {
             ReporteId = r?.Id, ReporteFolio = r?.Folio, OrdenId = o?.Id, OrdenFolio = o?.Folio,
             VehiculoId = vehiculo?.Id, VehiculoCodigo = vehiculo?.Codigo, VehiculoTipo = tipoNombre ?? vehiculo?.Tipo.ToString(),
-            Cancelada = o?.Estado == EstadoOrdenTrabajoEnum.Cancelada,
+            Cancelada = o?.Estado == EstadoOrdenTrabajoEnum.Cancelada || (o == null && r?.EstadoInspeccion == EstadoInspeccionEnum.Cancelado),
             ReportadoPorNombre = Nombre(r?.ReportadoPorId),
             ReporteDescripcion = r?.Descripcion, ReportePrioridad = r?.Prioridad, ReportePuedeOperar = r?.PuedeOperar,
-            Historial = historial.Select(AHistorialDto).ToList()
+            ReporteTipoMantenimiento = r?.TipoMantenimiento,
+            // PDF 06-nov: el historial solo muestra lo que cambia o complementa el reporte (lo demás ya está en las etapas)
+            Historial = historial.Where(EsHistorialRelevante).Select(AHistorialDto).ToList()
         };
         var unidad = $"{vehiculo?.Codigo} de tipo {dto.VehiculoTipo}";
 
@@ -379,6 +381,12 @@ public class FlujoService
         {
             etapas.Add(new EtapaFlujoDto { Clave = "INSPECCION", Nombre = "INSPECCIÓN", Estado = "pendiente", Etiqueta = "En validación",
                 Responsable = "Líder", Mensaje = "Pendiente de que un Líder verifique la falla y valide el reporte para continuar." });
+        }
+        else if (r.EstadoInspeccion == EstadoInspeccionEnum.Cancelado)
+        {
+            etapas.Add(new EtapaFlujoDto { Clave = "INSPECCION", Nombre = "INSPECCIÓN", Estado = "rechazada", Etiqueta = "Cancelado",
+                Responsable = Nombre(r.InspeccionadoPorId), Fecha = r.FechaInspeccion,
+                Mensaje = "Reporte cancelado" + (string.IsNullOrWhiteSpace(r.ObservacionesInspeccion) ? "." : $": {r.ObservacionesInspeccion}") });
         }
         else if (r.EstadoInspeccion == EstadoInspeccionEnum.Rechazado)
         {
@@ -485,11 +493,14 @@ public class FlujoService
             etapas.Add(new EtapaFlujoDto { Clave = "DISPONIBLE", Nombre = "DISPONIBLE", Estado = "inactiva", Etiqueta = "Entrega" });
 
         if (dto.Cancelada)
-            foreach (var e in etapas.Where(e => e.Estado != "completada"))
+        {
+            var reporteCancelado = o == null;
+            foreach (var e in etapas.Where(e => e.Estado != "completada" && !(reporteCancelado && e.Clave == "INSPECCION")))
             {
                 e.Estado = "inactiva";
-                e.Mensaje = "Orden cancelada.";
+                e.Mensaje = reporteCancelado ? "Reporte cancelado." : "Orden cancelada.";
             }
+        }
 
         // ---- Trabajos: los del reporte y los hallazgos del taller ----
         if (o != null)
@@ -529,6 +540,9 @@ public class FlujoService
                 acciones.AddRange(new[] { "validarReporte", "rechazarReporte", "corregirReporte" });
             if (lider && r.EstadoInspeccion == EstadoInspeccionEnum.Rechazado)
                 acciones.Add("corregirReporte");
+            // PDF 06-nov: cancelar solo en INSPECCIÓN (Administrador, Líder y Gerente de Mantenimiento)
+            if ((lider || u.Es("Supervisor")) && (r.EstadoInspeccion == EstadoInspeccionEnum.Pendiente || r.EstadoInspeccion == EstadoInspeccionEnum.Rechazado))
+                acciones.Add("cancelarReporte");
         }
         if (o != null && !dto.Cancelada)
         {
@@ -567,6 +581,7 @@ public class FlujoService
 
         var reportes = _db.ReportesFalla.AsNoTracking()
             .Where(r => !r.TieneOrdenTrabajo && r.EstadoInspeccion != EstadoInspeccionEnum.Validado
+                        && r.EstadoInspeccion != EstadoInspeccionEnum.Cancelado
                         && !_db.OrdenesTrabajo.Any(o => o.ReporteFallaId == r.Id));
         // Mismo alcance que la lista de reportes: el Operador ve los suyos; el Líder, los de sus tipos asignados
         if (u.Es("Operador") && !u.Es("SuperUsuario", "Administrador", "Supervisor", "Tecnico", "Lider"))
@@ -691,6 +706,8 @@ public class FlujoService
                 ?? throw new FlujoException("Reporte no encontrado", 404);
         if (r.EstadoInspeccion == EstadoInspeccionEnum.Validado || r.TieneOrdenTrabajo)
             throw new FlujoException("Este reporte ya fue validado.");
+        if (r.EstadoInspeccion == EstadoInspeccionEnum.Cancelado)
+            throw new FlujoException("Este reporte fue cancelado.");
         if (r.EstadoInspeccion == EstadoInspeccionEnum.Rechazado)
             throw new FlujoException("El reporte fue rechazado: corrígelo y reenvíalo antes de validarlo.");
 
@@ -771,11 +788,14 @@ public class FlujoService
                 ?? throw new FlujoException("Reporte no encontrado", 404);
         if (r.EstadoInspeccion == EstadoInspeccionEnum.Validado || r.TieneOrdenTrabajo)
             throw new FlujoException("El reporte ya fue validado; ya no se puede corregir.");
+        if (r.EstadoInspeccion == EstadoInspeccionEnum.Cancelado)
+            throw new FlujoException("Este reporte fue cancelado.");
 
         var anterior = new
         {
             r.Descripcion,
             Prioridad = r.Prioridad.ToString(),
+            r.TipoMantenimiento,
             r.PuedeOperar,
             Items = r.ItemsChecklist.Select(i => new { i.ChecklistItemId, Nombre = i.ChecklistItem?.Pregunta, i.Cantidad, i.Notas }).ToList()
         };
@@ -787,7 +807,22 @@ public class FlujoService
             r.Descripcion = d;
         }
         if (req.Prioridad.HasValue) r.Prioridad = req.Prioridad.Value;
-        if (req.PuedeOperar.HasValue) r.PuedeOperar = req.PuedeOperar.Value;
+        // PDF 06-nov: la prioridad es solo informativa; el tipo de mantenimiento decide si la unidad puede operar
+        if (!string.IsNullOrWhiteSpace(req.TipoMantenimiento))
+        {
+            var tipo = req.TipoMantenimiento.Trim();
+            if (tipo != "Correctivo" && tipo != "Preventivo")
+                throw new FlujoException("El tipo de mantenimiento debe ser Correctivo o Preventivo.", 400);
+            r.TipoMantenimiento = tipo;
+        }
+        var puedeOperarAntes = r.PuedeOperar;
+        r.PuedeOperar = ReporteFallaService.PuedeOperar(r.TipoMantenimiento);
+        if (puedeOperarAntes != r.PuedeOperar)
+        {
+            var v = await _db.Vehiculos.FirstAsync(x => x.Id == r.VehiculoId);
+            if (!r.PuedeOperar && v.Estado == EstadoVehiculoEnum.Operativo) v.Estado = EstadoVehiculoEnum.FueraDeServicio;
+            else if (r.PuedeOperar && v.Estado == EstadoVehiculoEnum.FueraDeServicio) v.Estado = EstadoVehiculoEnum.Operativo;
+        }
         if (req.Items != null)
         {
             var ids = req.Items.Select(i => i.ChecklistItemId).Distinct().ToList();
@@ -929,7 +964,9 @@ public class FlujoService
             agregados.Add(nombres[i.ChecklistItemId]);
         }
         if (agregados.Count == 0) throw new FlujoException("Esos trabajos ya están en la orden.", 400);
-        Registrar(o.ReporteFallaId, o.Id, "TALLER", "Hallazgo", u, "Reportado por Taller: " + string.Join(", ", agregados), new { motivos = agregados });
+        var notaHallazgo = req.Items.Select(i => Limpio(i.Notas)).FirstOrDefault(n => n != null);
+        Registrar(o.ReporteFallaId, o.Id, "TALLER", "Hallazgo", u,
+            string.Join(", ", agregados) + (notaHallazgo != null ? $". {notaHallazgo}" : ""), new { motivos = agregados });
         await _db.SaveChangesAsync();
         return new ResultadoFlujoDto { Mensaje = agregados.Count == 1 ? "Hallazgo agregado a la orden." : $"{agregados.Count} hallazgos agregados a la orden.", OrdenId = o.Id };
     }
@@ -1058,11 +1095,58 @@ public class FlujoService
     }
 
     /// <summary>
+    /// Cancela un reporte en la etapa INSPECCIÓN (PDF 06-nov): pendiente de inspección o rechazado, sin orden de trabajo.
+    /// Lo pueden hacer el Administrador, el Líder y el Gerente de Mantenimiento; el motivo es obligatorio.
+    /// La unidad regresa a piso si el reporte la había dejado fuera de servicio y no le queda nada abierto.
+    /// </summary>
+    public async Task<ResultadoFlujoDto> CancelarReporteAsync(int reporteId, string? motivo, UsuarioFlujo u)
+    {
+        var m = Limpio(motivo) ?? throw new FlujoException("Escribe el motivo de la cancelación.", 400, "MotivoObligatorio");
+        var r = await _db.ReportesFalla.FirstOrDefaultAsync(x => x.Id == reporteId)
+                ?? throw new FlujoException("Reporte no encontrado", 404);
+        if (r.EstadoInspeccion == EstadoInspeccionEnum.Cancelado) throw new FlujoException("El reporte ya está cancelado.");
+        if (r.TieneOrdenTrabajo || r.EstadoInspeccion == EstadoInspeccionEnum.Validado || await _db.OrdenesTrabajo.AnyAsync(o => o.ReporteFallaId == r.Id))
+            throw new FlujoException("El reporte ya se validó y generó su orden de trabajo; solo se puede cancelar en la etapa INSPECCIÓN.");
+
+        r.EstadoInspeccion = EstadoInspeccionEnum.Cancelado;
+        r.InspeccionadoPorId = u.Id;
+        r.FechaInspeccion = DateTime.UtcNow;
+        r.ObservacionesInspeccion = Recortar(m, 1000);
+        r.UpdatedAt = DateTime.UtcNow;
+        Registrar(r.Id, null, "INSPECCION", "Cancelado", u, m);
+        await _db.SaveChangesAsync();
+        await _eliminacion.RegresarAlPisoAsync(new[] { r.VehiculoId }, new[] { r.VehiculoId });
+        return new ResultadoFlujoDto { Mensaje = $"Reporte {r.Folio} cancelado." };
+    }
+
+    /// <summary>
+    /// Lo que se ve en el historial (PDF 06-nov): correcciones y rechazos de la inspección, hallazgos del taller,
+    /// rechazos de la validación final, cancelaciones y observaciones escritas. Los cambios de etapa, traslados y
+    /// materiales siguen guardados, pero ya se ven en las etapas y no se repiten aquí.
+    /// </summary>
+    private static bool EsHistorialRelevante(HistorialFlujo h) => (h.Etapa, h.Accion) switch
+    {
+        ("INSPECCION", "Rechazado") or ("INSPECCION", "Cancelado") => true,
+        ("REPORTE", "Corregido") or ("REPORTE", "Reenviado") => true,
+        ("TALLER", "Hallazgo") => true,
+        ("VALIDACION", "Rechazado") => true,
+        ("ORDEN", "Cancelada") => true,
+        // Validaciones de antes con observaciones escritas (hoy ya no se piden)
+        ("INSPECCION", "Validado") => !string.IsNullOrWhiteSpace(h.Detalle) && h.Detalle != "Reporte validado",
+        ("VALIDACION", "Validado") => !string.IsNullOrWhiteSpace(h.Detalle) && h.Detalle != "Reparación validada",
+        _ => false
+    };
+
+    /// <summary>
     /// Cancela una orden que aún no se valida: sale de la Zona de Transición (libera su lugar), el vehículo
     /// regresa a piso si no le queda nada abierto y el reporte queda atendido (un problema nuevo es un reporte nuevo)
     /// </summary>
     public async Task<ResultadoFlujoDto> CancelarOrdenAsync(int ordenId, string? motivo, UsuarioFlujo u)
     {
+        // PDF 06-nov: no se cancela una orden en etapas avanzadas; la cancelación solo existe en la INSPECCIÓN del reporte
+        if (await _db.OrdenesTrabajo.AnyAsync(x => x.Id == ordenId && x.Estado != EstadoOrdenTrabajoEnum.Cancelada))
+            throw new FlujoException("Las órdenes de trabajo ya no se cancelan: la cancelación solo está disponible en la etapa INSPECCIÓN del reporte. "
+                + "Si la orden se generó por error, un Administrador puede eliminarla.");
         var m = Limpio(motivo) ?? throw new FlujoException("Escribe el motivo de la cancelación.", 400, "MotivoObligatorio");
         var o = await _db.OrdenesTrabajo.Include(x => x.Vehiculo).FirstOrDefaultAsync(x => x.Id == ordenId)
                 ?? throw new FlujoException("Orden de trabajo no encontrada", 404);

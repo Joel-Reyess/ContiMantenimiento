@@ -18,6 +18,7 @@ import {
 } from '@/components/ui';
 import { usuariosService } from '@/services/usuariosService';
 import { catalogosService } from '@/services/catalogosService';
+import { empresasService, type Empresa } from '@/services/empresasService';
 import type { UserList, UserCreateRequest, UserUpdateRequest } from '@/interfaces';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -36,6 +37,8 @@ export function UsuariosPage() {
   const [usuarios, setUsuarios] = useState<UserList[]>([]);
   const [roles, setRoles] = useState<{ id: number; nombre: string }[]>([]);
   const [areas, setAreas] = useState<{ id: number; nombre: string }[]>([]);
+  // Empresas proveedoras: el técnico pertenece a una (PDF 06-nov, USR-02)
+  const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [busqueda, setBusqueda] = useState('');
@@ -107,6 +110,9 @@ export function UsuariosPage() {
     catalogosService.getAreas().then((r) => {
       if (r.success && r.data) setAreas(r.data.map((a) => ({ id: a.id, nombre: a.nombre })));
     });
+    empresasService.getAll().then((r) => {
+      if (r.success && r.data) setEmpresas(r.data);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -174,7 +180,8 @@ export function UsuariosPage() {
       rolId: roles[0]?.id || 0,
       areaId: undefined,
       email: '',
-      telefono: ''
+      telefono: '',
+      empresaId: null
     });
     setModalOpen(true);
   };
@@ -190,10 +197,21 @@ export function UsuariosPage() {
       rolId: roles.find((r) => r.nombre === u.rolNombre)?.id || 0,
       areaId: (u as any).areaId,
       email: (u as any).email,
-      telefono: (u as any).telefono
+      telefono: (u as any).telefono,
+      empresaId: u.empresaId ?? null
     });
     setModalOpen(true);
   };
+
+  // La empresa solo aplica a técnicos: de ella sale el tarifario de sus órdenes de pago
+  const esTecnico = roles.find((r) => r.id === form.rolId)?.nombre === 'Tecnico';
+  const empresaActual = editUser?.empresaId ?? null;
+  const opcionesEmpresa = [
+    { value: '', label: 'Sin empresa (tarifa base)' },
+    ...empresas
+      .filter((e) => e.activo || e.id === empresaActual)
+      .map((e) => ({ value: String(e.id), label: `${e.nombre} (${e.identificador})${e.activo ? '' : ' · inactiva'}` }))
+  ];
 
   const validarForm = () => {
     const e: typeof formErrors = {};
@@ -221,7 +239,8 @@ export function UsuariosPage() {
           telefono: form.telefono,
           rolId: form.rolId,
           areaId: form.areaId,
-          password: form.password?.trim() ? form.password : undefined
+          password: form.password?.trim() ? form.password : undefined,
+          empresaId: esTecnico ? form.empresaId ?? null : null
         };
         const res = await usuariosService.update(editUser.id, payload);
         if (!res.success) throw new Error(res.message || 'No se pudo actualizar el usuario');
@@ -234,7 +253,8 @@ export function UsuariosPage() {
           areaId: form.areaId,
           email: form.email,
           telefono: form.telefono,
-          numeroEmpleado: (form as any).numeroEmpleado
+          numeroEmpleado: (form as any).numeroEmpleado,
+          empresaId: esTecnico ? form.empresaId ?? null : null
         };
         const res = await usuariosService.create(payload);
         if (!res.success) throw new Error(res.message || 'No se pudo crear el usuario');
@@ -349,6 +369,7 @@ export function UsuariosPage() {
                   </div>
                   <p className="text-sm text-continental-gray-1">
                     Rol: {u.rolNombre || 'Sin rol'} • Area: {u.areaNombre || 'Sin area'}
+                    {u.rolNombre === 'Tecnico' && <> • Empresa: {u.empresaNombre || 'Sin empresa (tarifa base)'}</>}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -441,6 +462,20 @@ export function UsuariosPage() {
             placeholder="Selecciona un rol"
             error={formErrors.rolId}
           />
+          {esTecnico && (
+            <div className="flex flex-col gap-1">
+              <Select
+                label="Empresa"
+                value={form.empresaId ? String(form.empresaId) : ''}
+                onChange={(v) => setForm((p) => ({ ...p, empresaId: v ? Number(v) : null }))}
+                options={opcionesEmpresa}
+              />
+              <p className="text-xs text-continental-gray-1">
+                Sus órdenes de pago se calculan con las tarifas de esta empresa.
+                {empresas.length === 0 && ' Aún no hay empresas: regístralas en Configuración → Empresas proveedoras.'}
+              </p>
+            </div>
+          )}
           <Select
             label="Area (opcional)"
             value={form.areaId ? String(form.areaId) : ''}

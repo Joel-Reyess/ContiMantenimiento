@@ -61,7 +61,7 @@ public class ReporteFallaService
             query = query.Where(r => r.ReportadoPorId == reportadoPorId.Value);
 
         if (sinOrden == true)
-            query = query.Where(r => !r.TieneOrdenTrabajo);
+            query = query.Where(r => !r.TieneOrdenTrabajo && r.EstadoInspeccion != EstadoInspeccionEnum.Cancelado);
 
         if (vehiculoId.HasValue)
             query = query.Where(r => r.VehiculoId == vehiculoId.Value);
@@ -227,10 +227,11 @@ public class ReporteFallaService
             CategoriaFallaId = request.CategoriaFallaId,
             ReportadoPorId = userId,
             Prioridad = request.Prioridad,
-            TipoMantenimiento = string.IsNullOrWhiteSpace(request.TipoMantenimiento) ? "Correctivo" : request.TipoMantenimiento,
+            TipoMantenimiento = TipoValido(request.TipoMantenimiento),
             Descripcion = request.Descripcion,
             Ubicacion = request.Ubicacion,
-            PuedeOperar = request.PuedeOperar,
+            // PDF 06-nov: lo decide el tipo de mantenimiento (Correctivo: no puede operar); la prioridad es informativa
+            PuedeOperar = PuedeOperar(TipoValido(request.TipoMantenimiento)),
             FechaReporte = DateTime.UtcNow,
             CreatedAt = DateTime.UtcNow
         };
@@ -269,7 +270,7 @@ public class ReporteFallaService
             _db.ReportImageFaults.AddRange(reportImageFaults);
         }
 
-        if (!request.PuedeOperar)
+        if (!reporte.PuedeOperar)
         {
             vehiculo.Estado = EstadoVehiculoEnum.FueraDeServicio;
         }
@@ -291,7 +292,7 @@ public class ReporteFallaService
             throw new DuplicateActiveOrderException(ordenActiva.Folio, ordenActiva.Id);
 
         var reportePendiente = await _db.ReportesFalla
-            .Where(r => r.VehiculoId == vehiculoId && !r.TieneOrdenTrabajo)
+            .Where(r => r.VehiculoId == vehiculoId && !r.TieneOrdenTrabajo && r.EstadoInspeccion != EstadoInspeccionEnum.Cancelado)
             .OrderByDescending(r => r.FechaReporte)
             .Select(r => new { r.Id, r.Folio, r.FechaReporte })
             .FirstOrDefaultAsync();
@@ -351,10 +352,11 @@ public class ReporteFallaService
             CategoriaFallaId = request.CategoriaFallaId,
             ReportadoPorId = userId,
             Prioridad = request.Prioridad,
-            TipoMantenimiento = string.IsNullOrWhiteSpace(request.TipoMantenimiento) ? "Correctivo" : request.TipoMantenimiento,
+            TipoMantenimiento = TipoValido(request.TipoMantenimiento),
             Descripcion = request.Descripcion,
             Ubicacion = request.Ubicacion,
-            PuedeOperar = request.PuedeOperar,
+            // PDF 06-nov: lo decide el tipo de mantenimiento (Correctivo: no puede operar); la prioridad es informativa
+            PuedeOperar = PuedeOperar(TipoValido(request.TipoMantenimiento)),
             FechaReporte = DateTime.UtcNow,
             CreatedAt = DateTime.UtcNow
         };
@@ -398,7 +400,7 @@ public class ReporteFallaService
             _db.ReportImageFaults.AddRange(reportImageFaults);
         }
 
-        if (!request.PuedeOperar)
+        if (!reporte.PuedeOperar)
         {
             vehiculo.Estado = EstadoVehiculoEnum.FueraDeServicio;
         }
@@ -433,10 +435,17 @@ public class ReporteFallaService
             .CountAsync();
     }
 
+    /// <summary>PDF 06-nov: Correctivo = el vehículo no puede operar; Preventivo = puede seguir operando</summary>
+    public static bool PuedeOperar(string? tipoMantenimiento) => !string.Equals(tipoMantenimiento?.Trim(), "Correctivo", StringComparison.OrdinalIgnoreCase);
+
+    private static string TipoValido(string? tipo) =>
+        string.Equals(tipo?.Trim(), "Preventivo", StringComparison.OrdinalIgnoreCase) ? "Preventivo"
+        : string.IsNullOrWhiteSpace(tipo) || string.Equals(tipo.Trim(), "Correctivo", StringComparison.OrdinalIgnoreCase) ? "Correctivo" : tipo.Trim();
+
     public async Task<int> ContarReportesSinAtenderAsync()
     {
         return await _db.ReportesFalla
-            .Where(r => !r.TieneOrdenTrabajo)
+            .Where(r => !r.TieneOrdenTrabajo && r.EstadoInspeccion != EstadoInspeccionEnum.Cancelado)
             .CountAsync();
     }
 

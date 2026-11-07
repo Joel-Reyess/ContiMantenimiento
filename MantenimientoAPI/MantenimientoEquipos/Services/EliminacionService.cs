@@ -114,7 +114,7 @@ public class EliminacionService
                     || v.Ubicacion == UbicacionVehiculoEnum.TransicionReparado
                     || (fuera.Contains(v.Id) && v.Estado == EstadoVehiculoEnum.FueraDeServicio))
                 && !_db.OrdenesTrabajo.Any(o => o.VehiculoId == v.Id && OrdenTrabajoService.EstadosOrdenActiva.Contains(o.Estado))
-                && !_db.ReportesFalla.Any(r => r.VehiculoId == v.Id && !r.TieneOrdenTrabajo))
+                && !_db.ReportesFalla.Any(r => r.VehiculoId == v.Id && !r.TieneOrdenTrabajo && r.EstadoInspeccion != EstadoInspeccionEnum.Cancelado))
             .ExecuteUpdateAsync(s => s
                 .SetProperty(v => v.Estado, EstadoVehiculoEnum.Operativo)
                 .SetProperty(v => v.Ubicacion, UbicacionVehiculoEnum.Piso));

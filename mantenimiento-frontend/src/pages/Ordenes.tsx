@@ -7,14 +7,12 @@ import {
   Badge,
   Button,
   Card,
-  Input,
   Modal,
   ModalFooter,
   SearchableSelect,
   type SearchableSelectOption,
   Select,
   Spinner,
-  Textarea,
   useConfirm,
   useToast,
   SearchInput
@@ -28,26 +26,22 @@ import {
   RefreshCcw,
   Wrench,
   CheckCircle,
-  XCircle,
   Package,
   ClipboardList,
   FileText,
   Trash2,
   Search,
-  AlertTriangle,
-  Camera
+  Camera,
+  Printer
 } from 'lucide-react';
-import { catalogosService, solicitudCambioService, vehiculosService } from '@/services';
+import { catalogosService, vehiculosService } from '@/services';
 import { UbicacionBadge } from '@/components/vehiculos/UbicacionLegend';
 import { ordenesService } from '@/services/ordenesService';
 import { usuariosService } from '@/services/usuariosService';
 import { reportesService } from '@/services/reportesService';
-import { consumiblesService } from '@/services/consumiblesService';
 import { checklistService } from '@/services/checklistService';
-import { refaccionesService } from '@/services/refaccionesService';
-import { solicitudActividadAdicionalService } from '@/services/solicitudActividadAdicionalService';
 import { ordenTrabajoChecklistItemService } from '@/services/ordenTrabajoChecklistItemService';
-import { ReportFailureModal, RequestActivityModal } from '@/components/tecnico';
+import { ReportFailureModal } from '@/components/tecnico';
 import { MaterialesOrden, PanelFlujo } from '@/components/flujo';
 import { flujoService, type MaterialOrden } from '@/services/flujoService';
 import { InteractiveVehicleImage } from '@/components/vehiculos/InteractiveVehicleImage';
@@ -121,8 +115,6 @@ const resolveChecklistKey = (tipo?: string) => {
   return 'general';
 };
 
-const MOTIVO_OBLIGATORIO = 'Escribe el motivo de la cancelación.';
-
 export function OrdenesPage() {
   const { confirmar } = useConfirm();
   const toast = useToast();
@@ -188,20 +180,9 @@ export function OrdenesPage() {
   const [imagePreview, setImagePreview] = useState<{ src: string; title?: string } | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [accionando, setAccionando] = useState(false);
-  const [showValidar, setShowValidar] = useState(false);
-  const [validarObs, setValidarObs] = useState('');
-  const [validarDecision, setValidarDecision] = useState<'aprobar' | 'devolver'>('aprobar');
   const [showCompletar, setShowCompletar] = useState(false);
-  const [, setCompTrabajo] = useState('');
   const [compHoras, setCompHoras] = useState('1');
-  const [compEvidFile, setCompEvidFile] = useState<File | null>(null);
-  const [compEvidDesc, setCompEvidDesc] = useState('');
   const [compError, setCompError] = useState('');
-  const [showRefModal, setShowRefModal] = useState(false);
-  const [showActivityModal, setShowActivityModal] = useState(false);
-  const [refItems, setRefItems] = useState<
-    Array<{ nombre: string; cantidad: string; justificacion: string; seleccion?: SearchableSelectOption | null }>
-  >([{ nombre: '', cantidad: '1', justificacion: '', seleccion: null }]);
   // Al terminar: lo que se descontará del inventario (lo guardado en "Refacciones y consumibles utilizados")
   const [materialesAlTerminar, setMaterialesAlTerminar] = useState<MaterialOrden[] | null>(null);
   // Sube con cada acción del flujo para que la tarjeta de materiales se recargue (p. ej. al aceptar la orden)
@@ -209,11 +190,10 @@ export function OrdenesPage() {
   const [asignandoTecnico, setAsignandoTecnico] = useState(false);
   const [tecnicoAsignado, setTecnicoAsignado] = useState<SearchableSelectOption | null>(null);
   const [firmaError, setFirmaError] = useState('');
-  const [showCancelar, setShowCancelar] = useState(false);
-  const [motivoCancelar, setMotivoCancelar] = useState('');
+  // PDF 06-nov: ya asignado, el técnico solo se cambia a propósito (Gerente de Mantenimiento o administración)
+  const [cambiandoTecnico, setCambiandoTecnico] = useState(false);
   const [reporteDetalle, setReporteDetalle] = useState<ReporteFalla | null>(null);
   const [loadingChecklist, setLoadingChecklist] = useState(false);
-  const [savingChecklist, setSavingChecklist] = useState(false);
   const [uploadingItemMap, setUploadingItemMap] = useState<Record<number, boolean>>({});
   const [checklistError, setChecklistError] = useState('');
   const [checklistItems, setChecklistItems] = useState<ChecklistTemplateItem[]>([]);
@@ -223,15 +203,10 @@ export function OrdenesPage() {
   const [dummyChecklistReporte, setDummyChecklistReporte] = useState<DummyChecklistReporte | null>(null);
   const [dummyChecklistTipo, setDummyChecklistTipo] = useState<string>('general');
 
-  // Camera capture state for general evidence
-  const [isCameraActive, setIsCameraActive] = useState(false);
+  // Cámara para la evidencia de una actividad del checklist
   const [activeCameraItem, setActiveCameraItem] = useState<number | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-
-  // Aprobaciones de cambio (Actividades adicionales)
-  const [solicitudesCambio, setSolicitudesCambio] = useState<any[]>([]);
-  const [, setLoadingCambios] = useState(false);
 
 
   const buildImageUrl = (url?: string) => {
@@ -545,51 +520,20 @@ export function OrdenesPage() {
   }, [ordenId, isMisOrdenes]);
 
   useEffect(() => {
-    if (user && tecnicos.length > 0 && !tecnicoAsignado) {
-      const found = tecnicos.find((t) => t.id === user.id);
-      if (found) {
-        setTecnicoAsignado({ value: found.id, label: found.nombre });
-      }
-    }
-  }, [user, tecnicos, tecnicoAsignado]);
-
-  const loadSolicitudesCambio = useCallback(async () => {
-    if (!detalle) return;
-    setLoadingCambios(true);
-    try {
-      // 1) Cargar solicitudes de cambio (legacy/vehiculo)
-      if (detalle.vehiculoId) {
-        const res = await solicitudCambioService.getAll(detalle.vehiculoId);
-        if (res.success && res.data) {
-          setSolicitudesCambio(res.data.filter(s => s.descripcion.startsWith('ACTIVIDAD_EXTRA:') && s.estado === 0));
-        }
-      }
-      
-      // 2) Las nuevas solicitudes adicionales ya vienen el el objeto detalle.solicitudesActividadAdicional
-      // tras recargar la orden.
-    } catch (err) {
-      console.error('Error cargando solicitudes de cambio', err);
-    } finally {
-      setLoadingCambios(false);
-    }
-  }, [detalle]);
-
-  useEffect(() => {
     if (!detalle) {
       setDummyChecklist([]);
       setDummyChecklistReporte(null);
       setDummyChecklistTipo('general');
       setChecklistSource('default');
-      setSolicitudesCambio([]);
       return;
     }
     loadChecklist();
-    loadSolicitudesCambio();
+    setCambiandoTecnico(false);
     const key = resolveChecklistKey(detalle.vehiculoTipo || detalle.tipoMantenimiento || detalle.vehiculoCodigo);
     setDummyChecklistTipo(key);
     setDummyChecklist(buildDummyChecklist(key));
     setDummyChecklistReporte(null);
-  }, [detalle, buildDummyChecklist, loadChecklist, loadSolicitudesCambio]);
+  }, [detalle, buildDummyChecklist, loadChecklist]);
 
   // Foto del tipo de vehiculo, para dibujar encima los componentes con falla del reporte.
   // Resolvemos el tipo por ID (leyendo el vehiculo), que es lo unico confiable; el
@@ -647,143 +591,93 @@ export function OrdenesPage() {
     setChecklistRespuestas((prev) => ({ ...prev, [id]: { ...prev[id], ...changes } }));
   };
 
-  const handleGuardarChecklist = async () => {
-    if (!detalle) return;
-    const tieneIdsInvalidosChecklist = checklistItems.some(
-      (i) => (i as any).tipo !== 'ActividadAdicional' && (!i.id || i.id <= 0)
-    );
-    if (tieneIdsInvalidosChecklist) {
-      setChecklistError('Asigna un checklist al vehiculo en Configuracion para poder guardarlo.');
-      return;
-    }
+  /** PDF 06-nov: el avance se captura solo con la reparación iniciada */
+  const enReparacion =
+    detalle?.estado === EstadoOrdenTrabajo.EnProceso || detalle?.estado === EstadoOrdenTrabajo.EsperandoRefacciones;
 
-    setSavingChecklist(true);
-    setChecklistError('');
+  /**
+   * PDF 06-nov: no se puede terminar hasta que todas las actividades estén completadas y con su evidencia.
+   * (El checklist básico de respaldo no se guarda en la orden, así que no detiene el cierre.)
+   */
+  const actividadesFaltantes = checklistSource === 'default'
+    ? []
+    : checklistItems.filter((i) => checklistRespuestas[i.id]?.valor !== 'OK' || !checklistRespuestas[i.id]?.fotoUrl);
+  const bloqueoTerminar = actividadesFaltantes.length > 0
+    ? `Para terminar la reparación marca como completadas todas las actividades del checklist con su foto de evidencia (faltan ${actividadesFaltantes.length}).`
+    : undefined;
+
+  /**
+   * Guarda al momento el avance de una actividad (ya no hay botón "Guardar checklist", PDF 06-nov).
+   * Si la actividad todavía no existe en la orden (checklist tomado del reporte o del tipo), la crea.
+   */
+  const persistirItem = async (
+    item: ChecklistTemplateItem,
+    cambios: { estado?: string; cantidad?: number; notas?: string }
+  ): Promise<boolean> => {
+    if (!detalle || checklistSource === 'default') return true;
+    let metaId = (item as any).metaId as number | undefined;
+    const tipoItem = (item as any).tipo === 'ActividadAdicional' ? 'ActividadAdicional' : 'Checklist';
     try {
-      // Si usamos OrdenTrabajoChecklistItem (saved source), actualizamos esas entidades
-      if (checklistSource === 'saved' || checklistSource === 'reporte' || checklistSource === 'vehiculo' || checklistSource === 'tipo') {
-        const promises = checklistItems.map(async (item) => {
-          let metaId = (item as any).metaId;
-          const tipoItem = (item as any).tipo === 'ActividadAdicional' ? 'ActividadAdicional' : 'Checklist';
-          const resp = checklistRespuestas[item.id];
-          if (!resp) return;
-
-          // Si no tiene metaId pero es fuente reporte/vehiculo/tipo, intentamos crearlo para que sea persistente
-          if (
-            !metaId &&
-            tipoItem === 'Checklist' &&
-            item.id > 0 &&
-            (checklistSource === 'reporte' || checklistSource === 'vehiculo' || checklistSource === 'tipo')
-          ) {
-             try {
-                const created = await ordenTrabajoChecklistItemService.create({
-                  ordenTrabajoId: detalle.id,
-                  checklistItemId: item.id,
-                  cantidad: resp.cantidad,
-                  notas: resp.notas
-                });
-                if (created.success && created.data) {
-                  metaId = created.data.id;
-                  (item as any).metaId = metaId; // Guardar para futuras actualizaciones
-                  
-                  await ordenTrabajoChecklistItemService.update(metaId, {
-                    estado: resp.valor === 'OK' ? 'Completado' : 'Pendiente',
-                    fotoUrl: resp.fotoUrl,
-                    tipo: 'Checklist'
-                  });
-                }
-                return;
-             } catch (e) {
-                console.error("Error auto-creando item durante guardado masivo", e);
-             }
-          }
-
-          if (!metaId) return;
-          
-          try {
-            await ordenTrabajoChecklistItemService.update(metaId, {
-              estado: resp.valor === 'OK' ? 'Completado' : 'Pendiente',
-              notas: resp.notas,
-              cantidad: resp.cantidad,
-              fotoUrl: resp.fotoUrl, // REFORZADO: Incluir siempre la fotoUrl actual
-              tipo: tipoItem
-            });
-          } catch (err) {
-            console.error(`Error actualizando item ${metaId}`, err);
-            if (tipoItem !== 'Checklist' || item.id <= 0) {
-              return;
-            }
-            // Si falla el update (ej. 404), intentamos CREAR el registro en la tabla nueva para restaurar consistencia
-            try {
-              const created = await ordenTrabajoChecklistItemService.create({
-                ordenTrabajoId: detalle.id,
-                checklistItemId: item.id,
-                cantidad: resp.cantidad,
-                notas: resp.notas
-              });
-              // Si se creó, intentamos actualizar el estado y foto inmediatamente si es necesario
-              if (created.success && created.data) {
-                await ordenTrabajoChecklistItemService.update(created.data.id, {
-                  estado: resp.valor === 'OK' ? 'Completado' : 'Pendiente',
-                  fotoUrl: resp.fotoUrl,
-                  tipo: 'Checklist'
-                });
-              }
-            } catch (createErr) {
-              console.error(`Error al intentar auto-reparar item ${item.id}`, createErr);
-            }
-          }
+      if (!metaId && tipoItem === 'Checklist' && item.id > 0) {
+        const resp = checklistRespuestas[item.id];
+        const creado = await ordenTrabajoChecklistItemService.create({
+          ordenTrabajoId: detalle.id,
+          checklistItemId: item.id,
+          cantidad: resp?.cantidad,
+          notas: resp?.notas
         });
-        
-        await Promise.all(promises);
-      }
-
-      // SIEMPRE guardar tambien en legacy (ChecklistRespuestas) para asegurar compatibilidad
-      // con reportes y calculo de costos que aun usan la tabla vieja.
-      {
-        const respuestas = checklistItems
-          .filter((i) => i.id && i.id > 0)
-          .map((i) => ({
-            checklistItemId: i.id,
-            valor: (checklistRespuestas[i.id]?.valor || '').toString(),
-            notas: checklistRespuestas[i.id]?.notas || undefined,
-            cantidad: checklistRespuestas[i.id]?.cantidad,
-            fotoUrl: checklistRespuestas[i.id]?.fotoUrl // Preservar foto en legacy backup
-          }));
-
-        if (respuestas.length > 0) {
-          await checklistService.guardarRespuestas({ ordenTrabajoId: detalle.id, respuestas });
+        if (!creado.success || !creado.data) {
+          toast.error(creado.message || 'No se pudo guardar el avance');
+          return false;
         }
+        metaId = creado.data.id;
+        (item as any).metaId = metaId;
+        if (resp?.fotoUrl) await ordenTrabajoChecklistItemService.update(metaId, { fotoUrl: resp.fotoUrl, tipo: 'Checklist' });
       }
-
-      if (checklistSource === 'default') {
-        // Fallback a guardar respuestas (legacy) - redundant but keep structure logic if needed specific
-        const respuestas = checklistItems
-          .filter((i) => i.id && i.id > 0)
-          .map((i) => ({
-            checklistItemId: i.id,
-            valor: (checklistRespuestas[i.id]?.valor || '').toString(),
-            notas: checklistRespuestas[i.id]?.notas || undefined,
-            cantidad:
-              checklistRespuestas[i.id]?.cantidad && checklistRespuestas[i.id]?.cantidad! > 0
-                ? checklistRespuestas[i.id]?.cantidad
-                : undefined,
-            fotoUrl: checklistRespuestas[i.id]?.fotoUrl // Preservar foto en legacy
-          }));
-
-        if (respuestas.length > 0) {
-          const res = await checklistService.guardarRespuestas({ ordenTrabajoId: detalle.id, respuestas });
-          if (!res.success) throw new Error(res.message);
-        }
+      if (!metaId) return true;
+      const res = await ordenTrabajoChecklistItemService.update(metaId, { ...cambios, tipo: tipoItem });
+      if (!res.success) {
+        toast.error(res.message || 'No se pudo guardar el avance');
+        return false;
       }
-      
-      await loadOrdenes();
+      return true;
     } catch (err) {
       console.error(err);
-      setChecklistError(err instanceof Error ? err.message : 'No se pudo guardar el checklist');
-    } finally {
-      setSavingChecklist(false);
+      toast.error('No se pudo guardar el avance. Revisa tu conexión.');
+      return false;
     }
+  };
+
+  /**
+   * Al terminar la reparación: guarda el checklist completo (cantidades y notas de cada actividad y las respuestas
+   * que usa el cálculo de la orden de pago). Así ya no hace falta el botón "Guardar checklist".
+   */
+  const guardarChecklistAlTerminar = async (): Promise<{ success: boolean; message?: string }> => {
+    if (!detalle) return { success: false };
+    for (const item of checklistItems) {
+      const resp = checklistRespuestas[item.id];
+      if (!resp) continue;
+      const ok = await persistirItem(item, {
+        estado: resp.valor === 'OK' ? 'Completado' : 'Pendiente',
+        cantidad: resp.cantidad,
+        notas: resp.notas
+      });
+      if (!ok) return { success: false, message: 'No se pudo guardar el checklist; revisa tu conexión e inténtalo de nuevo.' };
+    }
+    const respuestas = checklistItems
+      .filter((i) => i.id && i.id > 0)
+      .map((i) => ({
+        checklistItemId: i.id,
+        valor: (checklistRespuestas[i.id]?.valor || '').toString(),
+        notas: checklistRespuestas[i.id]?.notas || undefined,
+        cantidad: checklistRespuestas[i.id]?.cantidad && checklistRespuestas[i.id]!.cantidad! > 0 ? checklistRespuestas[i.id]?.cantidad : undefined,
+        fotoUrl: checklistRespuestas[i.id]?.fotoUrl
+      }));
+    if (respuestas.length > 0) {
+      const res = await checklistService.guardarRespuestas({ ordenTrabajoId: detalle.id, respuestas });
+      if (!res.success) return { success: false, message: res.message || 'No se pudo guardar el checklist' };
+    }
+    return { success: true };
   };
 
   const applyFilters = () => {
@@ -804,9 +698,6 @@ export function OrdenesPage() {
     setFilters({ busqueda: '' });
     setLimpiezas((n) => n + 1);
   };
-
-  /** Error de la ventana abierta (iniciar, cancelar, validar, refacciones): se muestra dentro de ella */
-  const [errorVentana, setErrorVentana] = useState('');
 
   /**
    * Ejecuta una acción de la orden y devuelve si salió bien. El error va dentro de la ventana activa
@@ -841,308 +732,79 @@ export function OrdenesPage() {
     }
   };
 
-  const handleValidar = (id: number, aprobado: boolean, observaciones?: string) =>
-    doAccion(() => ordenesService.validarOrden(id, { aprobado, observaciones }), {
-      exito: aprobado ? 'Orden validada' : 'Orden devuelta',
-      alFallar: setErrorVentana
-    });
-
-  const handleCancelar = (id: number, motivo: string) =>
-    doAccion(() => ordenesService.cancelarOrden(id, motivo), { exito: 'Orden cancelada', alFallar: setErrorVentana });
-
-  const generarReporteOrden = () => {
+  /**
+   * Impresión de la Orden de Trabajo (PDF 06-nov, propósito operativo, sin importes): folios, fechas, vehículo,
+   * técnico y empresa, tipo y prioridad, actividades con su evidencia, refacciones utilizadas y fecha de finalización.
+   */
+  const imprimirOrden = async () => {
     if (!detalle) return;
-    
-    const refacciones = (detalle.solicitudesRefaccion || [])
-      .filter((s) => s.estado === 'Entregada' || s.estado === 'Aprobada' || s.estado === 'Pendiente')
-      .map(
-        (s) =>
-          `<tr><td>${s.nombreRefaccion}</td><td>x${s.cantidad}</td><td>${s.estado}</td></tr>`
-      )
-      .join('');
-    const checklist = (detalle.respuestasChecklist || [])
-      .filter((r) => (r.valor || '').trim() !== '')
-      .map(
-        (r) =>
-          `<tr><td>${r.pregunta || ''}</td><td>${r.valor || ''}</td>${hasRole(['Administrador']) ? `<td style="text-align:right;">$${(
-            r.costoEstimado || 0
-          ).toFixed(2)}</td>` : ''}</tr>`
-      )
-      .join('');
-    
-    const costoChecklist = detalle.respuestasChecklist?.reduce((acc, r: any) => {
-      const val = (r.valor ?? '').toString().trim().toLowerCase();
-      if (val !== '' && val !== 'no' && val !== 'false' && val !== '0') {
-        const c = Number(r.costoEstimado || r.checklistItem?.costoEstimado || 0);
-        return acc + (Number.isNaN(c) ? 0 : c);
-      }
-      return acc;
-    }, 0) || 0;
-    
-    const total = costoChecklist;
-    
-    const ord = detalle;
-    
-    // Crear una ventana nueva para el reporte
-    const printWindow = window.open('', '_blank', 'width=900,height=650');
-    if (!printWindow) return;
-    
-    // Construir URLs para las imágenes
-    const buildUrl = (url?: string) => {
-      if (!url) return '';
-      if (url.startsWith('http')) return url;
-      const apiBase = import.meta.env.VITE_API_URL || '';
-      const base = apiBase && apiBase.includes('http') ? apiBase.replace(/\/api\/?$/, '') : '';
-      if (base) return `${base}${url.startsWith('/') ? '' : '/'}${url}`;
-      // fallback: if running on 5173, try 5110
-      try {
-        const current = new URL(window.location.origin);
-        if (current.port === '5173') current.port = '5110';
-        return `${current.origin}${url.startsWith('/') ? '' : '/'}${url}`;
-      } catch {
-        return url;
-      }
-    };
-
-    // HTML para las imágenes del reporte
-    let imagenesHtml = '';
-    if (reporteDetalle?.evidencias?.length) {
-      imagenesHtml += `<h3 class="section-title">Evidencias del Reporte</h3>
-        <div class="imagenes-container">
-          ${reporteDetalle.evidencias.map(ev => 
-            `<div class="imagen-item">
-              <img src="${buildUrl(ev.urlImagen)}" alt="${ev.descripcion || 'Evidencia'}" class="imagen-reporte" />
-              ${ev.descripcion ? `<p class="imagen-descripcion">${ev.descripcion}</p>` : ''}
-            </div>`
-          ).join('')}
-        </div>`;
+    const ventana = window.open('', '_blank', 'width=900,height=700');
+    if (!ventana) {
+      toast.aviso('Permite las ventanas emergentes para imprimir la orden.');
+      return;
     }
-
-    if (detalle.evidencias?.length) {
-      // Separar evidencias por tipo para mejor organización
-      const evidenciasIniciales = detalle.evidencias.filter(e => !e.tipoEvidencia || e.tipoEvidencia === 'inicial' || e.tipoEvidencia === 'antes');
-      const evidenciasFinales = detalle.evidencias.filter(e => e.tipoEvidencia === 'completado' || e.tipoEvidencia === 'despues');
-      const evidenciasEntrega = detalle.evidencias.filter(e => e.tipoEvidencia === 'entrega');
-      const evidenciasOtras = detalle.evidencias.filter(e => 
-        e.tipoEvidencia && 
-        !['inicial', 'antes', 'completado', 'despues', 'entrega'].includes(e.tipoEvidencia)
-      );
-
-      if (evidenciasIniciales.length > 0) {
-        imagenesHtml += `<h3 class="section-title">Evidencias Iniciales/Reporte</h3>
-          <div class="imagenes-container">
-            ${evidenciasIniciales.map(ev => 
-              `<div class="imagen-item">
-                <img src="${buildUrl(ev.urlImagen)}" alt="${ev.descripcion || 'Evidencia'}" class="imagen-reporte" />
-                ${ev.descripcion ? `<p class="imagen-descripcion">${ev.descripcion}</p>` : ''}
-              </div>`
-            ).join('')}
-          </div>`;
-      }
-
-      if (evidenciasFinales.length > 0) {
-        imagenesHtml += `<h3 class="section-title">Evidencias Finales/Después</h3>
-          <div class="imagenes-container">
-            ${evidenciasFinales.map(ev => 
-              `<div class="imagen-item">
-                <img src="${buildUrl(ev.urlImagen)}" alt="${ev.descripcion || 'Evidencia'}" class="imagen-reporte" />
-                ${ev.descripcion ? `<p class="imagen-descripcion">${ev.descripcion}</p>` : ''}
-              </div>`
-            ).join('')}
-          </div>`;
-      }
-
-      if (evidenciasEntrega.length > 0) {
-        imagenesHtml += `<h3 class="section-title">Evidencias de Entrega</h3>
-          <div class="imagenes-container">
-            ${evidenciasEntrega.map(ev => 
-              `<div class="imagen-item">
-                <img src="${buildUrl(ev.urlImagen)}" alt="${ev.descripcion || 'Evidencia'}" class="imagen-reporte" />
-                ${ev.descripcion ? `<p class="imagen-descripcion">${ev.descripcion}</p>` : ''}
-              </div>`
-            ).join('')}
-          </div>`;
-      }
-
-      if (evidenciasOtras.length > 0) {
-        imagenesHtml += `<h3 class="section-title">Otras Evidencias</h3>
-          <div class="imagenes-container">
-            ${evidenciasOtras.map(ev => 
-              `<div class="imagen-item">
-                <img src="${buildUrl(ev.urlImagen)}" alt="${ev.descripcion || 'Evidencia'}" class="imagen-reporte" />
-                ${ev.descripcion ? `<p class="imagen-descripcion">${ev.descripcion}</p>` : ''}
-              </div>`
-            ).join('')}
-          </div>`;
-      }
-    }
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Reporte de Orden ${detalle.folio}</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 24px; color: #111; background: #f6f7fb; }
-            .card { background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
-            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e5e7eb; padding-bottom: 12px; margin-bottom: 16px; }
-            .title { font-size: 20px; font-weight: 700; margin: 0; }
-            .badge { padding: 4px 10px; border-radius: 999px; background: linear-gradient(135deg, #f7b733, #fc4a1a); color: #fff; font-weight: 600; font-size: 12px; }
-            .section-title { font-weight: 700; margin: 18px 0 8px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 6px; }
-            th, td { padding: 8px; border-bottom: 1px solid #e5e7eb; font-size: 13px; }
-            th { text-align: left; background: #f3f4f6; }
-            .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 12px 0; }
-            .pill { background: #f3f4f6; border-radius: 8px; padding: 10px; }
-            .label { color: #6b7280; font-size: 12px; margin: 0; }
-            .value { font-weight: 700; margin: 2px 0 0; }
-            .imagenes-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 10px; }
-            .imagen-item { text-align: center; }
-            .imagen-reporte { width: 100%; height: auto; max-height: 200px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb; }
-            .imagen-descripcion { margin-top: 5px; font-size: 12px; color: #6b7280; }
-          </style>
-        </head>
-        <body>
-          <div class="card">
-            <div class="header">
-              <div>
-                <p style="margin:0; color:#6b7280; font-size:12px;">Reporte de Orden de Trabajo</p>
-                <h2 class="title">OT ${detalle.folio} - ${detalle.vehiculoCodigo}</h2>
-                <p style="margin:0; color:#6b7280;">${ord?.vehiculoCodigo || ''} ${ord?.vehiculoTipo || ''}</p>
-              </div>
-              <div class="badge">${detalle.estadoNombre || 'Estado'}</div>
-            </div>
-            <div class="summary">
-              <div class="pill">
-                <p class="label">Técnico</p>
-                <p class="value">${detalle.tecnicoNombre || detalle.tecnicoId}</p>
-              </div>
-              <div class="pill">
-                <p class="label">Tipo de Mantenimiento</p>
-                <p class="value">${detalle.tipoMantenimiento}</p>
-              </div>
-              <div class="pill">
-                <p class="label">Prioridad</p>
-                <p class="value">${detalle.prioridadNombre || PrioridadNombres[detalle.prioridad]}</p>
-              </div>
-              ${hasRole(['Administrador']) ? `
-              <div class="pill">
-                <p class="label">Total calculado</p>
-                <p class="value">$${total.toFixed(2)}</p>
-              </div>` : ''}
-            </div>
-            <p class="label">Descripción</p>
-            <p style="margin-top:4px;">${detalle.descripcion || 'Sin descripción'}</p>
-            ${detalle.trabajoRealizado ? `<p class="label">Trabajo Realizado</p><p style="margin-top:4px;">${detalle.trabajoRealizado}</p>` : ''}
-            ${detalle.diagnostico ? `<p class="label">Diagnóstico</p><p style="margin-top:4px;">${detalle.diagnostico}</p>` : ''}
-            <h3 class="section-title">Refacciones usadas</h3>
-            ${
-              refacciones
-                ? `<table><thead><tr><th>Refacción</th><th>Cant.</th><th>Estado</th></tr></thead><tbody>${refacciones}</tbody></table>`
-                : '<p style="color:#6b7280;">Sin refacciones</p>'
-            }
-            <h3 class="section-title">Checklist aplicado</h3>
-            ${
-              checklist
-                ? `<table><thead><tr><th>Item</th><th>Valor</th>${hasRole(['Administrador']) ? '<th style="text-align:right;">Costo</th>' : ''}</tr></thead><tbody>${checklist}</tbody></table>`
-                : '<p style="color:#6b7280;">Sin respuestas</p>'
-            }
-            ${hasRole(['Administrador']) ? `
-            <h3 class="section-title">Costo de Reparación</h3>
-            <table>
-              <tbody>
-                <tr><td style="font-weight:700;">Total Checklist</td><td style="text-align:right; font-weight:700;">$${total.toFixed(2)}</td></tr>
-              </tbody>
-            </table>` : ''}
-            ${imagenesHtml}
-          </div>
-          <script>
-            window.print(); 
-            setTimeout(() => window.close(), 300);
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-  };
-
-  const handleAprobarActividadExtra = async (solicitud: { id: number; descripcion: string }, aprobado: boolean) => {
-    setAccionando(true);
-    try {
-      const res = await (solicitudCambioService as any).responder({
-        id: solicitud.id,
-        aprobado,
-        comentarios: aprobado ? 'Aprobado desde orden de trabajo' : 'Rechazado'
-      });
-
-      if (res.success && aprobado) {
-        await loadOrdenes();
-        await loadSolicitudesCambio();
-      } else {
-        await loadSolicitudesCambio();
-      }
-    } catch (err) {
-      setError('Error al procesar solicitud de cambio');
-    } finally {
-      setAccionando(false);
-    }
-  };
-
-  /** Eliminar una solicitud de refacción o de actividad adicional de la orden (solo administradores) */
-  const eliminarSolicitudDeOrden = async (tipo: 'refaccion' | 'actividad', id: number, nombre: string) => {
-    const ok = await confirmar({
-      titulo: tipo === 'refaccion' ? 'Eliminar solicitud de refacción' : 'Eliminar actividad adicional',
-      mensaje: `¿Eliminar "${nombre}"? Esta acción no se puede deshacer y quedará registrada en la bitácora.`,
-      textoConfirmar: 'Eliminar',
-      tono: 'peligro'
-    });
-    if (!ok) return;
-    setAccionando(true);
-    try {
-      const res = tipo === 'refaccion' ? await refaccionesService.delete(id) : await solicitudActividadAdicionalService.delete(id);
-      if (!res.success) {
-        toast.error(res.message || 'No se pudo eliminar la solicitud');
-        return;
-      }
-      toast.exito(res.message || 'Solicitud eliminada');
-      await loadOrdenes();
-    } catch (err) {
-      console.error(err);
-      toast.error('Error al eliminar la solicitud');
-    } finally {
-      setAccionando(false);
-    }
-  };
-
-  const handleResponderActividadAdicional = async (id: number, aprobado: boolean) => {
-    setAccionando(true);
-    try {
-      const res = await solicitudActividadAdicionalService.responder({
-        id,
-        aprobado,
-        comentarios: aprobado ? 'Aprobada por supervisor' : 'Rechazada por supervisor'
-      });
-      if (res.success) {
-        toast.exito(aprobado ? 'Actividad aprobada' : 'Actividad rechazada');
-        await loadOrdenes();
-      } else {
-        toast.error(res.message || 'Error al responder a la solicitud');
-      }
-    } catch (err) {
-      toast.error('Error de conexión');
-    } finally {
-      setAccionando(false);
-    }
+    ventana.document.write('<p style="font-family:Arial">Preparando la orden...</p>');
+    const mat = await flujoService.materiales(detalle.id);
+    const materiales = mat.success && mat.data ? mat.data.items.filter((m) => m.descontado) : [];
+    const esc = (t?: string | number | null) =>
+      String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const fecha = (f?: string | null) => (f ? new Date(f).toLocaleString('es-MX') : '—');
+    const actividades = checklistItems.map((item, idx) => {
+      const r = checklistRespuestas[item.id] || { valor: '' };
+      return `<tr>
+        <td>${idx + 1}</td>
+        <td>${esc(item.pregunta)}${r.notas ? `<div class="nota">${esc(r.notas)}</div>` : ''}</td>
+        <td class="c">${esc(r.cantidad ?? 1)}</td>
+        <td class="c">${r.valor === 'OK' ? 'Completada' : 'Pendiente'}</td>
+        <td class="c">${r.fotoUrl ? `<img src="${esc(buildImageUrl(r.fotoUrl))}" alt="Evidencia" />` : '—'}</td>
+      </tr>`;
+    }).join('');
+    const filasMateriales = materiales.map((m) =>
+      `<tr><td>${esc(m.nombre)}</td><td>${esc(m.codigo)}</td><td class="c">${esc(m.cantidad)} ${esc(m.unidad)}</td></tr>`
+    ).join('');
+    const empresa = detalle.empresaNombre || '—';
+    const dato = (etiqueta: string, valor: string) => `<div class="dato"><span>${etiqueta}</span><b>${valor}</b></div>`;
+    ventana.document.open();
+    ventana.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Orden de trabajo ${esc(detalle.folio)}</title>
+      <style>
+        body { font-family: Arial, sans-serif; color: #111; margin: 24px; }
+        h1 { font-size: 20px; margin: 0; } h2 { font-size: 14px; margin: 18px 0 6px; text-transform: uppercase; }
+        .cab { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #111; padding-bottom: 8px; }
+        .datos { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 24px; margin-top: 12px; font-size: 13px; }
+        .dato span { color: #555; margin-right: 6px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { border: 1px solid #999; padding: 5px; vertical-align: top; text-align: left; }
+        th { background: #f0f0f0; } .c { text-align: center; } .nota { color: #555; font-size: 11px; }
+        img { max-width: 120px; max-height: 90px; object-fit: cover; }
+      </style></head><body>
+      <div class="cab"><div><h1>Orden de Trabajo ${esc(detalle.folio)}</h1><div>Continental · Mantenimiento de flota</div></div>
+        <div>Estado: <b>${esc(detalle.estadoNombre || EstadoOrdenNombres[detalle.estado])}</b></div></div>
+      <div class="datos">
+        ${dato('Folio de orden de trabajo:', esc(detalle.folio))}
+        ${dato('Folio de reporte de falla:', esc(detalle.reporteFallaFolio || '—'))}
+        ${dato('Fecha del reporte:', fecha(detalle.reporteFechaReporte))}
+        ${dato('Fecha de la orden:', fecha(detalle.fechaCreacion))}
+        ${dato('Vehículo:', `${esc(detalle.vehiculoCodigo)}${detalle.vehiculoTipo ? ` · ${esc(detalle.vehiculoTipo)}` : ''}`)}
+        ${dato('Técnico responsable:', esc(detalle.tecnicoNombre || '—'))}
+        ${dato('Empresa responsable:', esc(empresa))}
+        ${dato('Tipo de mantenimiento:', esc(detalle.tipoMantenimiento))}
+        ${dato('Prioridad:', esc(detalle.prioridadNombre || PrioridadNombres[detalle.prioridad]))}
+        ${dato('Fecha de finalización:', fecha(detalle.fechaFinalizacion))}
+      </div>
+      <h2>Actividades realizadas</h2>
+      ${actividades ? `<table><thead><tr><th>#</th><th>Actividad</th><th class="c">Cantidad</th><th class="c">Estado</th><th class="c">Evidencia</th></tr></thead><tbody>${actividades}</tbody></table>` : '<p>Sin actividades registradas.</p>'}
+      <h2>Refacciones utilizadas</h2>
+      ${filasMateriales ? `<table><thead><tr><th>Material</th><th>Código</th><th class="c">Cantidad</th></tr></thead><tbody>${filasMateriales}</tbody></table>` : '<p>Sin refacciones ni consumibles registrados.</p>'}
+      <script>window.onload = function () { window.print(); };</script>
+      </body></html>`);
+    ventana.document.close();
   };
 
   const startGeneralCamera = async (itemId?: number) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
       streamRef.current = stream;
-      if (itemId) {
-        setActiveCameraItem(itemId);
-      } else {
-        setIsCameraActive(true);
-      }
+      if (itemId) setActiveCameraItem(itemId);
       // Wait for state update and ref render
       setTimeout(() => {
         if (videoRef.current) {
@@ -1159,44 +821,7 @@ export function OrdenesPage() {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(t => t.stop());
     }
-    setIsCameraActive(false);
     setActiveCameraItem(null);
-  };
-
-  const captureGeneralPhoto = () => {
-    if (!videoRef.current || !detalle) return;
-    const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
-    const ctx = canvas.getContext('2d');
-    ctx?.drawImage(videoRef.current, 0, 0);
-    
-    canvas.toBlob(async (blob) => {
-      if (blob) {
-        const file = new File([blob], `evidencia-${Date.now()}.jpg`, { type: 'image/jpeg' });
-        setAccionando(true);
-        try {
-          const res = await ordenesService.uploadEvidencia(
-            detalle.id,
-            file,
-            'Captura directa desde cámara',
-            'proceso'
-          );
-          if (res.success) {
-            toast.exito('Evidencia guardada');
-            await loadOrdenes();
-            stopGeneralCamera();
-          } else {
-            toast.error(res.message || 'No se pudo subir la foto');
-          }
-        } catch (err) {
-          console.error(err);
-          toast.error('No se pudo subir la foto. Revisa tu conexión.');
-        } finally {
-          setAccionando(false);
-        }
-      }
-    }, 'image/jpeg', 0.9);
   };
 
   const captureChecklistItemPhoto = () => {
@@ -1288,19 +913,15 @@ export function OrdenesPage() {
       { label: 'Tiempo en transicion (h)', value: detalle.tiempoTransicionHoras }
     ].filter((t) => t.value !== undefined && t.value !== null);
 
-    const costoTotalEstimado = checklistItems.reduce(
-      (acc, item) => acc + (Number((item as any).costoEstimado || 0) || 0),
-      0
-    );
-
-    // "Terminar reparación" del panel abre la ventana de siempre (trabajo, horas, consumibles, evidencia)
+    // "Terminar reparación" (PDF 06-nov): solo con el checklist completo; la vista previa es folio, checklist y materiales
     const abrirCompletar = () => {
+      if (bloqueoTerminar) {
+        toast.aviso(bloqueoTerminar);
+        return;
+      }
       setShowCompletar(true);
       setCompError('');
-      setCompTrabajo(detalle.trabajoRealizado || '');
       setCompHoras(detalle.horasTrabajadas ? String(detalle.horasTrabajadas) : '1');
-      setCompEvidFile(null);
-      setCompEvidDesc('');
       setMaterialesAlTerminar(null);
       void flujoService.materiales(detalle.id).then((r) => setMaterialesAlTerminar(r.success && r.data ? r.data.items.filter((m) => !m.descontado) : []));
     };
@@ -1379,14 +1000,18 @@ export function OrdenesPage() {
             onTerminar={abrirCompletar}
             onCambio={() => { setVersionFlujo((v) => v + 1); void loadOrdenes(); }}
             version={`${detalle.estado}-${detalle.tecnicoAsignadoId ?? ''}`}
+            bloqueoTerminar={bloqueoTerminar}
           />
         </Card>
 
-        {/* Refacciones y consumibles usados, con costos (PDF 29-oct, 5.1); el Operador no ve costos */}
-        {hasRole(['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Lider']) && (
-          <Card className="p-6">
-            <MaterialesOrden ordenId={detalle.id} version={`${detalle.estado}-${detalle.tecnicoAsignadoId ?? ''}-${versionFlujo}`} />
-          </Card>
+        {/* Refacciones y consumibles usados (PDF 06-nov): solo informativos, sin costos. Los consulta el Gerente de
+            Mantenimiento; el técnico solo ve la sección mientras los captura en TALLER */}
+        {hasRole(['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico']) && (
+          <MaterialesOrden
+            ordenId={detalle.id}
+            version={`${detalle.estado}-${detalle.tecnicoAsignadoId ?? ''}-${versionFlujo}`}
+            soloCaptura={!hasRole(['SuperUsuario', 'Administrador', 'Supervisor'])}
+          />
         )}
 
         <Card className="p-6 space-y-4">
@@ -1416,35 +1041,30 @@ export function OrdenesPage() {
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
-            <div className="space-y-2 text-sm text-continental-gray-1">
-              <p className="font-semibold text-continental-black">Descripcion</p>
-              <p className="text-continental-black">{descripcionMostrar()}</p>
+            {/* PDF 06-nov: una sola versión del reporte (antes "Descripción" y "Reporte asociado" repetían lo mismo) */}
+            <div className="space-y-2 text-sm text-continental-gray-1" data-testid="datos-reporte">
+              <p className="font-semibold text-continental-black">
+                {detalle.reporteFallaFolio ? `Reporte de falla ${detalle.reporteFallaFolio}` : 'Descripción'}
+              </p>
+              <p className="text-continental-black">{reporteDetalle?.descripcion || descripcionMostrar()}</p>
+              {reporteDetalle && (
+                <p className="text-xs text-continental-gray-1">
+                  Reportado {new Date(reporteDetalle.fechaReporte).toLocaleString()}
+                  {reporteDetalle.reportadoPorNombre ? ` por ${reporteDetalle.reportadoPorNombre}` : ''}
+                  {reporteDetalle.ubicacion ? ` · Ubicación: ${reporteDetalle.ubicacion}` : ''}
+                </p>
+              )}
               {detalle.trabajoRealizado && (
                 <>
                   <p className="font-semibold text-continental-black mt-2">Trabajo realizado</p>
                   <p className="text-continental-black">{detalle.trabajoRealizado}</p>
                 </>
               )}
-              {reporteDetalle && (
-                <>
-                  <p className="font-semibold text-continental-black mt-3">Reporte asociado</p>
-                  <p className="text-continental-black">{reporteDetalle.descripcion}</p>
-                  <p className="text-xs text-continental-gray-1">
-                    Categoria: {reporteDetalle.categoriaNombre || 'N/D'} - Prioridad: {reporteDetalle.prioridadNombre}
-                  </p>
-                  {reporteDetalle.ubicacion && (
-                    <p className="text-xs text-continental-gray-1">Ubicacion: {reporteDetalle.ubicacion}</p>
-                  )}
-                </>
-              )}
             </div>
             <div className="space-y-2 text-sm text-continental-gray-1">
               <p>Tipo: {detalle.tipoMantenimiento}</p>
-              <p>Tecnico: {nombreTecnicoAsignado}</p>
+              <p data-testid="tecnico-orden">Técnico: {nombreTecnicoAsignado}</p>
               <p>Creada: {new Date(detalle.fechaCreacion).toLocaleString()}</p>
-              {hasRole(['Administrador']) && (
-                <p>Costo estimado (Checklist): {formatCurrency(costoTotalEstimado)}</p>
-              )}
               {detalle.fechaFinalizacion && <p>Finalizada: {new Date(detalle.fechaFinalizacion).toLocaleString()}</p>}
               {detalle.herramientasUsadas && <p>Herramientas: {detalle.herramientasUsadas}</p>}
               {tiempos.length > 0 && (
@@ -1454,24 +1074,27 @@ export function OrdenesPage() {
                   ))}
                 </div>
               )}
-                            {puedeAsignarYCancelar && detalle.estado !== EstadoOrdenTrabajo.Completada && detalle.estado !== EstadoOrdenTrabajo.Validada
-                && detalle.estado !== EstadoOrdenTrabajo.Entregado && detalle.estado !== EstadoOrdenTrabajo.Cancelada && (
-                <div className="space-y-2 pt-2">
-              <p className="font-semibold text-continental-black">
-                {detalle.tecnicoAsignadoId ? 'Técnico Asignado' : 'Asignar tecnico (requiere firma)'}
-              </p>
-                  <p className="text-xs text-continental-gray-2">
-                    {detalle.tecnicoAsignadoId 
-                      ? 'Esta orden ya tiene un técnico asignado. Puedes cambiarlo si es necesario firmando nuevamente.' 
-                      : 'La orden se asignara al tecnico que firme la autorizacion. Usa tu usuario o selecciona uno y pide su firma.'}
+              {/* PDF 06-nov: solo se asigna con "Confirmar y asignar"; ya asignado, solo el Gerente de Mantenimiento
+                  (o administración) lo cambia, y a propósito ("Cambiar técnico") */}
+              {puedeAsignarYCancelar && detalle.estado !== EstadoOrdenTrabajo.Completada && detalle.estado !== EstadoOrdenTrabajo.Validada
+                && detalle.estado !== EstadoOrdenTrabajo.Entregado && detalle.estado !== EstadoOrdenTrabajo.Cancelada
+                && detalle.tecnicoAsignadoId && !cambiandoTecnico && (
+                <Button size="sm" variant="outline" className="print:hidden" onClick={() => { setTecnicoAsignado(null); setFirmaError(''); setCambiandoTecnico(true); }}>
+                  Cambiar técnico
+                </Button>
+              )}
+              {puedeAsignarYCancelar && detalle.estado !== EstadoOrdenTrabajo.Completada && detalle.estado !== EstadoOrdenTrabajo.Validada
+                && detalle.estado !== EstadoOrdenTrabajo.Entregado && detalle.estado !== EstadoOrdenTrabajo.Cancelada
+                && (!detalle.tecnicoAsignadoId || cambiandoTecnico) && (
+                <div className="space-y-2 pt-2" data-testid="asignar-tecnico">
+                  <p className="font-semibold text-continental-black">
+                    {detalle.tecnicoAsignadoId ? 'Cambiar técnico' : 'Asignar técnico'}
                   </p>
-                  {detalle.estado === EstadoOrdenTrabajo.Asignada && !detalle.tecnicoAsignadoId && (
-                    <Alert variant="warning" className="py-2">
-                      <AlertDescription className="text-xs">
-                        Asignación automática detectada. Por favor confirme el técnico.
-                      </AlertDescription>
-                    </Alert>
-                  )}
+                  <p className="text-xs text-continental-gray-2">
+                    {detalle.tecnicoAsignadoId
+                      ? 'Elige al nuevo técnico y confirma. El cambio queda registrado.'
+                      : 'Elige al técnico y confirma con "Confirmar y asignar". También puede aceptarla un técnico desde su lista.'}
+                  </p>
                   <SearchableSelect
                     placeholder="Buscar tecnico"
                     selected={tecnicoAsignado}
@@ -1507,6 +1130,8 @@ export function OrdenesPage() {
                           return;
                         }
 
+                        toast.exito(`Técnico asignado: ${tecnicoAsignado.label}`);
+                        setCambiandoTecnico(false);
                         await loadOrdenes();
                       } catch (err) {
                         setFirmaError('Error de conexión');
@@ -1520,22 +1145,29 @@ export function OrdenesPage() {
                     {asignandoTecnico ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
                     Confirmar y Asignar
                   </Button>
+                  {cambiandoTecnico && (
+                    <Button size="sm" variant="ghost" onClick={() => setCambiandoTecnico(false)} disabled={asignandoTecnico}>
+                      No cambiar
+                    </Button>
+                  )}
                   {firmaError && <p className="text-xs text-red-600">{firmaError}</p>}
                 </div>
               )}
             </div>
           </div>
 
-          {/* En solo lectura se ven las respuestas y fotos, pero no se pueden cambiar */}
-          <fieldset disabled={!puedeTrabajarOrden} className="min-w-0 space-y-2">
+          {/* En solo lectura se ven las respuestas y fotos, pero no se pueden cambiar. PDF 06-nov: el avance se guarda
+              solo (sin "Guardar checklist") y solo se captura con la reparación iniciada */}
+          <fieldset disabled={!puedeTrabajarOrden || !enReparacion} className="min-w-0 space-y-2" data-testid="checklist-orden">
             <div className="flex items-center justify-between">
               <p className="font-semibold text-continental-black">Checklist</p>
-              {puedeTrabajarOrden && (
-                <Button size="sm" onClick={handleGuardarChecklist} disabled={savingChecklist || loadingChecklist}>
-                  {savingChecklist ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Guardar checklist'}
-                </Button>
-              )}
             </div>
+            {puedeTrabajarOrden && !enReparacion && checklistItems.length > 0
+              && (detalle.estado === EstadoOrdenTrabajo.Pendiente || detalle.estado === EstadoOrdenTrabajo.Asignada) && (
+              <p className="text-sm text-continental-gray-1" data-testid="checklist-bloqueado">
+                El avance del checklist se registra después de "Iniciar reparación".
+              </p>
+            )}
             {loadingChecklist && <p className="text-sm text-continental-gray-1">Cargando checklist...</p>}
             {checklistError && <p className="text-sm text-red-600">{checklistError}</p>}
             {checklistSource === 'default' && !loadingChecklist && (
@@ -1581,12 +1213,16 @@ export function OrdenesPage() {
                             <input
                               type="checkbox"
                               checked={checked}
-                              onChange={(e) => {
-                                if (e.target.checked && !resp.fotoUrl) {
+                              aria-label={`Completado: ${item.pregunta}`}
+                              onChange={async (e) => {
+                                const marcado = e.target.checked;
+                                if (marcado && !resp.fotoUrl) {
                                   toast.aviso('Debes subir una foto de evidencia antes de marcar como completado.');
                                   return;
                                 }
-                                updateChecklistRespuesta(item.id, { valor: e.target.checked ? 'OK' : '' });
+                                updateChecklistRespuesta(item.id, { valor: marcado ? 'OK' : '' });
+                                const guardado = await persistirItem(item, { estado: marcado ? 'Completado' : 'Pendiente' });
+                                if (!guardado) updateChecklistRespuesta(item.id, { valor: marcado ? '' : 'OK' });
                               }}
                             />
                           </td>
@@ -1597,11 +1233,15 @@ export function OrdenesPage() {
                               min={0}
                               className="w-20 rounded border border-continental-gray-3 px-2 py-1 text-center"
                               value={resp.cantidad ?? ''}
+                              aria-label={`Cantidad: ${item.pregunta}`}
                               onChange={(e) =>
                                 updateChecklistRespuesta(item.id, {
                                   cantidad: e.target.value === '' ? undefined : Number(e.target.value)
                                 })
                               }
+                              onBlur={() => {
+                                if (resp.cantidad !== undefined && resp.cantidad > 0) void persistirItem(item, { cantidad: resp.cantidad });
+                              }}
                             />
                           </td>
                           <td className="px-4 py-2 text-center">
@@ -1817,6 +1457,7 @@ export function OrdenesPage() {
                               placeholder="Notas u observaciones (opcional)"
                               value={resp.notas || ''}
                               onChange={(e) => updateChecklistRespuesta(item.id, { notas: e.target.value })}
+                              onBlur={() => void persistirItem(item, { notas: resp.notas || '' })}
                             />
                           </td>
                         </tr>
@@ -1911,65 +1552,6 @@ export function OrdenesPage() {
                   </div>
                 ))}
               </div>
-            </div>
-          ) : null}
-
-            {detalle.evidencias?.length ? (
-              <div className="mt-4 space-y-3">
-                <p className="font-semibold text-continental-black mb-2">Evidencias de la orden</p>
-              {(() => {
-                const evidencias = detalle.evidencias || [];
-                // Excluir evidencias de tipo 'checklist' ya que se muestran en sus respectivos renglones
-                const evidenciasFiltradas = evidencias.filter(e => e.tipoEvidencia !== 'checklist');
-                
-                const iniciales = evidenciasFiltradas.filter((e) => !e.tipoEvidencia || e.tipoEvidencia === 'inicial' || e.tipoEvidencia === 'antes');
-                const completadas = evidenciasFiltradas.filter((e) => e.tipoEvidencia === 'completado' || e.tipoEvidencia === 'despues');
-                const entrega = evidenciasFiltradas.filter((e) => e.tipoEvidencia === 'entrega');
-                const otras = evidenciasFiltradas.filter(
-                  (e) =>
-                    e.tipoEvidencia &&
-                    e.tipoEvidencia !== 'inicial' &&
-                    e.tipoEvidencia !== 'antes' &&
-                    e.tipoEvidencia !== 'completado' &&
-                    e.tipoEvidencia !== 'entrega'
-                );
-
-                const renderBlock = (title: string, list: typeof evidencias) =>
-                  list.length ? (
-                    <div className="space-y-2" key={title}>
-                      <p className="text-sm font-semibold text-continental-black">{title}</p>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                        {list.map((ev) => (
-                          <div key={ev.id} className="rounded-lg border border-continental-gray-3/60 bg-continental-bg p-2 space-y-1">
-                            <div className="flex items-center gap-2">
-                              <img
-                                src={buildUrl(ev.urlImagen)}
-                                alt={ev.descripcion || 'Evidencia'}
-                                className="h-24 w-full object-cover rounded-md cursor-pointer hover:opacity-80 transition-opacity"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openImagePreview(ev.urlImagen, ev.descripcion);
-                                }}
-                              />
-                            </div>
-                            {ev.descripcion && (
-                              <div className="px-1 text-xs text-continental-gray-1">{ev.descripcion}</div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null;
-
-                return (
-                  <>
-                    {renderBlock('Inicial / reporte', iniciales)}
-                    {renderBlock('Completado', completadas)}
-                    {renderBlock('Entrega', entrega)}
-                    {renderBlock('Otras', otras)}
-                  </>
-                );
-              })()}
             </div>
           ) : null}
 
@@ -2158,162 +1740,6 @@ export function OrdenesPage() {
             </div>
           ) : null}
 
-          <div className="grid gap-6 md:grid-cols-2 mt-4">
-            {/* Refacciones */}
-            <div className="space-y-3">
-              <p className="font-semibold text-continental-black">Refacciones Solicitadas</p>
-              {detalle.solicitudesRefaccion?.length ? (
-                <div className="space-y-2">
-                  {detalle.solicitudesRefaccion.map((s) => (
-                    <div key={s.id} className="rounded-lg border border-continental-gray-3/60 p-3 bg-white shadow-sm">
-                      <div className="flex justify-between items-center gap-2 text-sm">
-                        <span className="font-semibold text-continental-black">{s.nombreRefaccion}</span>
-                        <div className="flex items-center gap-1">
-                          <Badge variant={s.estado === 'Pendiente' ? 'outline' : s.estado === 'Aprobada' ? 'default' : 'destructive'}>
-                            {s.estado}
-                          </Badge>
-                          {canEliminar && (
-                            <button
-                              type="button"
-                              data-icon="true"
-                              onClick={() => void eliminarSolicitudDeOrden('refaccion', s.id, s.nombreRefaccion)}
-                              disabled={accionando}
-                              aria-label={`Eliminar solicitud ${s.nombreRefaccion}`}
-                              title="Eliminar solicitud"
-                              className="rounded text-red-600 hover:bg-red-50"
-                              style={{ padding: 4 }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      <p className="text-xs text-continental-gray-1 mt-1">
-                        Cantidad: {s.cantidad} {s.numeroParte ? `| Parte: ${s.numeroParte}` : ''}
-                      </p>
-                      {s.justificacion && <p className="text-xs text-continental-gray-2 mt-1 italic">"{s.justificacion}"</p>}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-continental-gray-2 italic">Sin refacciones solicitadas.</p>
-              )}
-              {hasRole(['Administrador', 'SuperUsuario', 'Supervisor', 'Tecnico']) && (
-                <Button variant="outline" size="sm" className="w-full" onClick={() => { setErrorVentana(''); setShowRefModal(true); }}>
-                  <Package className="h-4 w-4 mr-2" /> Solicitar Refacciones
-                </Button>
-              )}
-            </div>
-
-            {/* Actividades Adicionales */}
-            <div className="space-y-3">
-              <p className="font-semibold text-continental-black">Actividades Adicionales</p>
-              {detalle.solicitudesActividadAdicional?.length ? (
-                <div className="space-y-2">
-                  {detalle.solicitudesActividadAdicional.map((s) => (
-                    <div key={s.id} className="rounded-lg border border-continental-gray-3/60 p-3 bg-white shadow-sm">
-                      <div className="flex justify-between items-start gap-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex justify-between items-center gap-2">
-                            <span className="text-sm font-semibold text-continental-black truncate">{s.descripcion}</span>
-                            <div className="flex items-center gap-1">
-                              <Badge variant={s.estado === 'Pendiente' ? 'outline' : s.estado === 'Aprobada' ? 'default' : 'destructive'}>
-                                {s.estado}
-                              </Badge>
-                              {canEliminar && (
-                                <button
-                                  type="button"
-                                  data-icon="true"
-                                  onClick={() => void eliminarSolicitudDeOrden('actividad', s.id, s.descripcion)}
-                                  disabled={accionando}
-                                  aria-label={`Eliminar actividad ${s.descripcion}`}
-                                  title="Eliminar actividad"
-                                  className="rounded text-red-600 hover:bg-red-50"
-                              style={{ padding: 4 }}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                          {s.justificacion && <p className="text-xs text-continental-gray-1 mt-1">{s.justificacion}</p>}
-                          
-                          {/* Botones de acción para supervisor/admin si está pendiente */}
-                          {s.estado === 'Pendiente' && hasRole(['Supervisor', 'Administrador', 'SuperUsuario']) && (
-                            <div className="flex gap-2 mt-2">
-                              <Button size="sm" className="h-7 text-[10px] bg-green-600 px-2 py-0" onClick={() => handleResponderActividadAdicional(s.id, true)}>Aprobar</Button>
-                              <Button size="sm" variant="destructive" className="h-7 text-[10px] px-2 py-0" onClick={() => handleResponderActividadAdicional(s.id, false)}>Rechazar</Button>
-                            </div>
-                          )}
-                        </div>
-                        {s.fotoUrl && (
-                          <img 
-                            src={buildUrl(s.fotoUrl)} 
-                            className="h-12 w-12 rounded object-cover cursor-pointer hover:opacity-80" 
-                            onClick={() => openImagePreview(s.fotoUrl, s.descripcion)}
-                          />
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-continental-gray-2 italic">Sin actividades adicionales.</p>
-              )}
-              {hasRole(['Administrador', 'SuperUsuario', 'Supervisor', 'Tecnico']) && (
-                <Button variant="outline" size="sm" className="w-full" onClick={() => setShowActivityModal(true)}>
-                  <ClipboardList className="h-4 w-4 mr-2" /> Solicitar Actividad Extra
-                </Button>
-              )}
-            </div>
-          </div>
-
-          {/* Sección de Aprobaciones de Cambio (Legacy ACTIVIDAD_EXTRA) */}
-          {solicitudesCambio.length > 0 && (
-            <div className="mt-6 border-t border-continental-gray-3/60 pt-4 space-y-4">
-              <div className="flex items-center gap-2 text-amber-600">
-                <AlertTriangle className="h-5 w-5" />
-                <p className="font-semibold text-sm">Cambios en Vehículo Pendientes (Legacy)</p>
-              </div>
-              <div className="grid gap-2">
-                {solicitudesCambio.map((s) => (
-                  <div key={s.id} className="p-3 bg-amber-50/30 border border-amber-200 rounded-lg flex justify-between items-center">
-                    <p className="text-xs text-continental-black">
-                      {s.descripcion.replace('ACTIVIDAD_EXTRA: ', '')}
-                    </p>
-                    {hasRole(['Lider', 'Supervisor', 'Administrador']) && (
-                      <div className="flex gap-2">
-                        <Button size="sm" className="h-6 text-[10px] bg-green-600 px-2 py-0" onClick={() => handleAprobarActividadExtra(s, true)}>Aprobar</Button>
-                        <Button size="sm" variant="destructive" className="h-6 text-[10px] px-2 py-0" onClick={() => handleAprobarActividadExtra(s, false)}>Rechazar</Button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {isCameraActive && (
-            <Card className="mt-4 p-4 border-2 border-continental-blue bg-continental-bg/30">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold flex items-center gap-2">
-                    <Camera className="h-4 w-4 text-continental-blue" /> Cámara en vivo
-                  </p>
-                  <Button variant="ghost" size="sm" onClick={stopGeneralCamera}>Cerrar</Button>
-                </div>
-                <div className="overflow-hidden rounded-xl border border-gray-200 aspect-video bg-black max-w-md mx-auto">
-                   <video ref={videoRef} className="w-full h-full object-cover" muted playsInline autoPlay />
-                </div>
-                <div className="flex justify-center gap-3">
-                  <Button className="px-8 bg-continental-gradient text-white" onClick={captureGeneralPhoto} disabled={accionando}>
-                    {accionando ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Capturar Foto y Subir'}
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          )}
-
           <Modal
             isOpen={activeCameraItem !== null}
             onClose={stopGeneralCamera}
@@ -2340,30 +1766,11 @@ export function OrdenesPage() {
               <RefreshCcw className="h-4 w-4" />
               Actualizar
             </Button>
-              {detalle && (
-                <Button 
-                  variant="outline" 
-                  onClick={generarReporteOrden} 
-                  className="flex items-center gap-2"
-                >
-                  <FileText className="h-4 w-4" />
-                  Crear Reporte
-                </Button>
-              )}
-            {puedeAsignarYCancelar && detalle.estado !== EstadoOrdenTrabajo.Cancelada
-              && detalle.estado !== EstadoOrdenTrabajo.Validada && detalle.estado !== EstadoOrdenTrabajo.Entregado && (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setErrorVentana('');
-                  setShowCancelar(true);
-                  setMotivoCancelar('');
-                }}
-                disabled={accionando}
-                className="flex items-center gap-2 text-red-600"
-              >
-                <XCircle className="h-4 w-4" />
-                Cancelar
+            {/* PDF 06-nov: la impresión solo cuando la orden llegó a DISPONIBLE y está terminada */}
+            {(detalle.estado === EstadoOrdenTrabajo.Validada || detalle.estado === EstadoOrdenTrabajo.Entregado) && (
+              <Button variant="outline" onClick={() => void imprimirOrden()} className="flex items-center gap-2">
+                <Printer className="h-4 w-4" />
+                Imprimir orden de trabajo
               </Button>
             )}
           </div>
@@ -2497,74 +1904,14 @@ export function OrdenesPage() {
       )}
 
 
-      {/* Modal Validar/Devolver */}
-      <Modal isOpen={showValidar} onClose={() => setShowValidar(false)} title="Validar orden" description="Aprueba o devuelve la orden con observaciones.">
-        <div className="space-y-4">
-          <p className="text-sm text-continental-gray-1">
-            Folio: <span className="font-semibold text-continental-black">{detalle?.folio}</span> - Vehiculo: {detalle?.vehiculoCodigo}
-          </p>
-          <div className="space-y-2">
-            <p className="text-sm font-semibold text-continental-black">Trabajo realizado</p>
-            <p className="text-sm text-continental-gray-1">{detalle?.trabajoRealizado || 'Sin registro'}</p>
-          </div>
-          <div className="space-y-2">
-            <p className="text-sm font-semibold text-continental-black">Decision</p>
-            <div className="flex gap-3">
-              <label className="flex items-center gap-2 text-sm text-continental-black">
-                <input
-                  type="radio"
-                  checked={validarDecision === 'aprobar'}
-                  onChange={() => setValidarDecision('aprobar')}
-                />
-                Aprobar
-              </label>
-              <label className="flex items-center gap-2 text-sm text-continental-black">
-                <input
-                  type="radio"
-                  checked={validarDecision === 'devolver'}
-                  onChange={() => setValidarDecision('devolver')}
-                />
-                Devolver con correcciones
-              </label>
-            </div>
-          </div>
-          {errorVentana && (
-            <Alert variant="destructive">
-              <AlertDescription>{errorVentana}</AlertDescription>
-            </Alert>
-          )}
-          <Textarea
-            label="Observaciones (opcional)"
-            placeholder="Notas para el tecnico/supervisor"
-            value={validarObs}
-            onChange={(e) => setValidarObs(e.target.value)}
-          />
-        </div>
-        <ModalFooter>
-          <Button variant="outline" onClick={() => setShowValidar(false)}>
-            Cancelar
-          </Button>
-          <Button
-            onClick={async () => {
-              if (!detalle) return;
-              setErrorVentana('');
-              if (await handleValidar(detalle.id, validarDecision === 'aprobar', validarObs || undefined)) setShowValidar(false);
-            }}
-            disabled={accionando}
-          >
-            {accionando ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirmar'}
-          </Button>
-        </ModalFooter>
-      </Modal>
-
-      {/* Modal Completar */}
+      {/* Terminar reparación (PDF 06-nov): vista previa con folio, checklist completado y materiales utilizados */}
       <Modal
         isOpen={showCompletar}
         onClose={() => setShowCompletar(false)}
-        title="Completar trabajo"
-        description="Resumen de puntos completados y registro de consumibles."
+        title="Terminar reparación"
+        description="Vista previa de lo que se registra al terminar."
       >
-        <div className="space-y-4">
+        <div className="space-y-4" data-testid="vista-previa-terminar">
           {compError && (
             <Alert variant="destructive">
               <AlertTitle>Error</AlertTitle>
@@ -2572,13 +1919,13 @@ export function OrdenesPage() {
             </Alert>
           )}
           <p className="text-sm text-continental-gray-1">
-            Folio: <span className="font-semibold text-continental-black">{detalle?.folio}</span>
+            Folio OT: <span className="font-semibold text-continental-black">{detalle?.folio}</span>
           </p>
 
           <div className="space-y-2">
             <p className="text-sm font-semibold text-continental-black flex items-center gap-2">
               <CheckCircle className="h-4 w-4 text-continental-green" />
-              Vista previa del checklist realizado
+              Checklist completado
             </p>
             <div className="bg-continental-bg/40 rounded-lg p-3 border border-continental-gray-3/60 max-h-48 overflow-y-auto">
               {checklistItems.filter(i => checklistRespuestas[i.id]?.valor === 'OK').length > 0 ? (
@@ -2589,27 +1936,28 @@ export function OrdenesPage() {
                       <li key={item.id} className="text-xs text-continental-black flex items-center gap-2">
                         <span className="w-1.5 h-1.5 rounded-full bg-continental-green" />
                         {item.pregunta}
+                        {checklistRespuestas[item.id]?.cantidad ? ` · Cant: ${checklistRespuestas[item.id]?.cantidad}` : ''}
                       </li>
                     ))
                   }
                 </ul>
               ) : (
-                <p className="text-xs text-continental-gray-1 italic">No se han marcado puntos como completados.</p>
+                <p className="text-xs text-continental-gray-1 italic">Sin actividades en el checklist.</p>
               )}
             </div>
           </div>
 
-          {/* Lo que se descuenta del inventario al terminar (PDF 29-oct, 5.1): lo guardado en "Refacciones y consumibles utilizados" */}
+          {/* Lo que se descuenta del inventario al terminar (PDF 29-oct, 5.1) */}
           <div className="border rounded-lg p-3 space-y-2 bg-continental-bg/60" data-testid="materiales-al-terminar">
             <div className="flex items-center gap-2">
               <Package className="h-4 w-4 text-continental-gray-1" />
-              <p className="text-sm font-semibold text-continental-black">Se descontará del inventario</p>
+              <p className="text-sm font-semibold text-continental-black">Materiales utilizados (se descuentan del inventario)</p>
             </div>
             {materialesAlTerminar === null ? (
               <p className="text-sm text-continental-gray-1">Cargando...</p>
             ) : materialesAlTerminar.length === 0 ? (
               <p className="text-sm text-continental-gray-1">
-                No hay refacciones ni consumibles por descontar. Si usaste alguno, regístralo y guárdalo en "Refacciones y consumibles utilizados" antes de terminar.
+                Sin refacciones ni consumibles. Si usaste alguno, regístralo en "Refacciones y consumibles utilizados" antes de terminar.
               </p>
             ) : (
               <ul className="list-disc pl-5 text-sm text-continental-black">
@@ -2619,245 +1967,50 @@ export function OrdenesPage() {
               </ul>
             )}
           </div>
-          <div className="space-y-2 border-t pt-3 mt-3">
-            <p className="text-sm font-semibold text-continental-black">Evidencias adicionales (opcional)</p>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => setCompEvidFile(e.target.files ? e.target.files[0] : null)}
-              className="w-full text-sm text-continental-black"
-            />
-            <Input
-              label="Descripcion de la evidencia"
-              placeholder="Ej. Foto del trabajo terminado"
-              value={compEvidDesc}
-              onChange={(e) => setCompEvidDesc(e.target.value)}
-            />
-          </div>
         </div>
         <ModalFooter>
           <Button variant="outline" onClick={() => setShowCompletar(false)}>
             Cancelar
           </Button>
-            <Button
-              onClick={async () => {
-                if (!detalle) return;
-                setCompError('');
+          <Button
+            onClick={async () => {
+              if (!detalle) return;
+              setCompError('');
+              if (bloqueoTerminar) {
+                setCompError(bloqueoTerminar);
+                return;
+              }
+              const pendientes = (detalle.solicitudesRefaccion || []).filter(
+                (s) => s.estado !== 'Entregada' && s.estado !== 'Rechazada'
+              );
+              if (pendientes.length > 0) {
+                setCompError('No puedes terminar la reparación: hay refacciones solicitadas pendientes de entrega (consúltalas en Refacciones).');
+                return;
+              }
 
-                // Validar que todos los ítems del checklist tengan foto si están marcados como OK
-                const faltanFotos = checklistItems.some(item => {
-                  const resp = checklistRespuestas[item.id];
-                  return resp?.valor === 'OK' && !resp.fotoUrl;
-                });
-
-                if (faltanFotos) {
-                  setCompError('No puedes completar la orden: hay ítems marcados como completados que no tienen foto de evidencia.');
-                  return;
-                }
-
-                const pendientes = (detalle.solicitudesRefaccion || []).filter(
-                  (s) => s.estado !== 'Entregada' && s.estado !== 'Rechazada'
-                );
-                if (pendientes.length > 0) {
-                  setCompError('No puedes completar la orden: hay refacciones pendientes de entrega.');
-                  return;
-                }
-                setCompError('');
-
-                // Generar descripción automática basada en el checklist para el backend
-                const itemsOk = checklistItems
-                  .filter(i => checklistRespuestas[i.id]?.valor === 'OK')
-                  .map(i => i.pregunta);
-                
-                const descripcionAutomatica = itemsOk.length > 0 
-                  ? `Trabajo completado según checklist: ${itemsOk.join(', ')}` 
-                  : 'Trabajo completado (ver checklist)';
-
-                const horas = Number(compHoras) || 1; // Default a 1 si estaba vacío
+              // Descripción automática con lo hecho en el checklist
+              const itemsOk = checklistItems
+                .filter(i => checklistRespuestas[i.id]?.valor === 'OK')
+                .map(i => i.pregunta);
+              const descripcionAutomatica = itemsOk.length > 0
+                ? `Trabajo completado según checklist: ${itemsOk.join(', ')}`
+                : 'Trabajo completado (ver checklist)';
+              const horas = Number(compHoras) || 1;
 
               const completada = await doAccion(async () => {
-                if (compEvidFile) {
-                  const evRes = await ordenesService.uploadEvidencia(
-                    detalle.id,
-                    compEvidFile,
-                    compEvidDesc || 'Evidencia de mantenimiento',
-                    'despues'
-                  );
-                  if (!evRes.success) {
-                    // Continuar con el cierre aunque la evidencia falle, pero avisarlo
-                    toast.error(`La evidencia no se pudo subir: ${evRes.message || 'error desconocido'}`);
-                  }
-                }
-                const res = await ordenesService.completarTrabajo(detalle.id, {
+                // El checklist se guarda al terminar (ya no hay botón "Guardar checklist")
+                const guardado = await guardarChecklistAlTerminar();
+                if (!guardado.success) return guardado;
+                return ordenesService.completarTrabajo(detalle.id, {
                   trabajoRealizado: descripcionAutomatica,
                   horasTrabajadas: horas
                 });
-                if (!res.success) return res;
-                return res;
-              }, { exito: 'Trabajo completado', alFallar: setCompError });
+              }, { exito: 'Reparación terminada', alFallar: setCompError });
               if (completada) setShowCompletar(false);
             }}
             disabled={accionando}
           >
-            {accionando ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Completar'}
-          </Button>
-        </ModalFooter>
-      </Modal>
-
-      {/* Modal Solicitar refacciones */}
-      <Modal
-        isOpen={showRefModal}
-        onClose={() => setShowRefModal(false)}
-      title="Solicitar refacciones"
-      description="Agrega una o varias refacciones para esta orden."
-    >
-      <div className="space-y-3">
-        {errorVentana && (
-          <Alert variant="destructive">
-            <AlertDescription>{errorVentana}</AlertDescription>
-          </Alert>
-        )}
-        {refItems.map((item, idx) => (
-          <div key={idx} className="border rounded-lg p-3 space-y-2">
-                      <div className="flex justify-between items-center">
-                        <p className="text-sm font-semibold text-continental-black">Refaccion #{idx + 1}</p>
-                        {refItems.length > 1 && (
-                          <Button variant="ghost" size="sm" onClick={() => setRefItems((prev) => prev.filter((_, i) => i !== idx))}>
-                            Quitar
-                          </Button>
-                        )}
-                      </div>
-                      <SearchableSelect
-                        placeholder="Buscar refaccion disponible"
-                        selected={item.seleccion || null}
-                        onSelect={(opt) =>
-                          setRefItems((prev) => prev.map((it, i) => (i === idx ? { ...it, seleccion: opt, nombre: opt?.label || '' } : it)))
-                        }
-                        fetchOptions={fetchRefacciones}
-                        noResultsText="Sin refacciones"
-                      />
-                      <Input
-                        label="Nombre"
-                        value={item.nombre}
-                        onChange={(e) => setRefItems((prev) => prev.map((it, i) => (i === idx ? { ...it, nombre: e.target.value } : it)))}
-                        placeholder="O escribe otra refaccion"
-                      />
-                      <div className="grid grid-cols-2 gap-2">
-                        <Input
-                          label="Cantidad"
-                          type="number"
-                          min="1"
-                          value={item.cantidad}
-                          onChange={(e) =>
-                            setRefItems((prev) => prev.map((it, i) => (i === idx ? { ...it, cantidad: e.target.value } : it)))
-                          }
-                        />
-                        <Input
-                          label="Justificacion"
-                          value={item.justificacion}
-                          onChange={(e) =>
-                            setRefItems((prev) => prev.map((it, i) => (i === idx ? { ...it, justificacion: e.target.value } : it)))
-                          }
-                          placeholder="Opcional"
-                        />
-                      </div>
-                    </div>
-                  ))}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setRefItems((prev) => [...prev, { nombre: '', cantidad: '1', justificacion: '' }])}
-            className="flex items-center gap-2"
-          >
-            <Plus className="h-4 w-4" /> Agregar refaccion
-          </Button>
-        </div>
-        <ModalFooter>
-          <Button variant="outline" onClick={() => setShowRefModal(false)}>
-            Cancelar
-          </Button>
-          <Button
-            onClick={async () => {
-              if (!detalle) return;
-              const payloadItems = refItems
-                .map((it) => ({
-                  ordenTrabajoId: detalle.id,
-                  nombreRefaccion: (it.seleccion?.label || it.nombre).trim(),
-                  cantidad: Number(it.cantidad) || 1,
-                  justificacion: it.justificacion.trim() || undefined
-                }))
-                .filter((it) => it.nombreRefaccion.length > 0);
-              if (payloadItems.length === 0) {
-                setErrorVentana('Captura al menos una refacción (elige una de la lista o escribe su nombre).');
-                return;
-              }
-              setErrorVentana('');
-              const enviadas = await doAccion(
-                () =>
-                  payloadItems.length === 1
-                    ? refaccionesService.create(payloadItems[0])
-                    : refaccionesService.createBatch({ solicitudes: payloadItems }),
-                { exito: payloadItems.length === 1 ? 'Solicitud de refacción enviada' : `${payloadItems.length} solicitudes de refacción enviadas`, alFallar: setErrorVentana }
-              );
-              if (enviadas) {
-                setShowRefModal(false);
-                setRefItems([{ nombre: '', cantidad: '1', justificacion: '' }]);
-              }
-            }}
-            disabled={accionando}
-            className="flex items-center gap-2"
-          >
-            {accionando ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-            Enviar
-          </Button>
-        </ModalFooter>
-      </Modal>
-
-
-      {/* Modal Cancelar */}
-      <Modal
-        isOpen={showCancelar}
-        onClose={() => setShowCancelar(false)}
-        title="Cancelar orden"
-        description="Indica el motivo de cancelacion."
-      >
-        <div className="space-y-3">
-          <p className="text-sm text-continental-gray-1">
-            Folio: <span className="font-semibold text-continental-black">{detalle?.folio}</span>
-          </p>
-          {errorVentana && errorVentana !== MOTIVO_OBLIGATORIO && (
-            <Alert variant="destructive">
-              <AlertDescription>{errorVentana}</AlertDescription>
-            </Alert>
-          )}
-          <Textarea
-            label="Motivo"
-            placeholder="Describe el motivo de cancelacion"
-            value={motivoCancelar}
-            onChange={(e) => {
-              setMotivoCancelar(e.target.value);
-              if (errorVentana === MOTIVO_OBLIGATORIO) setErrorVentana('');
-            }}
-            error={errorVentana === MOTIVO_OBLIGATORIO ? MOTIVO_OBLIGATORIO : undefined}
-          />
-        </div>
-        <ModalFooter>
-          <Button variant="outline" onClick={() => setShowCancelar(false)}>
-            Volver
-          </Button>
-          <Button
-            onClick={async () => {
-              if (!detalle) return;
-              if (!motivoCancelar.trim()) {
-                setErrorVentana(MOTIVO_OBLIGATORIO);
-                return;
-              }
-              setErrorVentana('');
-              if (await handleCancelar(detalle.id, motivoCancelar.trim())) setShowCancelar(false);
-            }}
-            disabled={accionando}
-          >
-            {accionando ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Cancelar orden'}
+            {accionando ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Terminar reparación'}
           </Button>
         </ModalFooter>
       </Modal>
@@ -2899,51 +2052,7 @@ export function OrdenesPage() {
         }} 
       />
 
-      <RequestActivityModal
-        isOpen={showActivityModal}
-        onClose={() => setShowActivityModal(false)}
-        ordenTrabajoId={detalle?.id}
-        vehiculoId={detalle?.vehiculoId}
-        tipoMantenimiento={detalle?.tipoMantenimiento}
-        onSuccess={() => loadOrdenes()}
-      />
     </div>
   );
 }
 
-const fetchRefacciones = async (q?: string): Promise<SearchableSelectOption[]> => {
-    try {
-      // Endpoint accesible para tecnico: disponibles
-      const resDisp = await consumiblesService.getDisponibles();
-      let lista: any[] = [];
-      if (resDisp.success && resDisp.data && Array.isArray(resDisp.data)) {
-        lista = resDisp.data as any[];
-      } else {
-        // Fallback solo si disponible falla (requiere roles elevados)
-        const res = await consumiblesService.getAll({ q: q?.trim() || undefined });
-        if (res.success && res.data) {
-          lista = res.data as any[];
-        }
-      }
-
-    const term = (q || '').toLowerCase();
-    const filtrada = lista
-      .filter((c) => (c.categoria || '').toLowerCase().includes('refac'))
-      .filter(
-        (c) =>
-          !term ||
-          (c.nombre || '').toLowerCase().includes(term) ||
-          (c.codigo || '').toLowerCase().includes(term)
-      );
-
-    return filtrada.map((r) => ({
-      value: r.id,
-      label: `${r.nombre} (${r.codigo})`,
-      description: `Stock: ${r.stockActual ?? 0}`,
-      meta: { stock: r.stockActual ?? 0 }
-    }));
-  } catch (err) {
-    console.error('No se pudieron cargar refacciones', err);
-  }
-  return [];
-};

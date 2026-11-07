@@ -14,6 +14,27 @@ Después corre **`17_materiales_y_ordenes_pago.sql`** (también antes de publica
 - Las órdenes de pago se generan solas al validar la reparación. Para las órdenes que ya estaban validadas,
   en Control de Pagos aparece el botón "Generar órdenes de pago pendientes".
 
+## ⭐ Nuevo (nov-2026): empresas proveedoras y tarifas por empresa
+Corre **`18_proveedores_y_tarifas.sql`** (después del 17) **antes** de publicar la versión nueva de la API.
+- Tablas `Empresas` (nombre, RFC/ID único, activa, contacto) y `TarifasEmpresa` (precio de cada actividad del
+  checklist para cada empresa; sin tarifa se usa el costo base). Columnas `Users.EmpresaId` (empresa del técnico) y
+  `RegistrosPago.EmpresaId` (empresa con cuyas tarifas se generó la orden de pago). Tabla `RegistroPagoActividades`
+  (renglones de cada orden de pago nueva, fijos aunque luego cambien las tarifas).
+- Acomoda lo que ya existe una sola vez: con el texto "Empresa externa" de los técnicos crea las empresas
+  (identificador `EMP-0001`…, cámbialo por el RFC en **Empresas proveedoras**) y liga a cada técnico con la suya;
+  las órdenes de pago existentes quedan a nombre de la empresa de su técnico (sus importes no cambian).
+- Las órdenes de pago **Pendientes** (o En revisión) dejan de cobrar refacciones: total = total − refacciones.
+  Las aprobadas, pagadas o rechazadas no se tocan.
+- Se puede correr dos veces sin problema. Haz respaldo antes.
+- Después de publicar: captura las tarifas de cada empresa en **Configuración → Checklists** (selector "Tarifario").
+
+## ⭐ Nuevo (06-nov-2026): correcciones de órdenes de trabajo y reporte de falla
+Corre **`19_correcciones_06nov.sql`** (después del 18) **antes** de publicar la API:
+- Columna `VehicleImagePoints.ChecklistItemId`: la actividad del checklist que genera cada componente de la
+  foto al reportarlo (se configura en Fallas visuales → Editor de hotspots; vacía = se liga sola por nombre).
+- Recalcula "puede operar" de los reportes sin orden según el tipo de mantenimiento
+  (Correctivo = no puede operar, Preventivo = puede operar).
+
 ---
 
 

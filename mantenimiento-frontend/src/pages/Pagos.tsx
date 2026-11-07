@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState } from 'react';
-import { DollarSign, RefreshCcw, CheckCircle, XCircle, Loader2, Printer, Save, FileText, Trash2 } from 'lucide-react';
+import { DollarSign, RefreshCcw, CheckCircle, XCircle, Loader2, Printer, Save, FileText, Trash2, Building2 } from 'lucide-react';
 import {
   Alert,
   AlertDescription,
@@ -17,13 +17,13 @@ import {
 } from '@/components/ui';
 import { pagosService } from '@/services/pagosService';
 import { ordenesService } from '@/services/ordenesService';
-import { reportesService } from '@/services/reportesService';
+import { empresasService, type Empresa } from '@/services/empresasService';
 import { useAuth } from '@/contexts/AuthContext';
 import { Undo } from 'lucide-react';
 import type { DetalleOrdenPago, RegistroPago } from '@/services/pagosService';
 import { EstadoPago } from '@/interfaces/Api.interface';
 import { formatCurrency } from '@/lib/utils';
-import type { OrdenTrabajo, ReporteFalla, Evidencia } from '@/interfaces';
+import type { OrdenTrabajo } from '@/interfaces';
 
 const estadoOpciones = [
   { value: '', label: 'Todos los estados' },
@@ -36,7 +36,17 @@ const estadoOpciones = [
 
 interface FiltersState {
   estado?: string;
+  /** '' = todas, '0' = técnicos sin empresa, o el id de la empresa */
+  empresa?: string;
 }
+
+/** Texto seguro para la hoja de impresión */
+const esc = (v: unknown) =>
+  String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
+
+const fecha = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/D');
+
+const SIN_EMPRESA = 'Sin empresa (tarifa base)';
 
 interface EditarPagoForm {
   notas: string;
@@ -65,9 +75,9 @@ export function PagosPage() {
   // Error de la ventana abierta (nuevo pago / detalle): se muestra dentro de ella, no en el banner de la página (queda detrás)
   const [errorVentana, setErrorVentana] = useState('');
   const [accionando, setAccionando] = useState(false);
-  const [detalleOrdenPago, setDetalleOrdenPago] = useState<OrdenTrabajo | null>(null);
-  const [reporteDetalle, setReporteDetalle] = useState<ReporteFalla | null>(null);
   const [detallePago, setDetallePago] = useState<RegistroPago | null>(null);
+  // Empresas proveedoras para el filtro (PDF 06-nov)
+  const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [detalleOpen, setDetalleOpen] = useState(false);
   const [guardandoDetalle, setGuardandoDetalle] = useState(false);
   const [pagando, setPagando] = useState(false);
@@ -86,56 +96,13 @@ export function PagosPage() {
     return match ? match.label : 'Estado';
   };
 
-  const loadDetalleOrdenPago = async (id: number) => {
-    try {
-      const res = await ordenesService.getById(id);
-      if (res.success && res.data) {
-        const ord = res.data as OrdenTrabajo;
-        setDetalleOrdenPago(ord);
-
-        // Cargar reporte de falla (con evidencias) para el "Crear reporte"
-        if (ord.reporteFallaId) {
-          try {
-            const rep = await reportesService.getById(ord.reporteFallaId);
-            if (rep.success && rep.data) {
-              let repData = rep.data as ReporteFalla;
-
-              try {
-                const evid = await reportesService.getEvidencias(repData.id);
-                if (evid.success && evid.data) {
-                  repData = { ...repData, evidencias: evid.data as Evidencia[] };
-                }
-              } catch {
-                // Ignorar error de evidencias
-              }
-
-              setReporteDetalle(repData);
-            } else {
-              setReporteDetalle(null);
-            }
-          } catch {
-            setReporteDetalle(null);
-          }
-        } else {
-          setReporteDetalle(null);
-        }
-      } else {
-        setDetalleOrdenPago(null);
-        setReporteDetalle(null);
-      }
-    } catch (err) {
-      console.error('No se pudo cargar detalle de orden', err);
-      setDetalleOrdenPago(null);
-      setReporteDetalle(null);
-    }
-  };
-
   const loadPagos = async () => {
     setLoading(true);
     setError('');
     try {
       const res = await pagosService.getAll({
         estado: filters.estado ? Number(filters.estado) : undefined,
+        empresaId: filters.empresa ? Number(filters.empresa) : undefined,
         page: 1,
         pageSize: 20
       });
@@ -167,13 +134,16 @@ export function PagosPage() {
   useEffect(() => {
     loadPagos();
     void cargarSinGenerar();
+    empresasService.getAll().then((r) => {
+      if (r.success && r.data) setEmpresas(r.data);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const generarPendientes = async () => {
     const ok = await confirmar({
       titulo: 'Generar órdenes de pago pendientes',
-      mensaje: `Se generarán ${sinGenerar} orden(es) de pago de órdenes de trabajo que ya estaban validadas, con sus actividades, refacciones y consumibles.`,
+      mensaje: `Se generarán ${sinGenerar} orden(es) de pago de órdenes de trabajo que ya estaban validadas, con sus actividades y las tarifas de la empresa de cada técnico.`,
       textoConfirmar: 'Generar',
       tono: 'info'
     });
@@ -190,10 +160,10 @@ export function PagosPage() {
   };
 
   useEffect(() => {
-    // Recargar pagos cuando cambia el filtro de estado
+    // Recargar pagos cuando cambia el filtro de estado o de empresa
     loadPagos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.estado]);
+  }, [filters.estado, filters.empresa]);
 
   // Prefetch info de orden (vehiculo + falla) para mostrar en tarjetas
   useEffect(() => {
@@ -235,7 +205,7 @@ export function PagosPage() {
     });
     setDetalleOP(null);
     pagoAbierto.current = pago.id;
-    const [op] = await Promise.all([pagosService.detalle(pago.id), loadDetalleOrdenPago(pago.ordenTrabajoId)]);
+    const op = await pagosService.detalle(pago.id);
     // Si mientras tanto se abrió otro pago, esta respuesta ya no le corresponde (no mezclar montos)
     if (pagoAbierto.current !== pago.id) return;
     if (op.success && op.data) setDetalleOP(op.data);
@@ -247,21 +217,15 @@ export function PagosPage() {
     setGuardandoDetalle(true);
     setErrorVentana('');
     try {
-      // Los montos no cambian: vienen de la orden de trabajo; aquí solo se guardan las notas
+      // Los montos no cambian (tarifas de la empresa al generarse): aquí solo se guardan las notas
       const payload = {
-        montoManoObra: Number(detalleOP?.costoActividades ?? detallePago.montoManoObra ?? 0),
-        montoRefacciones: Number(detalleOP?.costoMateriales ?? detallePago.montoRefacciones ?? 0),
+        montoManoObra: Number(detallePago.montoManoObra ?? 0),
         notas: formDetalle.notas.trim() || undefined
       };
       const res = await pagosService.update(detallePago.id, payload);
       if (res.success) {
         await loadPagos();
-        setDetallePago({
-          ...detallePago,
-          montoManoObra: payload.montoManoObra,
-          montoRefacciones: payload.montoRefacciones || 0,
-          notas: payload.notas
-        });
+        setDetallePago({ ...detallePago, notas: payload.notas });
         toast.exito('Pago actualizado');
       } else {
         setErrorVentana(res.message || 'No se pudo actualizar el pago');
@@ -274,272 +238,131 @@ export function PagosPage() {
     }
   };
 
+  /**
+   * Hoja de la ORDEN DE PAGO (PDF 06-nov, PAG-02): formato propio, distinto al de la orden de trabajo. Lleva folio,
+   * OT y reporte asociados, fechas, vehículo, técnico y empresa responsables, actividades con cantidades e importes,
+   * refacciones solo informativas (sin costos) y el total general.
+   */
   const imprimirDetalle = async () => {
     if (!detallePago) return;
-
-    // Refrescamos la orden para asegurar firmas/evidencias actualizadas
-    let ord: OrdenTrabajo | null = null;
-    try {
-      const res = await ordenesService.getById(detallePago.ordenTrabajoId);
-      if (res.success && res.data) {
-        ord = res.data as OrdenTrabajo;
-        setDetalleOrdenPago(ord);
-      }
-    } catch {
-      // fallback al estado actual
-    }
-    ord = ord || detalleOrdenPago;
-    if (!ord) return;
     let op = detalleOP;
     if (!op) {
       const r = await pagosService.detalle(detallePago.id);
       op = r.success && r.data ? r.data : null;
     }
+    if (!op) {
+      setErrorVentana('No se pudo cargar la orden de pago para imprimir');
+      return;
+    }
 
-    // Refacciones y consumibles que heredó la orden de pago (PDF 29-oct, 6.1)
-    const refacciones = (op?.materiales || [])
+    const actividades = op.actividades
+      .map(
+        (a, i) =>
+          `<tr><td class="text-center">${i + 1}</td><td>${esc(a.descripcion)}</td><td class="text-center">${esc(a.cantidad)}</td>` +
+          `<td class="text-right">${esc(formatCurrency(a.costoUnitario))}</td><td class="text-right">${esc(formatCurrency(a.subtotal))}</td></tr>`
+      )
+      .join('');
+    const refacciones = op.materiales
       .map(
         (m) =>
-          `<tr><td>${m.nombre}${m.codigo ? ` (${m.codigo})` : ''}</td><td class="text-center">${m.cantidad} ${m.unidad}</td>${
-            isAdmin ? `<td class="text-right">${formatCurrency(m.costoUnitario)}</td><td class="text-right">${formatCurrency(m.subtotal)}</td>` : ''
-          }</tr>`
+          `<tr><td>${esc(m.nombre)}</td><td>${esc(m.codigo || '—')}</td><td class="text-center">${esc(m.cantidad)} ${esc(m.unidad)}</td></tr>`
       )
       .join('');
-
-    const checklist = (ord.respuestasChecklist || [])
-      .filter((r: any) => (r.valor || '').trim() !== '')
-      .map(
-        (r: any) =>
-          `<tr>
-            <td class="uppercase">${r.pregunta || r.checklistItem?.pregunta || ''}</td>
-            <td class="text-center">✓</td>
-            <td class="text-center">✓</td>
-            <td class="text-center">✓</td>
-          </tr>`
-      )
-      .join('');
-
-    // Montos fijos de la orden de pago (no se recalculan al imprimir)
-    const costoChecklist = op?.costoActividades ?? detallePago.montoManoObra ?? 0;
-    const costoRefacciones = op?.costoMateriales ?? detallePago.montoRefacciones ?? 0;
-    const total = op?.total ?? detallePago.montoTotal ?? costoChecklist + costoRefacciones;
-
-    const buildUrl = (url?: string) => {
-      if (!url) return '';
-      if (url.startsWith('http')) return url;
-      const apiBase =
-        import.meta.env.VITE_API_URL ||
-        import.meta.env.VITE_API_BASE_URL ||
-        import.meta.env.VITE_BASE_URL ||
-        import.meta.env.BASE_URL ||
-        '';
-      const base = apiBase && apiBase.includes('http') ? apiBase.replace(/\/api\/?$/, '') : '';
-      if (base) return `${base}${url.startsWith('/') ? '' : '/'}${url}`;
-      try {
-        const current = new URL(window.location.origin);
-        if (current.port === '5173') current.port = '5110';
-        return `${current.origin}${url.startsWith('/') ? '' : '/'}${url}`;
-      } catch {
-        return url;
-      }
-    };
-
-    const evidenciasFuente = [...(ord.evidencias || []), ...((reporteDetalle?.evidencias as any[]) || [])];
-
-    const evidencias = evidenciasFuente
-      .map((ev: any) => ({ ...ev, urlImagen: ev.urlImagen || ev.url }))
-      .filter((ev: any) => ev.urlImagen)
-      // No mostrar evidencias que son firmas (se guardaban como evidencia base64/imagen)
-      .filter((ev: any) => {
-        const desc = (ev.descripcion || '').toString().toLowerCase();
-        const url = (ev.urlImagen || '').toString().toLowerCase();
-        return !desc.includes('firma') && !url.includes('firma');
-      })
-      .slice(0, 8)
-      .map(
-        (ev: any) =>
-          `<div class="foto">
-            <img src="${buildUrl(ev.urlImagen)}" alt="${ev.descripcion || 'Evidencia'}" />
-            ${ev.descripcion ? `<p>${ev.descripcion}</p>` : ''}
-          </div>`
-      )
-      .join('');
-
-    const resolveField = (obj: any, keys: string[]) => {
-      for (const k of keys) {
-        const val = (obj || {})[k];
-        if (val !== undefined && val !== null && String(val).trim() !== '') return String(val);
-      }
-      return '';
-    };
-
-    const firmaLider =
-      resolveField(ord, ['firmaLider', 'FirmaLider', 'firma_lider', 'firmaLiderTexto']) ||
-      resolveField(detallePago, ['firmaLider', 'firma_lider', 'firmaLiderTexto']);
-    const firmaSup =
-      resolveField(ord, ['firmaSupervisor', 'FirmaSupervisor', 'firma_supervisor', 'firmaSupervisorTexto']) ||
-      resolveField(detallePago, ['firmaSupervisor', 'firma_supervisor', 'firmaSupervisorTexto']);
-    const firmaLiderNombre =
-      resolveField(ord, ['firmaLiderNombre', 'FirmaLiderNombre']) ||
-      resolveField(detallePago, ['firmaLiderNombre']) ||
-      'Lider';
-    const firmaSupNombre =
-      resolveField(ord, ['firmaSupervisorNombre', 'FirmaSupervisorNombre']) ||
-      resolveField(detallePago, ['firmaSupervisorNombre']) ||
-      'Supervisor/Admin';
-
-    // Logo corporativo (usar URL proporcionada); fallback a texto si falla
+    // Solo órdenes de pago aprobadas antes del cambio pueden traer cargo por refacciones
+    const cargoAnterior =
+      op.costoMateriales > 0
+        ? `<tr><td colspan="4" class="text-right">Refacciones (cargo de una orden de pago anterior al cambio)</td><td class="text-right">${esc(formatCurrency(op.costoMateriales))}</td></tr>`
+        : '';
+    const empresa = op.empresa ? `${esc(op.empresa)}${op.empresaIdentificador ? ` · RFC/ID ${esc(op.empresaIdentificador)}` : ''}` : esc(SIN_EMPRESA);
+    const dato = (etiqueta: string, valor: string) => `<div class="dato"><span>${etiqueta}</span><strong>${valor}</strong></div>`;
     const logoSrc = 'https://1000marcas.net/wp-content/uploads/2022/12/Continental-Logo-768x432.png';
 
-    const printWindow = window.open('', '_blank', 'width=1100,height=900');
-    if (!printWindow) return;
+    const printWindow = window.open('', '_blank', 'width=1000,height=900');
+    if (!printWindow) {
+      setErrorVentana('El navegador bloqueó la ventana de impresión. Permite las ventanas emergentes para este sitio.');
+      return;
+    }
     printWindow.document.write(`
       <html>
         <head>
-          <title>${op?.folio || 'Orden de pago'} · OT ${detallePago.ordenTrabajoFolio || detallePago.ordenTrabajoId}</title>
+          <title>${esc(op.folio)} · Orden de pago</title>
           <style>
             * { box-sizing: border-box; }
-            body { font-family: Arial, sans-serif; margin: 20px; color: #111; }
-            .sheet { border: 1px solid #000; padding: 16px; }
-            
-            /* Header Style matching image */
-            .header-table { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-bottom: 10px; }
-            .header-table td { border: 1px solid #000; padding: 4px; vertical-align: middle; }
-            .logo-cell { text-align: center; width: 40%; }
-            .logo-cell img { height: 40px; object-fit: contain; }
-            .info-cell { padding: 0; }
-            .info-row { display: flex; border-bottom: 1px solid #000; }
-            .info-row:last-child { border-bottom: none; }
-            .info-label { font-weight: bold; padding: 4px; border-right: 1px solid #000; width: 40%; text-align: right; background: #f9f9f9; }
-            .info-value { padding: 4px; width: 60%; text-align: center; font-weight: bold; }
-            .sub-header { display: flex; border: 1px solid #000; border-top: none; }
-            .sub-item { flex: 1; display: flex; padding: 6px; border-right: 1px solid #000; align-items: center; justify-content: center; gap: 8px; }
-            .sub-item:last-child { border-right: none; }
-
-            .title { font-weight: 700; text-transform: uppercase; margin: 10px 0 4px 0; font-size: 13px; }
+            body { font-family: Arial, sans-serif; margin: 20px; color: #111; font-size: 12px; }
+            .hoja { border: 1px solid #000; padding: 16px; }
+            .encabezado { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 8px; }
+            .encabezado img { height: 40px; }
+            .encabezado h1 { font-size: 20px; margin: 0; letter-spacing: 2px; }
+            .folio { text-align: right; }
+            .folio .num { color: #c00; font-size: 18px; font-weight: bold; }
+            .datos { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 10px; border: 1px solid #000; border-bottom: none; }
+            .dato { display: flex; border-bottom: 1px solid #000; }
+            .dato:nth-child(odd) { border-right: 1px solid #000; }
+            .dato span { width: 42%; background: #f3f3f3; padding: 4px 6px; font-weight: bold; border-right: 1px solid #000; }
+            .dato strong { width: 58%; padding: 4px 6px; font-weight: normal; }
+            .titulo { font-weight: 700; text-transform: uppercase; margin: 14px 0 4px 0; font-size: 12px; }
+            .nota { font-size: 10px; color: #555; margin: 2px 0 0 0; }
             table { width: 100%; border-collapse: collapse; font-size: 11px; }
-            th, td { border: 1px solid #000; padding: 4px; }
-            th { background: #eee; font-weight: bold; text-align: center; }
-            .uppercase { text-transform: uppercase; }
-            
-            .section { margin-top: 10px; }
-            .fotos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 8px; }
-            .foto { border: 1px solid #000; padding: 4px; text-align: center; height: 150px; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; }
-            .foto img { max-width: 100%; max-height: 85%; object-fit: contain; }
-            .foto p { font-size: 9px; margin: 4px 0 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-            
-            .firmas { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
-            .firma-box { border: 1px solid #000; height: 120px; display: flex; flex-direction: column; justify-content: flex-end; padding: 8px; }
-            .firma-content { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 14px; font-style: italic; padding: 8px; }
-            .firma-name { font-size: 11px; text-align: center; border-top: 1px solid #000; padding-top: 4px; margin-top: 4px; font-weight: bold; }
-            .firma-empty { color: #ccc; font-style: italic; font-size: 12px; }
-
+            th, td { border: 1px solid #000; padding: 4px 6px; }
+            th { background: #eee; }
             .text-right { text-align: right; }
             .text-center { text-align: center; }
-            .font-bold { font-weight: bold; }
+            .total td { font-weight: bold; font-size: 13px; background: #f3f3f3; }
+            .firmas { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 40px; }
+            .firma { border-top: 1px solid #000; text-align: center; padding-top: 4px; font-size: 11px; }
           </style>
         </head>
         <body>
-          <div class="sheet">
-            <!-- Header Structure -->
-            <table class="header-table">
-              <tr>
-                <td class="logo-cell" rowspan="3">
-                  <img src="${logoSrc}" alt="Continental" onerror="this.style.display='none'; this.parentNode.textContent='CONTINENTAL';" />
-                </td>
-                <td class="info-cell">
-                  <div class="info-row">
-                    <div class="info-label">FOLIO:</div>
-                    <div class="info-value" style="color:red;">${detallePago.ordenTrabajoFolio || detallePago.ordenTrabajoId}</div>
-                  </div>
-                  <div class="info-row">
-                    <div class="info-label">FECHA DE INGRESO:</div>
-                    <div class="info-value">${ord?.fechaInicio ? new Date(ord.fechaInicio).toLocaleDateString() : 'N/D'}</div>
-                  </div>
-                  <div class="info-row">
-                    <div class="info-label">FECHA DE LIBERACION:</div>
-                    <div class="info-value">${ord?.fechaFinalizacion ? new Date(ord.fechaFinalizacion).toLocaleDateString() : 'N/D'}</div>
-                  </div>
-                </td>
-              </tr>
-            </table>
-            <div class="sub-header">
-              <div class="sub-item">
-                <span class="font-bold">TIPO DE CARRO:</span>
-                <span>${ord?.vehiculoTipo || ord?.vehiculoCodigo || 'N/D'}</span>
-              </div>
-              <div class="sub-item">
-                <span class="font-bold">CODIGO DE BARRAS:</span>
-                <span>${ord?.vehiculoCodigo || 'N/D'}</span>
-              </div>
+          <div class="hoja">
+            <div class="encabezado">
+              <img src="${logoSrc}" alt="Continental" onerror="this.outerHTML='<strong>CONTINENTAL</strong>';" />
+              <h1>ORDEN DE PAGO</h1>
+              <div class="folio"><div class="num">${esc(op.folio)}</div><div>Estado: ${esc(estadoNombre(op.estadoId))}</div></div>
+            </div>
+            <div class="datos">
+              ${dato('Orden de trabajo', esc(op.ordenTrabajoFolio))}
+              ${dato('Reporte de falla', esc(op.reporteFolio || 'N/D'))}
+              ${dato('Fecha del reporte', esc(fecha(op.fechaReporte)))}
+              ${dato('Fecha de la orden de trabajo', esc(fecha(op.fechaCreacionOrden)))}
+              ${dato('Fecha de conclusión', esc(fecha(op.fechaFinalizacionOrden)))}
+              ${dato('Fecha de validación', esc(fecha(op.fechaValidacionOrden)))}
+              ${dato('Fecha de la orden de pago', esc(fecha(op.fechaRegistro)))}
+              ${dato('Fecha de pago', esc(op.fechaPago ? fecha(op.fechaPago) : 'Pendiente'))}
+              ${dato('Vehículo atendido', `${esc(op.vehiculoCodigo)}${op.tipoVehiculo ? ` · ${esc(op.tipoVehiculo)}` : ''}${op.area ? ` · ${esc(op.area)}` : ''}`)}
+              ${dato('Técnico responsable', esc(op.tecnico || op.tecnicoId))}
+              ${dato('Empresa responsable', empresa)}
+              ${dato('Factura', esc(op.numeroFactura || 'N/D'))}
             </div>
 
-            <div class="section">
-              <div class="title">CHECK LIST</div>
-              ${
-                checklist
-                  ? `<table>
-                      <thead>
-                        <tr>
-                          <th style="width: 55%; text-align: left;">ACTIVIDAD</th>
-                          <th style="width: 15%;">REPORTADO</th>
-                          <th style="width: 15%;">REPARADO</th>
-                          <th style="width: 15%;">VERIFICACION</th>
-                        </tr>
-                      </thead>
-                      <tbody>${checklist}</tbody>
-                    </table>`
-                  : '<p style="font-size:12px;color:#666;border:1px solid #000;padding:8px;">Sin checklist.</p>'
-              }
-            </div>
+            <div class="titulo">Actividades realizadas</div>
+            ${
+              actividades
+                ? `<table>
+                    <thead><tr><th style="width:5%">#</th><th style="text-align:left">Actividad</th><th style="width:10%">Cantidad</th><th style="width:16%">Importe unitario</th><th style="width:16%">Importe</th></tr></thead>
+                    <tbody>${actividades}${cargoAnterior}
+                      <tr class="total"><td colspan="4" class="text-right">TOTAL GENERAL</td><td class="text-right">${esc(formatCurrency(op.total))}</td></tr>
+                    </tbody>
+                  </table>`
+                : `<table><tbody>${cargoAnterior}<tr class="total"><td class="text-right">TOTAL GENERAL (sin actividades registradas)</td><td class="text-right">${esc(formatCurrency(op.total))}</td></tr></tbody></table>`
+            }
 
-            <div class="section">
-              <div class="title">Refacciones y consumibles utilizados</div>
-              ${
-                refacciones
-                  ? `<table><thead><tr><th>Material</th><th>Cant.</th>${isAdmin ? '<th>Costo unitario</th><th>Subtotal</th>' : ''}</tr></thead><tbody>${refacciones}</tbody></table>`
-                  : '<p style="font-size:12px;color:#666;">Sin refacciones registradas.</p>'
-              }
-            </div>
+            <div class="titulo">Refacciones utilizadas</div>
+            <p class="nota">Solo informativo: el importe de cada actividad ya contempla materiales y mano de obra.</p>
+            ${
+              refacciones
+                ? `<table><thead><tr><th style="text-align:left">Refacción / consumible</th><th style="text-align:left;width:22%">Código</th><th style="width:16%">Cantidad</th></tr></thead><tbody>${refacciones}</tbody></table>`
+                : '<p>Sin refacciones registradas.</p>'
+            }
 
-            <div class="section">
-              <div class="title">Evidencias</div>
-              ${
-                evidencias
-                  ? `<div class="fotos">${evidencias}</div>`
-                  : '<p style="font-size:12px;color:#666;">Sin evidencias.</p>'
-              }
-            </div>
+            <div class="titulo">Observaciones</div>
+            <p>${esc(formDetalle.notas || op.notas || 'Sin observaciones')}</p>
 
-            <div class="section firmas">
-              <div class="firma-box">
-                <div class="firma-content">${firmaLider || '<span class="firma-empty">Sin firma</span>'}</div>
-                <div class="firma-name">LIDER: ${firmaLiderNombre !== 'Lider' ? firmaLiderNombre : ''}</div>
-              </div>
-              <div class="firma-box">
-                <div class="firma-content">${firmaSup || '<span class="firma-empty">Sin firma</span>'}</div>
-                <div class="firma-name">SUPERVISOR: ${firmaSupNombre !== 'Supervisor/Admin' ? firmaSupNombre : ''}</div>
-              </div>
+            <div class="firmas">
+              <div class="firma">Empresa responsable<br/>${op.empresa ? esc(op.empresa) : '&nbsp;'}</div>
+              <div class="firma">Autoriza<br/>Gerente de Mantenimiento</div>
             </div>
-
-            <div class="section">
-              <div class="title">Observaciones</div>
-              <div class="box" style="margin-top:4px;">${formDetalle.notas || 'Sin notas'}</div>
-            </div>
-
-            ${isAdmin ? `
-            <div class="section">
-              <div class="title">Totales</div>
-              <table>
-                <tbody>
-                  <tr><td>Actividades</td><td class="text-right">${costoChecklist.toFixed(2)}</td></tr>
-                  <tr><td>Refacciones y consumibles${op?.aplicaGarantia ? ' (garantía: sin costo)' : ''}</td><td class="text-right">${costoRefacciones.toFixed(2)}</td></tr>
-                  <tr><td><strong>Total</strong></td><td class="text-right"><strong>${total.toFixed(2)}</strong></td></tr>
-                </tbody>
-              </table>
-            </div>` : ''}
           </div>
-          <script>window.print(); setTimeout(() => window.close(), 300);<\/script>
+          <script>window.print(); setTimeout(() => window.close(), 300);</script>
         </body>
       </html>
     `);
@@ -682,20 +505,20 @@ export function PagosPage() {
 
   const handleVerResumen = () => {
     const selectedPagos = pagos.filter(p => selectedIds.has(p.id));
-    // Agrupar por tecnico
+    // Agrupar por empresa proveedora (PDF 06-nov, PAG-04): cada una cobra con sus tarifas
     const grouped = selectedPagos.reduce((acc, p) => {
-      const key = p.tecnicoId;
+      const key = p.empresaId ? String(p.empresaId) : 'sin-empresa';
       if (!acc[key]) {
         acc[key] = {
-          tecnicoNombre: p.tecnicoNombre || `Tecnico ${p.tecnicoId}`,
+          tecnicoNombre: p.empresaNombre || SIN_EMPRESA,
           items: [],
           total: 0
         };
       }
       acc[key].items.push(p);
-      acc[key].total += p.montoTotal; // Ya incluye solo checklist segun el cambio anterior (si se guardó así)
+      acc[key].total += Number(p.montoTotal || 0);
       return acc;
-    }, {} as Record<number, any>);
+    }, {} as Record<string, any>);
 
     setResumenData(Object.values(grouped));
     setResumenOpen(true);
@@ -722,6 +545,16 @@ export function PagosPage() {
             value={filters.estado || ''}
             onChange={(value) => setFilters((prev) => ({ ...prev, estado: value }))}
           />
+          <Select
+            aria-label="Empresa"
+            options={[
+              { value: '', label: 'Todas las empresas' },
+              ...empresas.map((e) => ({ value: String(e.id), label: e.nombre })),
+              { value: '0', label: SIN_EMPRESA }
+            ]}
+            value={filters.empresa || ''}
+            onChange={(value) => setFilters((prev) => ({ ...prev, empresa: value }))}
+          />
           <Button variant="outline" onClick={loadPagos} className="flex items-center gap-2">
             <RefreshCcw className="h-4 w-4" />
             Actualizar
@@ -735,7 +568,7 @@ export function PagosPage() {
         </div>
       </div>
       <p className="text-sm text-continental-gray-1" style={{ marginBottom: 0 }}>
-        Las órdenes de pago se generan automáticamente cuando la orden de trabajo se valida (DISPONIBLE), con sus actividades, refacciones y consumibles.
+        Las órdenes de pago se generan automáticamente cuando la orden de trabajo se valida (DISPONIBLE), con las actividades realizadas y las tarifas de la empresa del técnico. Las refacciones se listan solo como referencia.
       </p>
 
       {selectedIds.size > 0 && (
@@ -831,9 +664,12 @@ export function PagosPage() {
                     <p className="text-sm text-continental-gray-1">Orden de compra: {pago.ordenCompraFolio}</p>
                   )}
                   <p className="text-sm text-continental-gray-1">Tecnico: {pago.tecnicoNombre || pago.tecnicoId}</p>
+                  <p className="text-sm text-continental-gray-1">
+                    <Building2 className="inline h-4 w-4" /> Empresa: {pago.empresaNombre || SIN_EMPRESA}
+                  </p>
                   {isAdmin && (
                     <p className="text-sm text-continental-gray-1">
-                      Mano de obra: ${pago.montoManoObra}
+                      Total: {formatCurrency(Number(pago.montoTotal || 0))}
                     </p>
                   )}
                   <p className="text-xs text-continental-gray-2">Registro: {new Date(pago.fechaRegistro).toLocaleString()}</p>
@@ -896,7 +732,7 @@ export function PagosPage() {
         isOpen={resumenOpen}
         onClose={() => setResumenOpen(false)}
         title="Resumen por Proveedor (Prefactura)"
-        description="Agrupación de órdenes seleccionadas."
+        description="Órdenes seleccionadas agrupadas por empresa proveedora, con los importes de sus tarifas."
       >
         <div className="space-y-4 max-h-[60vh] overflow-y-auto">
           {resumenData.map((group: any, idx) => (
@@ -927,12 +763,10 @@ export function PagosPage() {
         onClose={() => {
           setDetalleOpen(false);
           setDetallePago(null);
-          setDetalleOrdenPago(null);
-          setReporteDetalle(null);
           setDetalleOP(null);
         }}
         title={`Orden de pago ${detallePago?.folio || ''} · OT ${detallePago?.ordenTrabajoFolio || detallePago?.ordenTrabajoId || ''}`}
-        description="Generada automáticamente con lo que trae la orden de trabajo. Consulta, cambia el estatus e imprime."
+        description="Generada automáticamente al validar la orden de trabajo, con las tarifas de la empresa del técnico. Consulta, cambia el estatus e imprime."
       >
         {detallePago ? (
           <div className="space-y-3">
@@ -953,8 +787,13 @@ export function PagosPage() {
                   <p><span className="text-continental-gray-1">Vehículo:</span> {detalleOP.vehiculoCodigo}{detalleOP.tipoVehiculo ? ` · ${detalleOP.tipoVehiculo}` : ''}</p>
                   <p><span className="text-continental-gray-1">Área:</span> {detalleOP.area || 'Sin área'}</p>
                   <p><span className="text-continental-gray-1">Técnico:</span> {detalleOP.tecnico || detalleOP.tecnicoId}</p>
-                  <p><span className="text-continental-gray-1">Creación de la orden:</span> {new Date(detalleOP.fechaCreacionOrden).toLocaleDateString()}</p>
-                  <p><span className="text-continental-gray-1">Finalización:</span> {detalleOP.fechaFinalizacionOrden ? new Date(detalleOP.fechaFinalizacionOrden).toLocaleDateString() : 'N/D'}</p>
+                  <p data-testid="empresa-orden-pago">
+                    <span className="text-continental-gray-1">Empresa:</span>{' '}
+                    {detalleOP.empresa ? `${detalleOP.empresa}${detalleOP.empresaIdentificador ? ` (${detalleOP.empresaIdentificador})` : ''}` : SIN_EMPRESA}
+                  </p>
+                  <p><span className="text-continental-gray-1">Creación de la orden:</span> {fecha(detalleOP.fechaCreacionOrden)}</p>
+                  <p><span className="text-continental-gray-1">Conclusión:</span> {fecha(detalleOP.fechaFinalizacionOrden)}</p>
+                  <p><span className="text-continental-gray-1">Orden de pago:</span> {fecha(detalleOP.fechaRegistro)}</p>
                 </div>
                 <div>
                   <p className="mb-1 font-semibold text-continental-black">Actividades o reparaciones realizadas</p>
@@ -963,7 +802,7 @@ export function PagosPage() {
                   ) : (
                     <table className="w-full">
                       <thead className="text-left text-xs uppercase text-continental-gray-1">
-                        <tr><th className="py-1">Actividad</th><th className="py-1 text-right">Cant.</th>{isAdmin && <th className="py-1 text-right">Costo</th>}{isAdmin && <th className="py-1 text-right">Subtotal</th>}</tr>
+                        <tr><th className="py-1">Actividad</th><th className="py-1 text-right">Cant.</th>{isAdmin && <th className="py-1 text-right">Importe unitario</th>}{isAdmin && <th className="py-1 text-right">Importe</th>}</tr>
                       </thead>
                       <tbody>
                         {detalleOP.actividades.map((a, idx) => (
@@ -980,34 +819,37 @@ export function PagosPage() {
                 </div>
                 <div>
                   <p className="mb-1 font-semibold text-continental-black">Refacciones y consumibles utilizados</p>
+                  <p className="text-xs text-continental-gray-1" style={{ marginBottom: 4 }}>
+                    Solo informativo: el importe de cada actividad ya contempla materiales y mano de obra.
+                  </p>
                   {detalleOP.materiales.length === 0 ? (
                     <p className="text-continental-gray-1">Sin refacciones ni consumibles.</p>
                   ) : (
-                    <table className="w-full">
+                    <table className="w-full" data-testid="materiales-orden-pago">
                       <thead className="text-left text-xs uppercase text-continental-gray-1">
-                        <tr><th className="py-1">Material</th><th className="py-1 text-right">Cant.</th>{isAdmin && <th className="py-1 text-right">Costo unitario</th>}{isAdmin && <th className="py-1 text-right">Subtotal</th>}</tr>
+                        <tr><th className="py-1">Material</th><th className="py-1">Código</th><th className="py-1 text-right">Cant.</th></tr>
                       </thead>
                       <tbody>
                         {detalleOP.materiales.map((m, idx) => (
                           <tr key={idx} className="border-t border-continental-gray-3/60">
-                            <td className="py-1">{m.nombre}{m.codigo ? ` (${m.codigo})` : ''} · {m.esRefaccion ? 'Refacción' : 'Consumible'}</td>
+                            <td className="py-1">{m.nombre} · {m.esRefaccion ? 'Refacción' : 'Consumible'}</td>
+                            <td className="py-1">{m.codigo || '—'}</td>
                             <td className="py-1 text-right">{m.cantidad} {m.unidad}</td>
-                            {isAdmin && <td className="py-1 text-right">{formatCurrency(m.costoUnitario)}</td>}
-                            {isAdmin && <td className="py-1 text-right">{formatCurrency(m.subtotal)}</td>}
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   )}
-                  {detalleOP.aplicaGarantia && (
-                    <p className="mt-1 text-xs text-continental-gray-1" style={{ marginBottom: 0 }}>Garantía (mantenimiento a menos de 6 meses): las refacciones no tienen costo.</p>
-                  )}
                 </div>
                 {isAdmin && (
                   <div className="rounded-lg bg-continental-bg p-3">
-                    <p className="flex justify-between"><span>Actividades</span><span>{formatCurrency(detalleOP.costoActividades)}</span></p>
-                    <p className="flex justify-between"><span>Refacciones y consumibles</span><span>{formatCurrency(detalleOP.costoMateriales)}</span></p>
-                    <p className="flex justify-between font-semibold" data-testid="total-orden-pago"><span>Total de la reparación</span><span>{formatCurrency(detalleOP.total)}</span></p>
+                    {detalleOP.costoMateriales > 0 && (
+                      <>
+                        <p className="flex justify-between"><span>Actividades</span><span>{formatCurrency(detalleOP.costoActividades)}</span></p>
+                        <p className="flex justify-between"><span>Refacciones (cargo de una orden de pago anterior al cambio)</span><span>{formatCurrency(detalleOP.costoMateriales)}</span></p>
+                      </>
+                    )}
+                    <p className="flex justify-between font-semibold" data-testid="total-orden-pago"><span>Total a pagar</span><span>{formatCurrency(detalleOP.total)}</span></p>
                   </div>
                 )}
               </div>

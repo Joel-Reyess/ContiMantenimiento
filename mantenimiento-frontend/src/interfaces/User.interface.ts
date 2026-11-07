@@ -28,6 +28,9 @@ export interface UserList {
   areaNombre?: string;
   activo: boolean;
   ultimoInicioSesion?: string;
+  /** Empresa proveedora del técnico (PDF 06-nov, USR-02) */
+  empresaId?: number | null;
+  empresaNombre?: string | null;
 }
 
 export interface UserCreateRequest {
@@ -43,6 +46,8 @@ export interface UserCreateRequest {
   empresaExterna?: string;
   tarifaHora?: number;
   especialidades?: string;
+  /** Empresa proveedora (solo técnicos; vacío = sin empresa, usa la tarifa base) */
+  empresaId?: number | null;
 }
 
 export interface UserUpdateRequest {
@@ -57,6 +62,8 @@ export interface UserUpdateRequest {
   tarifaHora?: number;
   especialidades?: string;
   activo?: boolean;
+  /** Empresa proveedora (solo técnicos; null = sin empresa, usa la tarifa base) */
+  empresaId?: number | null;
 }
 
 export interface LoginRequest {

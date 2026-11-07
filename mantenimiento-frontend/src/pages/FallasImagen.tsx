@@ -3,6 +3,8 @@ import { AlertTriangle, Loader2, Plus, RefreshCcw, Trash2 } from 'lucide-react';
 import { Button, Card, Input, Select, useConfirm, useToast } from '@/components/ui';
 import { InteractiveVehicleImage } from '@/components/vehiculos/InteractiveVehicleImage';
 import { catalogosService, imageFaultsService, vehicleImagePointsService } from '@/services';
+import { checklistService, type ChecklistItem } from '@/services/checklistService';
+import { actividadPorNombre } from '@/lib/componentesActividades';
 import type {
   ImageFault,
   ImageFaultCreateRequest,
@@ -53,6 +55,8 @@ export function FallasImagenPage() {
   const [draftRadiusPct, setDraftRadiusPct] = useState(String(DEFAULT_RADIUS));
   const [fallbackImageUpload, setFallbackImageUpload] = useState<File | null>(null);
   const [imageVersion, setImageVersion] = useState<number>(Date.now());
+  // Actividades del checklist del tipo: cada componente genera la suya al reportarlo (PDF 06-nov)
+  const [actividadesTipo, setActividadesTipo] = useState<ChecklistItem[]>([]);
 
   const selectedTipo = useMemo(
     () => tiposVehiculo.find((t) => t.id === Number(selectedTipoVehiculoId)),
@@ -67,6 +71,33 @@ export function FallasImagenPage() {
     const sep = full.includes('?') ? '&' : '?';
     return `${full}${sep}v=${imageVersion}`;
   }, [selectedTipo, imageVersion]);
+
+  useEffect(() => {
+    const tipoId = Number(selectedTipoVehiculoId);
+    if (!tipoId) {
+      setActividadesTipo([]);
+      return;
+    }
+    let cancelado = false;
+    void checklistService.getPorTipo(tipoId).then((r) => {
+      if (!cancelado) setActividadesTipo(r.success && r.data ? r.data.items || [] : []);
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [selectedTipoVehiculoId]);
+
+  /** Liga el componente con su actividad del checklist (vacío = automática por nombre) */
+  const ligarActividad = async (point: VehicleImagePoint, valor: string) => {
+    const checklistItemId = valor ? Number(valor) : null;
+    const res = await vehicleImagePointsService.ligarActividad(point.id, checklistItemId);
+    if (!res.success) {
+      toast.error(res.message || 'No se pudo ligar la actividad');
+      return;
+    }
+    setVehicleImagePoints((prev) => prev.map((p) => (p.id === point.id ? { ...p, checklistItemId } : p)));
+    toast.exito(res.message || 'Actividad ligada');
+  };
 
   const resetFaultForm = () => {
     setFaultNameError('');
@@ -629,6 +660,27 @@ export function FallasImagenPage() {
                               X: {point.xPct}% · Y: {point.yPct}% · R: {point.radiusPct ?? DEFAULT_RADIUS}%
                               {!point.active && <span className="text-amber-700"> · Oculto (edítalo y guarda para mostrarlo)</span>}
                             </p>
+                            {actividadesTipo.length > 0 && (() => {
+                              const automatica = actividadPorNombre(point.imageFaultName, actividadesTipo);
+                              return (
+                                <label className="mt-1 flex flex-wrap items-center gap-2 text-xs text-continental-gray-1">
+                                  Actividad que genera:
+                                  <select
+                                    aria-label={`Actividad de ${point.imageFaultName || 'componente'}`}
+                                    className="max-w-[260px] rounded border border-continental-gray-3 px-2 py-1 text-xs"
+                                    value={point.checklistItemId ? String(point.checklistItemId) : ''}
+                                    onChange={(e) => void ligarActividad(point, e.target.value)}
+                                  >
+                                    <option value="">
+                                      {automatica ? `Automática: ${automatica.pregunta}` : 'Automática: sin coincidencia (no genera actividad)'}
+                                    </option>
+                                    {actividadesTipo.map((a) => (
+                                      <option key={a.id} value={a.id}>{a.pregunta}</option>
+                                    ))}
+                                  </select>
+                                </label>
+                              );
+                            })()}
                           </div>
                           <div className="flex gap-1">
                             <Button

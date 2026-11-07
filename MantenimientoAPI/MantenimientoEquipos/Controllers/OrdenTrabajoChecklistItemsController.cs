@@ -64,7 +64,15 @@ public class OrdenTrabajoChecklistItemsController : ControllerBase
     [RolesAllowed("SuperUsuario", "Administrador", "Supervisor", "Lider", "Tecnico")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateOrdenTrabajoChecklistItemRequest request)
     {
-        var success = await _service.UpdateAsync(id, request);
+        bool success;
+        try
+        {
+            success = await _service.UpdateAsync(id, request);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ApiResponse<string>.Error(ex.Message));
+        }
         if (!success)
             return NotFound(ApiResponse<string>.Error("Asignación de ítem del checklist no encontrada"));
 

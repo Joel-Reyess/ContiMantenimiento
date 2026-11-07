@@ -153,6 +153,8 @@ public class OrdenTrabajoService
                 Folio = o.Folio,
                 ReporteFallaId = o.ReporteFallaId,
                 ReporteFallaFolio = o.ReporteFalla != null ? o.ReporteFalla.Folio : null,
+                ReporteFechaReporte = o.ReporteFalla != null ? o.ReporteFalla.FechaReporte : null,
+                EmpresaNombre = o.TecnicoAsignado != null && o.TecnicoAsignado.Empresa != null ? o.TecnicoAsignado.Empresa.Nombre : null,
                 VehiculoId = o.VehiculoId,
                 VehiculoCodigo = o.Vehiculo.Codigo,
                 VehiculoTipo = _db.TiposVehiculo.Where(t => t.Id == (int)o.Vehiculo.Tipo).Select(t => t.Nombre).FirstOrDefault() ?? o.Vehiculo.Tipo.ToString(),
@@ -517,8 +519,18 @@ public class OrdenTrabajoService
             .FirstOrDefaultAsync(o => o.Id == ordenId);
         if (orden == null) return false;
         if (orden.FechaAceptacion == null
-            || (orden.Estado != EstadoOrdenTrabajoEnum.Asignada && orden.Estado != EstadoOrdenTrabajoEnum.EnProceso && orden.Estado != EstadoOrdenTrabajoEnum.EsperandoRefacciones))
-            throw new InvalidOperationException("Solo se puede terminar una orden aceptada y en reparación.");
+            || (orden.Estado != EstadoOrdenTrabajoEnum.EnProceso && orden.Estado != EstadoOrdenTrabajoEnum.EsperandoRefacciones))
+            throw new InvalidOperationException("Solo se puede terminar una orden en reparación: primero inicia la reparación.");
+
+        // PDF 06-nov: no se termina hasta que todas las actividades estén completadas y con su evidencia
+        var faltantes = await _db.OrdenesTrabajoChecklistItems
+            .Where(i => i.OrdenTrabajoId == ordenId && (i.Estado != "Completado" || i.FotoUrl == null || i.FotoUrl == ""))
+            .Select(i => new { i.Estado, Nombre = i.ChecklistItem != null ? i.ChecklistItem.Pregunta : i.Notas })
+            .ToListAsync();
+        if (faltantes.Count > 0)
+            throw new InvalidOperationException(
+                $"No se puede terminar la reparación: {faltantes.Count} actividad(es) sin completar o sin evidencia ("
+                + string.Join(", ", faltantes.Take(3).Select(f => f.Nombre ?? "actividad")) + (faltantes.Count > 3 ? "…" : "") + ").");
 
         // No permitir completar si hay refacciones pendientes de entrega
         var refaccionesPendientes = await _db.SolicitudesRefaccion
@@ -571,18 +583,15 @@ public class OrdenTrabajoService
         aplicaGarantia = aplicaGarantia || orden.AplicaGarantia;
         orden.AplicaGarantia = aplicaGarantia;
 
-        // Si aplica garantía, el costo de las refacciones (y checklist) es 0 para fines de cobro
-        if (aplicaGarantia)
-        {
-            orden.CostoTotal = 0;
-            // Opcional: Podríamos dejar costoChecklist si corresponde a mano de obra, 
-            // pero el requerimiento dice "las refacciones no tendrán costo... no se mostrará en el cálculo de pagos"
-            // Asumiremos que el costo total de la orden será 0 en este caso.
-        }
-        else
-        {
-            orden.CostoTotal = costoChecklist + costoRefacciones;
-        }
+        // PDF 06-nov: el costo de la actividad ya incluye materiales y mano de obra; las refacciones solo son
+        // trazabilidad de inventario y no suman al costo (por eso la garantía ya no cambia el importe)
+        _ = costoRefacciones;
+        // Con la tarifa de la empresa del técnico (GEN-05), igual que la orden de pago
+        var empresaTecnico = orden.TecnicoAsignadoId == null ? null
+            : await _db.Users.Where(u => u.Id == orden.TecnicoAsignadoId).Select(u => u.EmpresaId).FirstOrDefaultAsync();
+        orden.CostoTotal = empresaTecnico == null
+            ? costoChecklist
+            : (await new OrdenPagoService(_db).ActividadesAsync(ordenId, empresaTecnico)).Sum(a => a.Subtotal);
 
         // La unidad sigue en el taller hasta que el técnico confirma su entrega en la zona de reparados;
         // vuelve a estar operativa cuando se valida la reparación (DISPONIBLE)

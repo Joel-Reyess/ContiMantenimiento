@@ -7,5 +7,7 @@ public enum EstadoInspeccionEnum
 {
     Pendiente = 0,
     Validado = 1,
-    Rechazado = 2
+    Rechazado = 2,
+    /// <summary>Cancelado en la etapa INSPECCIÓN (PDF 06-nov): ya no sigue el flujo</summary>
+    Cancelado = 3
 }

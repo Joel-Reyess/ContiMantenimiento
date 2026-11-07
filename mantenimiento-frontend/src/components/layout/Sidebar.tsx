@@ -1,7 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
-import { LayoutDashboard, Truck, AlertTriangle, Wrench, DollarSign, Settings, FileText, Package, X, ClipboardList, CheckSquare } from 'lucide-react';
+import { LayoutDashboard, Truck, AlertTriangle, Wrench, DollarSign, Settings, FileText, Package, X, ClipboardList, CheckSquare, Building2 } from 'lucide-react';
 
 interface NavItem {
   label: string;
@@ -15,7 +15,7 @@ interface NavItem {
 }
 
 // Módulos que se abren desde Configuración del sistema (requerimiento de navegación)
-const RUTAS_DE_CONFIGURACION = ['/usuarios', '/fallas-imagen', '/gestion-prefijos', '/archivo', '/asignacion-lideres'];
+const RUTAS_DE_CONFIGURACION = ['/usuarios', '/fallas-imagen', '/gestion-prefijos', '/archivo', '/asignacion-lideres', '/empresas-proveedoras'];
 
 const navItems: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Lider', 'Operador'] },
@@ -24,6 +24,7 @@ const navItems: NavItem[] = [
   { label: 'Inventario y Materiales', href: '/materiales', icon: <Package className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico'] },
   { label: 'Archivo Técnico (Planos)', href: '/archivo', icon: <FileText className="h-6 w-6" />, roles: ['Supervisor', 'Tecnico'], ocultarPara: ['SuperUsuario', 'Administrador'] },
   { label: 'Control de Pagos', href: '/pagos', icon: <DollarSign className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor'] },
+  { label: 'Empresas Proveedoras', href: '/empresas-proveedoras', icon: <Building2 className="h-6 w-6" />, roles: ['Supervisor'], ocultarPara: ['SuperUsuario', 'Administrador'] },
   { label: 'Flota de Contenedores', href: '/vehiculos', icon: <Truck className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Lider'] },
   { label: 'Reportes de Falla', href: '/reportes', icon: <AlertTriangle className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Operador', 'Lider'] },
   { label: 'Mis Órdenes', href: '/mis-ordenes', icon: <FileText className="h-6 w-6" />, roles: ['Tecnico'] },

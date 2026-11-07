@@ -30,6 +30,12 @@ public class VehicleImagePoint
     public int ImageFaultId { get; set; }
     public virtual ImageFault ImageFault { get; set; } = null!;
 
+    /// <summary>
+    /// Actividad del checklist del tipo de vehículo que genera este componente al reportarlo (PDF 06-nov: una sola
+    /// sección "componente + cantidad"). Null = se liga sola por nombre. Sin FK: si la actividad se borra, se vuelve a ligar por nombre.
+    /// </summary>
+    public int? ChecklistItemId { get; set; }
+
     public bool Active { get; set; } = true;
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

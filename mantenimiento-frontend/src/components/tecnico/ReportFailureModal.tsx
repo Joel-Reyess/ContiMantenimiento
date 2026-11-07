@@ -22,6 +22,7 @@ import type {
   VehicleImagePoint,
 } from '@/interfaces';
 import { getFullImageUrl } from '@/lib/utils';
+import { actividadDeComponente } from '@/lib/componentesActividades';
 import { InteractiveVehicleImage } from '@/components/vehiculos/InteractiveVehicleImage';
 
 interface ChecklistItem {
@@ -92,6 +93,8 @@ export function ReportFailureModal({
   const [vehicleImageUrl, setVehicleImageUrl] = useState<string | undefined>(undefined);
   const [vehicleImagePoints, setVehicleImagePoints] = useState<VehicleImagePoint[]>([]);
   const [selectedImageFaults, setSelectedImageFaults] = useState<ReportImageFaultCreateRequest[]>([]);
+  // Cantidad por componente (PDF 06-nov: componente + cantidad en una sola sección)
+  const [cantidadesComponente, setCantidadesComponente] = useState<Record<number, number>>({});
   const [loadingImagePoints, setLoadingImagePoints] = useState(false);
   const [showImageSelectorModal, setShowImageSelectorModal] = useState(false);
 
@@ -102,6 +105,13 @@ export function ReportFailureModal({
   orderedImagePoints.forEach((point, index) => {
     imagePointNumbers[point.id] = index + 1;
   });
+  // PDF 06-nov: cada componente trae su actividad; las actividades sin componente se eligen aparte en la misma sección
+  const actividadPorPunto: Record<number, ChecklistItem | undefined> = {};
+  orderedImagePoints.forEach((point) => {
+    actividadPorPunto[point.id] = actividadDeComponente(point, checklistItems);
+  });
+  const actividadesConComponente = new Set(Object.values(actividadPorPunto).filter(Boolean).map((a) => a!.id));
+  const otrasActividades = checklistItems.filter((i) => !actividadesConComponente.has(i.id));
 
   /** Orden activa o reporte pendiente para el vehículo: se pide confirmación antes de crear otro */
   const getDuplicate = (res: any): { tipo: 'orden' | 'reporte'; folio: string; fecha?: string } | null => {
@@ -219,6 +229,7 @@ const checklistReqSeqRef = useRef(0);
       }
       return [...prev, { imageFaultId: point.imageFaultId, vehicleImagePointId: point.id }];
     });
+    setCantidadesComponente((q) => (q[point.id] ? q : { ...q, [point.id]: 1 }));
   }, []);
 
   const applyTipoVehiculoContext = useCallback((tipoVehiculoId?: number | null) => {
@@ -407,6 +418,7 @@ const checklistReqSeqRef = useRef(0);
     setVehicleImageUrl(undefined);
     setVehicleImagePoints([]);
     setSelectedImageFaults([]);
+    setCantidadesComponente({});
     setShowImageSelectorModal(false);
     setError('');
     setFieldErrors({});
@@ -623,10 +635,14 @@ const checklistReqSeqRef = useRef(0);
     else if (!vehiculoSeleccionado) errores.vehiculo = `El vehículo ${code} no está registrado en la plataforma. Regístralo en Flota de Contenedores antes de generar el reporte de falla.`;
     if (!prioridad) errores.prioridad = 'Selecciona el nivel de prioridad.';
     if (!tipoMantenimiento) errores.tipoMantenimiento = 'Selecciona el tipo de mantenimiento.';
-    if (selectedChecklistItems.length === 0 && selectedImageFaults.length === 0) {
-      errores.trabajos = 'Selecciona al menos un componente con falla o un trabajo del checklist.';
-    } else if (selectedChecklistItems.some((id) => !checklistQuantities[id] || checklistQuantities[id] < 1)) {
-      errores.trabajos = 'Cada trabajo seleccionado debe tener una cantidad de 1 o más.';
+    const otrasElegidas = selectedChecklistItems.filter((id) => otrasActividades.some((a) => a.id === id));
+    if (otrasElegidas.length === 0 && selectedImageFaults.length === 0) {
+      errores.trabajos = 'Selecciona al menos un componente con falla.';
+    } else if (
+      selectedImageFaults.some((f) => (cantidadesComponente[f.vehicleImagePointId ?? 0] ?? 1) < 1) ||
+      otrasElegidas.some((id) => !checklistQuantities[id] || checklistQuantities[id] < 1)
+    ) {
+      errores.trabajos = 'Cada componente seleccionado debe tener una cantidad de 1 o más.';
     }
     setFieldErrors(errores);
     return Object.keys(errores).length === 0;
@@ -639,19 +655,29 @@ const checklistReqSeqRef = useRef(0);
   const armarReporte = () => {
     const code = (vehiculoSeleccionado?.meta?.codigo || codigoVehiculo).trim();
 
-    const trabajos = selectedChecklistItems.map((id) => ({
-      id,
-      pregunta: checklistItems.find((i) => i.id === id)?.pregunta ?? `Trabajo ${id}`,
-      cantidad: checklistQuantities[id] || undefined
-    }));
-
+    // PDF 06-nov: cada componente genera su actividad con la cantidad capturada; las actividades sin componente
+    // en la foto se eligen en la misma sección ("Otras actividades")
+    const porActividad = new Map<number, number>();
     const componentes = selectedImageFaults.map((fault) => {
       const point = vehicleImagePoints.find((p) => p.id === fault.vehicleImagePointId);
+      const actividad = point ? actividadDeComponente(point, checklistItems) : undefined;
+      const cantidad = point ? cantidadesComponente[point.id] ?? 1 : 1;
+      if (actividad) porActividad.set(actividad.id, (porActividad.get(actividad.id) ?? 0) + cantidad);
       return {
         numero: point ? imagePointNumbers[point.id] : undefined,
-        nombre: point?.imageFaultName || 'Componente'
+        nombre: point?.imageFaultName || 'Componente',
+        cantidad,
+        actividad: actividad?.pregunta
       };
     });
+    selectedChecklistItems
+      .filter((id) => otrasActividades.some((a) => a.id === id))
+      .forEach((id) => porActividad.set(id, (porActividad.get(id) ?? 0) + (checklistQuantities[id] || 1)));
+    const trabajos = Array.from(porActividad.entries()).map(([id, cantidad]) => ({
+      id,
+      pregunta: checklistItems.find((i) => i.id === id)?.pregunta ?? `Trabajo ${id}`,
+      cantidad
+    }));
 
     const itemsSummary = trabajos.map((t) => t.pregunta).join(', ');
     const visualNames = Array.from(new Set(componentes.filter((c) => c.nombre !== 'Componente').map((c) => c.nombre)));
@@ -662,7 +688,8 @@ const checklistReqSeqRef = useRef(0);
       codigoVehiculo: code,
       descripcion: descripcionCompuesta || 'Reporte de falla generado desde selector visual/checklist',
       prioridad: Prioridad[prioridad as keyof typeof Prioridad] || Prioridad.Media,
-      puedeOperar: prioridad !== 'Alta' && prioridad !== 'Urgente',
+      // PDF 06-nov: lo decide el tipo de mantenimiento; la prioridad solo es informativa
+      puedeOperar: tipoMantenimiento !== 'Correctivo',
       tipoMantenimiento,
       checklistItemIds: [], // Legacy
       checklistItems: trabajos.map((t) => ({ id: t.id, cantidad: t.cantidad })), // New structure
@@ -800,8 +827,8 @@ const checklistReqSeqRef = useRef(0);
               {area ? ` · ${area}` : ''}
             </>
           )}
-          {fila('Tipo de mantenimiento', tipoMantenimiento)}
-          {fila('Prioridad', `${prioridad} · ${reporteData.puedeOperar ? 'Puede operar' : 'No puede operar'}`)}
+          {fila('Tipo de mantenimiento', `${tipoMantenimiento} · ${reporteData.puedeOperar ? 'El vehículo puede continuar operando' : 'El vehículo no puede operar'}`)}
+          {fila('Prioridad', `${prioridad} (informativa para mantenimiento)`)}
           {fila('Descripción de la falla', reporteData.descripcion)}
         </div>
 
@@ -814,7 +841,7 @@ const checklistReqSeqRef = useRef(0);
               {componentes.map((c, i) => (
                 <li key={i} className="rounded-full border border-blue-200 bg-blue-50 text-sm text-blue-900" style={{ padding: '4px 12px' }}>
                   {c.numero ? `#${c.numero} ` : ''}
-                  {c.nombre}
+                  {c.nombre} · Cant: {c.cantidad}
                 </li>
               ))}
             </ul>
@@ -822,7 +849,7 @@ const checklistReqSeqRef = useRef(0);
         </div>
 
         <div className="flex flex-col gap-2">
-          <p className="text-sm font-semibold text-gray-700">Actividades / trabajos seleccionados ({trabajos.length})</p>
+          <p className="text-sm font-semibold text-gray-700">Actividades que se generan en la orden ({trabajos.length})</p>
           {trabajos.length === 0 ? (
             <p className="text-sm text-gray-500">Ninguno</p>
           ) : (
@@ -1002,6 +1029,9 @@ const checklistReqSeqRef = useRef(0);
                                 </span>
                                 <span className="flex-1 text-sm leading-5">
                                   {point.imageFaultName || `Componente #${point.imageFaultId}`}
+                                  {point.imageFaultDescription && (
+                                    <span className="block text-xs text-gray-500">{point.imageFaultDescription}</span>
+                                  )}
                                 </span>
                                 {checked && (
                                   <Check className="h-5 w-5 shrink-0 text-continental-blue-dark" strokeWidth={3} />
@@ -1148,6 +1178,9 @@ const checklistReqSeqRef = useRef(0);
                     <option value="Media">Media</option>
                     <option value="Baja">Baja</option>
                   </select>
+                  <p className="mt-1 text-xs text-gray-500" style={{ marginBottom: 0 }}>
+                    Informativa para el área de mantenimiento; no cambia la disponibilidad del vehículo.
+                  </p>
                   {errorCampo('prioridad')}
                 </div>
 
@@ -1173,56 +1206,159 @@ const checklistReqSeqRef = useRef(0);
                       <option value="Preventivo">Preventivo</option>
                       <option value="Correctivo">Correctivo</option>
                     </select>
+                    {tipoMantenimiento && (
+                      <p className="mt-1 text-xs text-gray-600" style={{ marginBottom: 0 }} data-testid="aviso-operacion">
+                        {tipoMantenimiento === 'Correctivo' ? 'Correctivo: el vehículo no puede operar.' : 'Preventivo: el vehículo puede continuar operando.'}
+                      </p>
+                    )}
                     {errorCampo('tipoMantenimiento')}
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">
-                    Componentes con falla
-                  </label>
-                  <div className="rounded-xl border border-gray-300 bg-white p-4 space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm text-gray-600">
-                        {tipoVehiculoIdSeleccionado
-                          ? `Tipo detectado: ${tipoVehiculoNombreSeleccionado || `Tipo ${tipoVehiculoIdSeleccionado}`}`
-                          : 'Selecciona un vehiculo para habilitar el selector de componentes.'}
-                      </p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={!tipoVehiculoIdSeleccionado}
-                        onClick={() => {
-                          setShowImageSelectorModal(true);
-                          if (tipoVehiculoIdSeleccionado) {
-                            void loadVehicleImagePointsByTipo(tipoVehiculoIdSeleccionado);
-                          }
-                        }}
-                      >
-                        Seleccionar componentes
-                      </Button>
-                    </div>
-
-                    <p className="text-xs text-gray-500">
-                      Seleccionadas: {selectedImageFaults.length}
-                    </p>
-
-                    {selectedImageFaults.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {Array.from(
-                          new Set(
-                            selectedImageFaults
-                              .map((fault) => vehicleImagePoints.find((p) => p.id === fault.vehicleImagePointId)?.imageFaultName)
-                              .filter(Boolean) as string[]
-                          )
-                        ).map((name) => (
-                          <span key={name} className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-medium text-yellow-800">
-                            {name}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                <div className="space-y-2" data-testid="componentes-falla">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="block text-sm font-medium text-gray-700">Componentes con falla *</label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={!tipoVehiculoIdSeleccionado || orderedImagePoints.length === 0}
+                      onClick={() => {
+                        setShowImageSelectorModal(true);
+                        if (tipoVehiculoIdSeleccionado) void loadVehicleImagePointsByTipo(tipoVehiculoIdSeleccionado);
+                      }}
+                    >
+                      Ver en la foto
+                    </Button>
                   </div>
+                  <p className="text-xs text-gray-500" style={{ marginBottom: 0 }}>
+                    {tipoVehiculoIdSeleccionado
+                      ? `Tipo detectado: ${tipoVehiculoNombreSeleccionado || `Tipo ${tipoVehiculoIdSeleccionado}`}. Marca cada componente con falla y su cantidad; la actividad se agrega sola a la orden de trabajo.`
+                      : 'Selecciona el vehículo para ver sus componentes.'}
+                  </p>
+                  {loadingChecklist || loadingImagePoints ? (
+                    <div className="flex items-center justify-center p-4">
+                      <Spinner size="sm" />
+                      <span className="ml-2 text-sm text-gray-600">Cargando componentes...</span>
+                    </div>
+                  ) : orderedImagePoints.length > 0 || otrasActividades.length > 0 ? (
+                    <div
+                      className="max-h-80 overflow-y-auto border border-gray-300 rounded-xl p-3 space-y-2 shadow-sm"
+                      style={bordeError('trabajos')}
+                    >
+                      {orderedImagePoints.map((point) => {
+                        const checked = selectedImageFaults.some((f) => (f.vehicleImagePointId || 0) === point.id);
+                        const actividad = actividadPorPunto[point.id];
+                        return (
+                          <div
+                            key={`p-${point.id}`}
+                            data-testid={`componente-${point.id}`}
+                            className={`flex flex-row items-center justify-between gap-2 p-2 rounded-lg border ${checked ? 'border-yellow-300 bg-yellow-50/60' : 'border-gray-200'}`}
+                          >
+                            <label className="flex flex-1 min-w-0 cursor-pointer items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => handleToggleImagePoint(point)}
+                                className="h-4 w-4 shrink-0 rounded min-h-0 p-0 shadow-none cursor-pointer"
+                                style={{ width: '1rem', height: '1rem' }}
+                                aria-label={point.imageFaultName || `Componente ${imagePointNumbers[point.id]}`}
+                              />
+                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-red-600 text-xs font-bold tabular-nums text-white">
+                                {imagePointNumbers[point.id]}
+                              </span>
+                              <span className="min-w-0 text-sm text-gray-800">
+                                <span className="block font-medium uppercase">{point.imageFaultName || `Componente #${point.imageFaultId}`}</span>
+                                {point.imageFaultDescription && (
+                                  <span className="block text-xs text-gray-500">{point.imageFaultDescription}</span>
+                                )}
+                                {checked && !actividad && (
+                                  <span className="block text-xs" style={{ color: '#b45309' }}>
+                                    Sin actividad ligada en el checklist: se reporta el componente, sin costo de actividad.
+                                  </span>
+                                )}
+                              </span>
+                            </label>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className={`text-xs font-medium ${checked ? 'text-gray-700' : 'text-gray-400'}`}>Cant:</span>
+                              <input
+                                type="number"
+                                min="1"
+                                disabled={!checked}
+                                aria-label={`Cantidad de ${point.imageFaultName || 'componente'}`}
+                                className={`w-14 p-1 text-sm border rounded focus:outline-none text-center ${checked ? 'border-gray-300 bg-white' : 'border-gray-200 bg-gray-100 text-gray-400'}`}
+                                value={checked ? cantidadesComponente[point.id] ?? 1 : ''}
+                                onChange={(e) => {
+                                  const val = e.target.value ? Number(e.target.value) : 0;
+                                  setCantidadesComponente((prev) => ({ ...prev, [point.id]: val }));
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {otrasActividades.length > 0 && (
+                        <>
+                          {orderedImagePoints.length > 0 && (
+                            <p className="pt-2 text-xs font-semibold uppercase tracking-wide text-gray-500" style={{ marginBottom: 0 }}>
+                              Otras actividades del checklist
+                            </p>
+                          )}
+                          {otrasActividades.map((item) => {
+                            const isSelected = selectedChecklistItems.includes(item.id);
+                            const toggleItem = () => {
+                              const id = item.id;
+                              setFieldErrors((f) => ({ ...f, trabajos: undefined }));
+                              setSelectedChecklistItems((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+                              setChecklistQuantities((q) => (q[id] ? q : { ...q, [id]: 1 }));
+                            };
+                            return (
+                              <div
+                                key={`a-${item.id}`}
+                                data-testid={`actividad-${item.id}`}
+                                className={`flex flex-row items-center justify-between gap-2 p-2 rounded-lg border ${isSelected ? 'border-yellow-300 bg-yellow-50/60' : 'border-gray-200'}`}
+                              >
+                                <label className="flex flex-1 min-w-0 cursor-pointer items-center gap-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={toggleItem}
+                                    className="h-4 w-4 shrink-0 rounded min-h-0 p-0 shadow-none cursor-pointer"
+                                    style={{ width: '1rem', height: '1rem' }}
+                                    aria-label={item.pregunta}
+                                  />
+                                  <span className="text-sm text-gray-700">{item.pregunta}</span>
+                                </label>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span className={`text-xs font-medium ${isSelected ? 'text-gray-700' : 'text-gray-400'}`}>Cant:</span>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    disabled={!isSelected}
+                                    aria-label={`Cantidad de ${item.pregunta}`}
+                                    className={`w-14 p-1 text-sm border rounded focus:outline-none text-center ${isSelected ? 'border-gray-300 bg-white' : 'border-gray-200 bg-gray-100 text-gray-400'}`}
+                                    value={isSelected ? checklistQuantities[item.id] || '' : ''}
+                                    onChange={(e) => {
+                                      const val = e.target.value ? Number(e.target.value) : 0;
+                                      setChecklistQuantities((prev) => ({ ...prev, [item.id]: val }));
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500 italic">
+                      {vehiculoSeleccionado || codigoVehiculo.trim()
+                        ? 'No hay componentes ni checklist configurados para este tipo de vehículo.'
+                        : 'Selecciona el vehículo para ver sus componentes.'}
+                    </p>
+                  )}
+                  {errorCampo('trabajos')}
                 </div>
 
                 <div>
@@ -1292,82 +1428,6 @@ const checklistReqSeqRef = useRef(0);
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700">
-                    items del checklist a realizar
-                  </label>
-                  {loadingChecklist ? (
-                    <div className="flex items-center justify-center p-4">
-                      <Spinner size="sm" />
-                      <span className="ml-2 text-sm text-gray-600">Cargando checklist...</span>
-                    </div>
-                  ) : checklistItems.length > 0 ? (
-                    <div className="max-h-64 overflow-y-auto border border-gray-300 rounded-xl p-4 space-y-2 shadow-sm">
-                      {checklistItems.map((item) => {
-                        const isSelected = selectedChecklistItems.includes(item.id);
-                        const toggleItem = () => {
-                          const id = item.id;
-                          setFieldErrors((f) => ({ ...f, trabajos: undefined }));
-                          setSelectedChecklistItems((prev) => {
-                            const isAdded = !prev.includes(id);
-                            if (isAdded && !checklistQuantities[id]) {
-                                setChecklistQuantities(q => ({ ...q, [id]: 1 }));
-                            }
-                            return isAdded ? [...prev, id] : prev.filter((x) => x !== id);
-                          });
-                        };
-
-                        return (
-                          <div
-                            key={item.id}
-                            className={`flex flex-row items-center justify-between gap-2 p-2 hover:bg-gray-50 rounded-lg border ${isSelected ? 'border-yellow-200 bg-yellow-50/50' : 'border-gray-200'}`}
-                          >
-                            <div 
-                              onClick={toggleItem}
-                              className="flex flex-row items-center gap-2 cursor-pointer flex-1 min-w-0"
-                            >
-                              <div className="relative flex items-center justify-center shrink-0">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={toggleItem}
-                                  className="h-4 w-4 text-yellow-600 border-gray-400 focus:ring-yellow-500 rounded min-h-0 p-0 shadow-none cursor-pointer"
-                                  style={{ width: '1rem', height: '1rem' }}
-                                  onClick={(e) => e.stopPropagation()}
-                                />
-                              </div>
-                              <span className="text-sm text-gray-700 truncate">{item.pregunta}</span>
-                            </div>
-                            
-                            <div className="flex items-center gap-1.5 shrink-0">
-                                <span className={`text-xs font-medium whitespace-nowrap ${isSelected ? 'text-gray-700' : 'text-gray-400'}`}>Cant:</span>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  disabled={!isSelected}
-                                  className={`w-14 p-1 text-sm border rounded focus:outline-none text-center ${isSelected ? 'border-gray-300 bg-white focus:border-yellow-500' : 'border-gray-200 bg-gray-100 text-gray-400'}`}
-                                  value={checklistQuantities[item.id] || ''}
-                                  placeholder={isSelected ? "1" : ""}
-                                  onChange={(e) => {
-                                    const val = e.target.value ? Number(e.target.value) : undefined;
-                                    setChecklistQuantities(prev => ({ ...prev, [item.id]: val || 0 }));
-                                  }}
-                                  onClick={(e) => e.stopPropagation()}
-                                />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-500 italic">
-                      {vehiculoSeleccionado || codigoVehiculo.trim()
-                        ? 'No hay checklist configurado para este tipo de vehículo.'
-                        : 'Selecciona el vehículo para ver los trabajos de su checklist.'}
-                    </p>
-                  )}
-                  {errorCampo('trabajos')}
-                </div>
               </div>
 
               {(Object.values(fieldErrors).some(Boolean) || error) && (

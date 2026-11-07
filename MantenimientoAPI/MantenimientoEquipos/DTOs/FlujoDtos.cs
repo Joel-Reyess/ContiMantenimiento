@@ -104,6 +104,7 @@ public class FlujoDto
     public string? ReporteDescripcion { get; set; }
     public PrioridadEnum? ReportePrioridad { get; set; }
     public bool? ReportePuedeOperar { get; set; }
+    public string? ReporteTipoMantenimiento { get; set; }
     /// <summary>Último rechazo (inspección o validación) para que quien corrige vea qué se pidió</summary>
     public HistorialFlujoDto? UltimoRechazo { get; set; }
     public List<HistorialFlujoDto> Historial { get; set; } = new();
@@ -193,6 +194,9 @@ public class CorregirReporteRequest
     [MaxLength(1000)]
     public string? Descripcion { get; set; }
     public PrioridadEnum? Prioridad { get; set; }
+    /// <summary>Correctivo o Preventivo; decide si la unidad puede operar (PuedeOperar ya no se toma del cliente)</summary>
+    [MaxLength(30)]
+    public string? TipoMantenimiento { get; set; }
     public bool? PuedeOperar { get; set; }
     /// <summary>null = no cambia los trabajos; lista = los reemplaza</summary>
     public List<ItemReporteRequest>? Items { get; set; }
@@ -204,4 +208,11 @@ public class HallazgosRequest
 {
     [MinLength(1)]
     public List<ItemReporteRequest> Items { get; set; } = new();
+}
+
+/// <summary>Cancelar un reporte en la etapa INSPECCIÓN (PDF 06-nov)</summary>
+public class CancelarReporteRequest
+{
+    [MaxLength(500)]
+    public string? Motivo { get; set; }
 }

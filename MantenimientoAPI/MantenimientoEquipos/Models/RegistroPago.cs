@@ -81,4 +81,40 @@ public class RegistroPago
 
     public int? OrdenCompraId { get; set; }
     public virtual OrdenCompra? OrdenCompra { get; set; }
+
+    /// <summary>
+    /// Empresa del técnico al generarse la orden de pago (PDF 06-nov, PAG-03): sus tarifas fijaron los importes.
+    /// Se guarda aquí para que cambiar al técnico de empresa no mueva los pagos ya generados.
+    /// </summary>
+    public int? EmpresaId { get; set; }
+    public virtual Empresa? Empresa { get; set; }
+
+    /// <summary>Actividades con sus importes tal como se cobraron (las órdenes de pago anteriores no las tienen)</summary>
+    public virtual ICollection<RegistroPagoActividad> Actividades { get; set; } = new List<RegistroPagoActividad>();
+}
+
+/// <summary>
+/// Renglón de actividad de la orden de pago, fijo desde que se generó: aunque después cambien las tarifas, el detalle
+/// y la impresión siguen cuadrando con el total guardado.
+/// </summary>
+public class RegistroPagoActividad
+{
+    [Key]
+    public int Id { get; set; }
+
+    public int RegistroPagoId { get; set; }
+    public virtual RegistroPago RegistroPago { get; set; } = null!;
+
+    /// <summary>Actividad del checklist de la que salió (sin llave foránea: es una copia)</summary>
+    public int? ChecklistItemId { get; set; }
+
+    public int Orden { get; set; }
+
+    [Required]
+    [MaxLength(200)]
+    public required string Descripcion { get; set; }
+
+    public decimal Cantidad { get; set; }
+    public decimal CostoUnitario { get; set; }
+    public decimal Subtotal { get; set; }
 }

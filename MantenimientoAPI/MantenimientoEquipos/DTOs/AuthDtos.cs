@@ -44,6 +44,9 @@ public class RegisterRequest
     public int? AreaId { get; set; }
 
     public List<int> RoleIds { get; set; } = new();
+
+    /// <summary>Empresa proveedora (solo para técnicos, PDF 06-nov USR-02)</summary>
+    public int? EmpresaId { get; set; }
 }
 
 public class ChangePasswordRequest
@@ -80,6 +83,8 @@ public class UserUpdateRequest
     public string? Telefono { get; set; }
     public int? AreaId { get; set; }
     public int RolId { get; set; }
+    /// <summary>Empresa proveedora (solo para técnicos; null = sin empresa, usa la tarifa base)</summary>
+    public int? EmpresaId { get; set; }
 
     [MinLength(6, ErrorMessage = "La contrasena debe tener al menos 6 caracteres")]
     public string? Password { get; set; }

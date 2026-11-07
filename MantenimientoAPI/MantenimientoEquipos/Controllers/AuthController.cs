@@ -18,11 +18,13 @@ public class AuthController : ControllerBase
 {
     private readonly MantenimientoDbContext _db;
     private readonly IConfiguration _config;
+    private readonly Services.EmpresasService _empresas;
 
-    public AuthController(MantenimientoDbContext db, IConfiguration config)
+    public AuthController(MantenimientoDbContext db, IConfiguration config, Services.EmpresasService empresas)
     {
         _db = db;
         _config = config;
+        _empresas = empresas;
     }
 
     [HttpPost("login")]
@@ -172,6 +174,17 @@ public class AuthController : ControllerBase
         if (roles.Count != request.RoleIds.Count)
             return BadRequest(ApiResponse<string>.Error("Uno o más roles no existen"));
 
+        // El técnico pertenece a una empresa proveedora: de ahí sale el tarifario de sus órdenes de pago
+        Empresa? empresa;
+        try
+        {
+            empresa = await _empresas.EmpresaParaUsuarioAsync(request.EmpresaId, roles.Any(r => r.Nombre == "Tecnico"), null);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponse<string>.Error(ex.Message));
+        }
+
         var salt = PasswordHasher.GenerateSalt();
         var hash = PasswordHasher.HashPassword(request.Password, salt);
 
@@ -186,6 +199,9 @@ public class AuthController : ControllerBase
             Telefono = request.Telefono,
             AreaId = request.AreaId,
             Roles = roles,
+            EmpresaId = empresa?.Id,
+            // Copia del nombre en el campo de texto anterior (lo siguen leyendo las exportaciones)
+            EmpresaExterna = empresa?.Nombre,
             CreatedAt = DateTime.UtcNow
         };
 
