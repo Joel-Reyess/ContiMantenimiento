@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Lock, Package, Plus, Save, Trash2 } from 'lucide-react';
-import { Alert, AlertDescription, Badge, Button, Input, Select, useToast } from '@/components/ui';
+import { Alert, AlertDescription, Badge, Button, Card, Input, Select, useToast } from '@/components/ui';
 import { consumiblesService, type Consumible } from '@/services/consumiblesService';
 import { flujoService, type MaterialOrden, type MaterialesOrden as Materiales } from '@/services/flujoService';
-import { formatCurrency } from '@/lib/utils';
 
 /** Mensaje del documento (PDF 29-oct, 5.1) cuando no hay existencia suficiente */
 const SIN_EXISTENCIA =
@@ -20,14 +19,17 @@ interface Props {
   ordenId: number;
   /** Cambia cuando cambia la orden (estado, técnico): vuelve a cargar */
   version?: string | number;
+  /** El técnico solo ve la sección mientras puede capturar (la consulta es del Gerente de Mantenimiento) */
+  soloCaptura?: boolean;
 }
 
 /**
  * Refacciones y consumibles usados en la orden (PDF 29-oct, 5.1). En la etapa TALLER el técnico los elige con
- * su cantidad (nunca más de lo que hay); se descuentan del inventario al terminar la reparación y pasan a la
- * orden de pago. El Líder y el Gerente los consultan con sus costos.
+ * su cantidad (nunca más de lo que hay) y se descuentan del inventario al terminar la reparación.
+ * PDF 06-nov: son solo trazabilidad de inventario: sin costos ni totales (el costo de la actividad ya incluye
+ * materiales y mano de obra). La consulta es para el Gerente de Mantenimiento.
  */
-export function MaterialesOrden({ ordenId, version }: Props) {
+export function MaterialesOrden({ ordenId, version, soloCaptura = false }: Props) {
   const toast = useToast();
   const [datos, setDatos] = useState<Materiales | null>(null);
   const [inventario, setInventario] = useState<Consumible[]>([]);
@@ -75,7 +77,8 @@ export function MaterialesOrden({ ordenId, version }: Props) {
     [inventario, pendientes]
   );
 
-  if (!datos) return error ? <p className="text-sm text-red-600">{error}</p> : null;
+  if (!datos) return error && !soloCaptura ? <Card className="p-6"><p className="text-sm text-red-600">{error}</p></Card> : null;
+  if (soloCaptura && !datos.editable) return null;
 
   const excede = (p: Pendiente) => {
     const c = porId.get(p.consumibleId);
@@ -111,7 +114,7 @@ export function MaterialesOrden({ ordenId, version }: Props) {
   };
 
   const descontados = datos.items.filter((i) => i.descontado);
-  const tabla = (titulo: string, filas: MaterialOrden[], total: number) =>
+  const tabla = (titulo: string, filas: MaterialOrden[]) =>
     filas.length > 0 && (
       <div>
         <p className="mb-1 text-sm font-semibold text-continental-black">{titulo}</p>
@@ -120,31 +123,25 @@ export function MaterialesOrden({ ordenId, version }: Props) {
             <thead className="bg-continental-gray-4/50 text-left text-xs uppercase text-continental-gray-1">
               <tr>
                 <th className="px-3 py-2">Material</th>
+                <th className="px-3 py-2">Código</th>
                 <th className="px-3 py-2 text-right">Cantidad</th>
-                <th className="px-3 py-2 text-right">Costo unitario</th>
-                <th className="px-3 py-2 text-right">Subtotal</th>
               </tr>
             </thead>
             <tbody>
               {filas.map((m) => (
                 <tr key={m.id} className="border-t border-continental-gray-3/60">
                   <td className="px-3 py-2">
-                    {m.nombre} <span className="text-xs text-continental-gray-1">({m.codigo})</span>
+                    {m.nombre}
                     {m.descontado ? (
                       <Badge variant="secondary" className="ml-2">Descontado</Badge>
                     ) : (
                       <Badge variant="outline" className="ml-2">Pendiente</Badge>
                     )}
                   </td>
+                  <td className="px-3 py-2">{m.codigo}</td>
                   <td className="px-3 py-2 text-right">{m.cantidad} {m.unidad}</td>
-                  <td className="px-3 py-2 text-right">{formatCurrency(m.costoUnitario)}</td>
-                  <td className="px-3 py-2 text-right">{formatCurrency(m.subtotal)}</td>
                 </tr>
               ))}
-              <tr className="border-t border-continental-gray-3 font-semibold">
-                <td className="px-3 py-2" colSpan={3}>Total</td>
-                <td className="px-3 py-2 text-right">{formatCurrency(total)}</td>
-              </tr>
             </tbody>
           </table>
         </div>
@@ -153,24 +150,24 @@ export function MaterialesOrden({ ordenId, version }: Props) {
 
   const items = datos.editable ? descontados : datos.items;
   return (
+    <Card className="p-6">
     <div className="space-y-4" data-testid="materiales-orden">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="flex items-center gap-2 text-lg font-semibold text-continental-black">
           <Package className="h-5 w-5" /> Refacciones y consumibles utilizados
         </h3>
-        {datos.aplicaGarantia && <Badge variant="secondary">Garantía: refacciones sin costo en la orden de pago</Badge>}
       </div>
 
       {datos.items.length === 0 && !datos.editable && (
         <p className="text-sm text-continental-gray-2">No se registraron materiales en esta orden.</p>
       )}
-      {tabla('Refacciones utilizadas', items.filter((i) => i.esRefaccion), items.filter((i) => i.esRefaccion).reduce((a, i) => a + i.subtotal, 0))}
-      {tabla('Consumibles utilizados', items.filter((i) => !i.esRefaccion), items.filter((i) => !i.esRefaccion).reduce((a, i) => a + i.subtotal, 0))}
+      {tabla('Refacciones utilizadas', items.filter((i) => i.esRefaccion))}
+      {tabla('Consumibles utilizados', items.filter((i) => !i.esRefaccion))}
 
       {datos.editable ? (
         <div className="space-y-3 rounded-xl border border-dashed border-continental-gray-3 p-4" data-testid="captura-materiales">
           <p className="text-sm text-continental-gray-1">
-            Elige lo que usaste en la reparación. Se descuenta del inventario al terminar la reparación y pasa a la orden de pago.
+            Elige lo que usaste en la reparación. Se descuenta del inventario al terminar la reparación.
           </p>
           {pendientes.map((p, idx) => {
             const c = porId.get(p.consumibleId);
@@ -181,7 +178,7 @@ export function MaterialesOrden({ ordenId, version }: Props) {
                     {c ? `${c.nombre} (${c.codigo})` : `Material #${p.consumibleId}`}
                   </p>
                   <p className="text-xs text-continental-gray-1" style={{ marginBottom: 0 }}>
-                    {c ? `${esRefaccion(c.categoria) ? 'Refacción' : 'Consumible'} · hay ${c.stockActual} ${c.unidad} · ${formatCurrency(c.costoUnitario ?? 0)} c/u` : ''}
+                    {c ? `${esRefaccion(c.categoria) ? 'Refacción' : 'Consumible'} · hay ${c.stockActual} ${c.unidad}` : ''}
                   </p>
                 </div>
                 <div className="w-32">
@@ -242,5 +239,6 @@ export function MaterialesOrden({ ordenId, version }: Props) {
         )
       )}
     </div>
+    </Card>
   );
 }

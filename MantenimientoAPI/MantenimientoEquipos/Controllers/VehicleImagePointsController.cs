@@ -51,6 +51,8 @@ public class VehicleImagePointsController : ControllerBase
                 RadiusPct = p.RadiusPct,
                 ImageFaultId = p.ImageFaultId,
                 ImageFaultName = p.ImageFault.Name,
+                ImageFaultDescription = p.ImageFault.Description,
+                ChecklistItemId = p.ChecklistItemId,
                 Active = p.Active
             })
             .ToListAsync();
@@ -83,6 +85,8 @@ public class VehicleImagePointsController : ControllerBase
             RadiusPct = vehicleImagePoint.RadiusPct,
             ImageFaultId = vehicleImagePoint.ImageFaultId,
             ImageFaultName = vehicleImagePoint.ImageFault.Name,
+            ImageFaultDescription = vehicleImagePoint.ImageFault.Description,
+            ChecklistItemId = vehicleImagePoint.ChecklistItemId,
             Active = vehicleImagePoint.Active
         };
 
@@ -140,6 +144,8 @@ public class VehicleImagePointsController : ControllerBase
             RadiusPct = vehicleImagePoint.RadiusPct,
             ImageFaultId = vehicleImagePoint.ImageFaultId,
             ImageFaultName = imageFault.Name,
+            ImageFaultDescription = imageFault.Description,
+            ChecklistItemId = vehicleImagePoint.ChecklistItemId,
             Active = vehicleImagePoint.Active
         };
 
@@ -204,10 +210,30 @@ public class VehicleImagePointsController : ControllerBase
             RadiusPct = existingPoint.RadiusPct,
             ImageFaultId = existingPoint.ImageFaultId,
             ImageFaultName = imageFault.Name,
+            ImageFaultDescription = imageFault.Description,
+            ChecklistItemId = existingPoint.ChecklistItemId,
             Active = existingPoint.Active
         };
 
         return Ok(ApiResponse<VehicleImagePointDto>.Ok(dto, "Punto de imagen actualizado"));
+    }
+
+    /// <summary>
+    /// Liga el componente con la actividad del checklist que genera al reportarlo (PDF 06-nov). null = automática por nombre.
+    /// Va aparte de la edición del punto para que mover el punto no borre la liga.
+    /// </summary>
+    [HttpPut("{id:int}/actividad")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
+    public async Task<IActionResult> LigarActividad(int id, [FromBody] VehicleImagePointActividadDto body)
+    {
+        var punto = await _db.VehicleImagePoints.FindAsync(id);
+        if (punto == null) return NotFound(ApiResponse<string>.Error("Punto de imagen no encontrado"));
+        if (body.ChecklistItemId is > 0 && !await _db.ChecklistItems.AnyAsync(i => i.Id == body.ChecklistItemId && i.Activo))
+            return BadRequest(ApiResponse<string>.Error("La actividad elegida ya no existe en el checklist; actualiza la pantalla."));
+        punto.ChecklistItemId = body.ChecklistItemId is > 0 ? body.ChecklistItemId : null;
+        punto.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return Ok(ApiResponse<int?>.Ok(punto.ChecklistItemId, punto.ChecklistItemId == null ? "El componente se ligará por nombre" : "Actividad ligada al componente"));
     }
 
     // DELETE: api/VehicleImagePoints/5

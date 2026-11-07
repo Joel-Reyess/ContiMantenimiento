@@ -248,7 +248,8 @@ export function ReportarReparacionPage() {
       codigoVehiculo: code,
       descripcion: buildDescripcion(),
       prioridad: prioridad as ReporteFallaCreateRequest['prioridad'],
-      puedeOperar: prioridad !== Prioridad.Alta && prioridad !== Prioridad.Urgente,
+      // PDF 06-nov: Correctivo = el vehículo no puede operar (la prioridad solo es informativa)
+      puedeOperar: false,
       tipoMantenimiento: 'Correctivo',
       checklistItemIds: [],
       checklistItems: [],
@@ -268,11 +269,10 @@ export function ReportarReparacionPage() {
               {selectedTipo?.nombre ? ` · ${selectedTipo.nombre}` : ''}
             </p>
             <p>
-              <strong>Tipo de mantenimiento:</strong> Correctivo
+              <strong>Tipo de mantenimiento:</strong> Correctivo · el vehículo no puede operar
             </p>
             <p>
-              <strong>Prioridad:</strong> {NOMBRE_PRIORIDAD[Number(prioridad)] ?? prioridad} ·{' '}
-              {reporteData.puedeOperar ? 'Puede operar' : 'No puede operar'}
+              <strong>Prioridad:</strong> {NOMBRE_PRIORIDAD[Number(prioridad)] ?? prioridad} (informativa)
             </p>
             <div>
               <strong>Actividades ({selectedActivities.length}):</strong>

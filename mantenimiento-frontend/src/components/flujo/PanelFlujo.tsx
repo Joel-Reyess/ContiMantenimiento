@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CheckCircle, ClipboardCheck, History, Loader2, PlayCircle, Plus, Search, Truck, XCircle, Edit3, Info } from 'lucide-react';
+import { Ban, CheckCircle, ClipboardCheck, History, Loader2, PlayCircle, Plus, Search, Truck, XCircle, Edit3, Info } from 'lucide-react';
 import { Button, Modal, ModalFooter, Textarea, useConfirm, useToast } from '@/components/ui';
 import { formatDateTime } from '@/lib/utils';
 import { PrioridadNombres } from '@/interfaces/Api.interface';
@@ -27,15 +27,35 @@ interface PanelFlujoProps {
   onCambio?: () => void;
   /** Cambia cuando la pantalla recarga, para volver a consultar el flujo */
   version?: string | number;
+  /** Por qué todavía no se puede terminar la reparación (PDF 06-nov: checklist completo con evidencias) */
+  bloqueoTerminar?: string;
 }
 
-type Ventana = null | 'iniciarReparacion' | 'validarReporte' | 'rechazarReporte' | 'corregirReporte' | 'agregarHallazgo' | 'validarReparacion' | 'rechazarReparacion';
+type Ventana = null | 'rechazarReporte' | 'cancelarReporte' | 'corregirReporte' | 'agregarHallazgo' | 'rechazarReparacion';
+
+/** Historial con los nombres del documento (PDF 06-nov): "INSPECCIÓN – Rechazada", "TALLER – Hallazgo adicional"... */
+const ETAPA_HISTORIAL: Record<string, string> = {
+  REPORTE: 'INSPECCIÓN',
+  INSPECCION: 'INSPECCIÓN',
+  TALLER: 'TALLER',
+  VALIDACION: 'VALIDACIÓN FINAL',
+  ORDEN: 'ORDEN DE TRABAJO'
+};
+const ACCION_HISTORIAL: Record<string, string> = {
+  Rechazado: 'Rechazada',
+  Cancelado: 'Cancelado',
+  Cancelada: 'Cancelada',
+  Corregido: 'Corrección del reporte',
+  Reenviado: 'Corregido y reenviado',
+  Hallazgo: 'Hallazgo adicional',
+  Validado: 'Validada con observaciones'
+};
 
 /**
  * Seguimiento del flujo de 7 etapas con las acciones que le tocan al usuario en este momento
  * (PDF 23-oct-2026). Se usa en el detalle de la orden y en el del reporte.
  */
-export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version }: PanelFlujoProps) {
+export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version, bloqueoTerminar }: PanelFlujoProps) {
   const toast = useToast();
   const { confirmar } = useConfirm();
   const [flujo, setFlujo] = useState<Flujo | null>(null);
@@ -53,7 +73,7 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version }
   const [elegidos, setElegidos] = useState<Record<number, number>>({});
   const [descripcion, setDescripcion] = useState('');
   const [prioridad, setPrioridad] = useState<number>(2);
-  const [puedeOperar, setPuedeOperar] = useState(false);
+  const [tipoMantenimiento, setTipoMantenimiento] = useState('Correctivo');
 
   const cargar = useCallback(async () => {
     const res = ordenId ? await flujoService.deOrden(ordenId) : reporteId ? await flujoService.deReporte(reporteId) : null;
@@ -111,7 +131,7 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version }
     if (v === 'corregirReporte') {
       setDescripcion(flujo.reporteDescripcion || '');
       setPrioridad(flujo.reportePrioridad || 2);
-      setPuedeOperar(Boolean(flujo.reportePuedeOperar));
+      setTipoMantenimiento(flujo.reporteTipoMantenimiento === 'Preventivo' ? 'Preventivo' : 'Correctivo');
       const actuales: Record<number, number> = {};
       flujo.items.filter((i) => i.tipo === 'checklist' && i.checklistItemId).forEach((i) => { actuales[i.checklistItemId!] = Number(i.cantidad) || 1; });
       setElegidos(actuales);
@@ -144,12 +164,17 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version }
     await ejecutar(fn);
   };
 
-  /** Termina la revisión de recepción: la orden pasa a "En proceso" (el error se muestra en la ventana) */
+  /** Termina la revisión de recepción: la orden pasa a "En proceso" (PDF 06-nov: sin pedir diagnóstico) */
   const iniciar = () =>
-    void ejecutar(async () => {
-      const res = await ordenesService.iniciarTrabajo(idOrden!, { diagnostico: observacion.trim() || undefined });
+    void confirmarSimple('Iniciar reparación', 'La orden pasa a "En proceso" y se habilita el registro de avances del checklist.', 'Iniciar reparación', async () => {
+      const res = await ordenesService.iniciarTrabajo(idOrden!, {});
       return { ...res, data: res.success ? { mensaje: 'Reparación iniciada' } : undefined } as ApiResponse<ResultadoFlujo>;
-    }, true);
+    });
+
+  const cancelarReporte = () => {
+    if (!observacion.trim()) return setErrorVentana('Escribe el motivo de la cancelación.');
+    void ejecutar(() => flujoService.cancelarReporte(idReporte!, observacion.trim()), true);
+  };
 
   const itemsElegidos = (): ItemReporte[] =>
     Object.entries(elegidos).map(([id, cantidad]) => ({
@@ -165,7 +190,7 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version }
       () => flujoService.corregirReporte(idReporte!, {
         descripcion: descripcion.trim(),
         prioridad,
-        puedeOperar,
+        tipoMantenimiento,
         items: plantilla && plantilla.length > 0 ? itemsElegidos() : undefined,
         observaciones: observacion.trim() || undefined,
       }),
@@ -304,7 +329,13 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version }
       {flujo.acciones.length > 0 && (
         <div className="flex flex-wrap gap-2" data-testid="acciones-flujo">
           {puede('validarReporte') && (
-            <Button onClick={() => abrir('validarReporte')} disabled={procesando} className="flex items-center gap-2">
+            <Button
+              onClick={() => void confirmarSimple('Validar reporte',
+                'Verifica que la falla corresponde a la condición real del vehículo. Al validar se genera la orden de trabajo.',
+                'Validar y generar orden', () => flujoService.validarReporte(idReporte!))}
+              disabled={procesando}
+              className="flex items-center gap-2"
+            >
               <CheckCircle className="h-4 w-4" /> Validar reporte
             </Button>
           )}
@@ -316,6 +347,11 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version }
           {puede('corregirReporte') && (
             <Button variant={rechazado ? 'default' : 'outline'} onClick={() => abrir('corregirReporte')} disabled={procesando} className="flex items-center gap-2">
               <Edit3 className="h-4 w-4" /> {rechazado ? 'Corregir y reenviar' : 'Corregir reporte'}
+            </Button>
+          )}
+          {puede('cancelarReporte') && (
+            <Button variant="ghost" onClick={() => abrir('cancelarReporte')} disabled={procesando} className="flex items-center gap-2 text-red-600">
+              <Ban className="h-4 w-4" /> Cancelar reporte
             </Button>
           )}
           {puede('confirmarTraslado') && (
@@ -341,7 +377,7 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version }
             </Button>
           )}
           {puede('iniciarReparacion') && (
-            <Button onClick={() => abrir('iniciarReparacion')} disabled={procesando} className="flex items-center gap-2">
+            <Button onClick={iniciar} disabled={procesando} className="flex items-center gap-2">
               <PlayCircle className="h-4 w-4" /> Iniciar reparación
             </Button>
           )}
@@ -351,7 +387,7 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version }
             </Button>
           )}
           {puede('terminarReparacion') && onTerminar && (
-            <Button onClick={onTerminar} disabled={procesando} className="flex items-center gap-2">
+            <Button onClick={onTerminar} disabled={procesando || !!bloqueoTerminar} title={bloqueoTerminar} className="flex items-center gap-2">
               <CheckCircle className="h-4 w-4" /> Terminar reparación
             </Button>
           )}
@@ -368,7 +404,14 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version }
           )}
           {puede('validarReparacion') && (
             <>
-              <Button variant="success" onClick={() => abrir('validarReparacion')} disabled={procesando} className="flex items-center gap-2">
+              <Button
+                variant="success"
+                onClick={() => void confirmarSimple('Validar reparación',
+                  `Confirma que la falla de la unidad ${flujo.vehiculoCodigo} fue corregida. La unidad quedará disponible para operar.`,
+                  'Validar y liberar unidad', () => flujoService.validarReparacion(idOrden!, true, []))}
+                disabled={procesando}
+                className="flex items-center gap-2"
+              >
                 <CheckCircle className="h-4 w-4" /> Validar reparación
               </Button>
               <Button variant="outline" onClick={() => abrir('rechazarReparacion')} disabled={procesando} className="flex items-center gap-2 text-red-600">
@@ -379,6 +422,9 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version }
           {procesando && <Loader2 className="h-5 w-5 animate-spin self-center text-continental-gray-1" />}
         </div>
       )}
+      {puede('terminarReparacion') && onTerminar && bloqueoTerminar && (
+        <p className="text-sm text-continental-gray-1" data-testid="bloqueo-terminar" style={{ marginBottom: 0 }}>{bloqueoTerminar}</p>
+      )}
 
       {flujo.historial.length > 0 && (
         <div>
@@ -387,41 +433,33 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version }
           </button>
           {verHistorial && (
             <ol className="mt-2 space-y-2 border-l-2 border-continental-gray-3 pl-4 text-sm" data-testid="historial-flujo">
-              {[...flujo.historial].reverse().map((h, i) => (
-                <li key={i}>
-                  <p className="font-medium text-continental-black">
-                    {h.etapa.replace('_RETORNO', ' (retorno)')} · {h.accion}
-                    <span className="font-normal text-continental-gray-1"> — {h.usuario}{h.rol ? ` (${h.rol})` : ''}, {formatDateTime(h.fecha)}</span>
-                  </p>
-                  {h.detalle && <p className="text-continental-gray-1">{h.detalle}</p>}
-                  {h.motivos.length > 0 && <p className="text-continental-gray-1">Puntos: {h.motivos.join(', ')}</p>}
-                </li>
-              ))}
+              {[...flujo.historial].reverse().map((h, i) => {
+                const conObservacion = h.accion === 'Rechazado' || h.accion === 'Cancelado' || h.accion === 'Cancelada' || h.accion === 'Validado';
+                return (
+                  <li key={i}>
+                    <p className="font-medium text-continental-black">
+                      {ETAPA_HISTORIAL[h.etapa] ?? h.etapa} – {ACCION_HISTORIAL[h.accion] ?? h.accion}
+                      <span className="font-normal text-continental-gray-1"> · {h.usuario}{h.rol ? ` (${h.rol})` : ''}, {formatDateTime(h.fecha)}</span>
+                    </p>
+                    {h.motivos.length > 0 && h.accion !== 'Hallazgo' && <p className="text-continental-gray-1">Puntos: {h.motivos.join(', ')}</p>}
+                    {h.detalle && <p className="text-continental-gray-1">{conObservacion ? `Observación: ${h.detalle}` : h.detalle}</p>}
+                  </li>
+                );
+              })}
             </ol>
           )}
         </div>
       )}
 
       {/* ----- Ventanas ----- */}
-      <Modal isOpen={ventana === 'iniciarReparacion'} onClose={() => setVentana(null)} title="Iniciar reparación"
-        description='Termina la revisión técnica de recepción y pasa la orden a "En proceso".' size="md">
-        <Textarea label="Diagnóstico (opcional)" value={observacion} onChange={(e) => setObservacion(e.target.value)} placeholder="Lo que encontraste al revisar la unidad" />
+      <Modal isOpen={ventana === 'cancelarReporte'} onClose={() => setVentana(null)} title="Cancelar reporte"
+        description="El reporte deja el flujo y no genera orden de trabajo. Solo se puede cancelar en la etapa INSPECCIÓN." size="md">
+        <Textarea label="Motivo de la cancelación" value={observacion} onChange={(e) => { setObservacion(e.target.value); setErrorVentana(''); }}
+          placeholder="Por qué se cancela el reporte" />
         {errorVentana && <p className="mt-2 text-sm font-medium text-red-600">{errorVentana}</p>}
         <ModalFooter>
-          <Button variant="outline" onClick={() => setVentana(null)} disabled={procesando}>Cancelar</Button>
-          <Button onClick={iniciar} disabled={procesando}>Iniciar reparación</Button>
-        </ModalFooter>
-      </Modal>
-
-      <Modal isOpen={ventana === 'validarReporte'} onClose={() => setVentana(null)} title="Validar reporte"
-        description="Verifica que la falla corresponde a la condición real del vehículo. Al validar se genera la orden de trabajo." size="md">
-        <Textarea label="Observaciones (opcional)" value={observacion} onChange={(e) => setObservacion(e.target.value)} placeholder="Condiciones adicionales que encontraste" />
-        {errorVentana && <p className="mt-2 text-sm font-medium text-red-600">{errorVentana}</p>}
-        <ModalFooter>
-          <Button variant="outline" onClick={() => setVentana(null)} disabled={procesando}>Cancelar</Button>
-          <Button onClick={() => void ejecutar(() => flujoService.validarReporte(idReporte!, observacion.trim() || undefined), true)} disabled={procesando}>
-            Validar y generar orden
-          </Button>
+          <Button variant="outline" onClick={() => setVentana(null)} disabled={procesando}>Volver</Button>
+          <Button variant="destructive" onClick={cancelarReporte} disabled={procesando}>Cancelar reporte</Button>
         </ModalFooter>
       </Modal>
 
@@ -440,18 +478,6 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version }
         </ModalFooter>
       </Modal>
 
-      <Modal isOpen={ventana === 'validarReparacion'} onClose={() => setVentana(null)} title="Validar reparación"
-        description="Revisa el trabajo realizado y confirma que la falla fue corregida. La unidad quedará disponible para operar." size="md">
-        <Textarea label="Observaciones (opcional)" value={observacion} onChange={(e) => setObservacion(e.target.value)} />
-        {errorVentana && <p className="mt-2 text-sm font-medium text-red-600">{errorVentana}</p>}
-        <ModalFooter>
-          <Button variant="outline" onClick={() => setVentana(null)} disabled={procesando}>Cancelar</Button>
-          <Button variant="success" onClick={() => void ejecutar(() => flujoService.validarReparacion(idOrden!, true, [], observacion.trim() || undefined), true)} disabled={procesando}>
-            Validar y liberar unidad
-          </Button>
-        </ModalFooter>
-      </Modal>
-
       <Modal isOpen={ventana === 'corregirReporte'} onClose={() => setVentana(null)} title={rechazado ? 'Corregir y reenviar reporte' : 'Corregir reporte'}
         description={rechazado ? 'Al reenviarlo, el flujo vuelve a empezar en REPORTE y queda pendiente de inspección. El reporte original queda en el historial.' : 'Complementa o corrige los datos antes de validarlo.'}
         size="lg">
@@ -461,14 +487,20 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version }
             <label className="flex items-center gap-2 text-sm">
               Prioridad
               <select className="rounded-lg border border-continental-gray-3 px-3 py-2" value={prioridad} onChange={(e) => setPrioridad(Number(e.target.value))}>
-                {Object.entries(PrioridadNombres).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
+                {Object.entries(PrioridadNombres).filter(([v]) => ['1', '2', '3'].includes(v) || Number(v) === prioridad).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
               </select>
             </label>
             <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" className="h-4 w-4" checked={puedeOperar} onChange={(e) => setPuedeOperar(e.target.checked)} />
-              Puede seguir operando
+              Tipo de mantenimiento
+              <select className="rounded-lg border border-continental-gray-3 px-3 py-2" value={tipoMantenimiento} onChange={(e) => setTipoMantenimiento(e.target.value)}>
+                <option value="Correctivo">Correctivo</option>
+                <option value="Preventivo">Preventivo</option>
+              </select>
             </label>
           </div>
+          <p className="text-xs text-continental-gray-1" style={{ marginBottom: 0 }}>
+            {tipoMantenimiento === 'Correctivo' ? 'Correctivo: el vehículo no puede operar.' : 'Preventivo: el vehículo puede continuar operando.'} La prioridad solo es informativa.
+          </p>
           <p className="text-sm font-semibold text-continental-black">Trabajos del reporte</p>
           {selectorTrabajos()}
           <Textarea label="Observaciones (opcional)" value={observacion} onChange={(e) => setObservacion(e.target.value)} />
@@ -485,7 +517,7 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version }
         <div className="space-y-3">
           {selectorTrabajos(yaEnOrden)}
           <Textarea label="Notas (opcional)" value={observacion} onChange={(e) => setObservacion(e.target.value)} />
-          <p className="flex items-center gap-1 text-xs text-continental-gray-2"><Search className="h-3 w-3" /> Las fotos de evidencia se adjuntan en la sección de evidencias de la orden.</p>
+          <p className="flex items-center gap-1 text-xs text-continental-gray-2"><Search className="h-3 w-3" /> La foto de evidencia se sube en la actividad del checklist.</p>
           {errorVentana && <p className="text-sm font-medium text-red-600">{errorVentana}</p>}
         </div>
         <ModalFooter>

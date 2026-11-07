@@ -7,6 +7,8 @@ export interface OrdenTrabajo {
   folio: string;
   reporteFallaId?: number;
   reporteFallaFolio?: string;
+  /** Fecha del reporte de falla (impresión de la orden, PDF 06-nov) */
+  reporteFechaReporte?: string;
   reporteFalla?: ReporteFalla;
   vehiculoId: number;
   vehiculoCodigo?: string;

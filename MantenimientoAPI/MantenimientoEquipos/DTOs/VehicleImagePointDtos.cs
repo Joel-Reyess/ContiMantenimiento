@@ -11,7 +11,17 @@ public class VehicleImagePointDto
     public decimal? RadiusPct { get; set; }
     public int ImageFaultId { get; set; }
     public string? ImageFaultName { get; set; }
+    /// <summary>Descripción del componente (PDF 06-nov: se muestra debajo del nombre al elegir fallas)</summary>
+    public string? ImageFaultDescription { get; set; }
+    /// <summary>Actividad del checklist ligada a mano (null = se liga por nombre)</summary>
+    public int? ChecklistItemId { get; set; }
     public bool Active { get; set; }
+}
+
+public class VehicleImagePointActividadDto
+{
+    /// <summary>Actividad del checklist que genera el componente; null = automática por nombre</summary>
+    public int? ChecklistItemId { get; set; }
 }
 
 public class VehicleImagePointCreateDto

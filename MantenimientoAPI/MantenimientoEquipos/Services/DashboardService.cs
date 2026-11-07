@@ -51,7 +51,7 @@ public class DashboardService
 
             // Reportes
             ReportesNuevosHoy = await _db.ReportesFalla.Where(r => r.FechaReporte.Date == hoy).CountAsync(),
-            ReportesSinAtender = await _db.ReportesFalla.Where(r => !r.TieneOrdenTrabajo).CountAsync(),
+            ReportesSinAtender = await _db.ReportesFalla.Where(r => !r.TieneOrdenTrabajo && r.EstadoInspeccion != EstadoInspeccionEnum.Cancelado).CountAsync(),
 
             // Pagos
             PagosPendientes = await _db.RegistrosPago.Where(p => p.Estado == EstadoPagoEnum.Pendiente || p.Estado == EstadoPagoEnum.EnRevision).CountAsync(),
@@ -556,7 +556,7 @@ public class DashboardService
         // (aún sin orden), para evitar que se vuelvan a programar en la lista.
         var vehiculosConReportePreventivoPendiente = new HashSet<int>(
             await _db.ReportesFalla
-                .Where(r => r.TipoMantenimiento == "Preventivo" && !r.TieneOrdenTrabajo)
+                .Where(r => r.TipoMantenimiento == "Preventivo" && !r.TieneOrdenTrabajo && r.EstadoInspeccion != EstadoInspeccionEnum.Cancelado)
                 .Select(r => r.VehiculoId)
                 .Distinct()
                 .ToListAsync()

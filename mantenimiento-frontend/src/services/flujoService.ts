@@ -39,6 +39,7 @@ export type AccionFlujo =
   | 'validarReporte'
   | 'rechazarReporte'
   | 'corregirReporte'
+  | 'cancelarReporte'
   | 'confirmarTraslado'
   | 'aceptarOrden'
   | 'iniciarReparacion'
@@ -64,6 +65,7 @@ export interface Flujo {
   reporteDescripcion?: string;
   reportePrioridad?: number;
   reportePuedeOperar?: boolean;
+  reporteTipoMantenimiento?: string;
   ultimoRechazo?: HistorialFlujo;
   historial: HistorialFlujo[];
 }
@@ -151,7 +153,8 @@ export interface ItemReporte {
 export interface CorregirReporte {
   descripcion?: string;
   prioridad?: number;
-  puedeOperar?: boolean;
+  /** Correctivo o Preventivo: decide si la unidad puede operar (PDF 06-nov) */
+  tipoMantenimiento?: string;
   items?: ItemReporte[];
   observaciones?: string;
 }
@@ -196,6 +199,9 @@ export const flujoService = {
 
   validarReporte: (id: number, observaciones?: string): Promise<ApiResponse<ResultadoFlujo>> =>
     httpClient.post<ResultadoFlujo>(`/flujo/reportes/${id}/validar`, { observaciones }),
+  /** Cancela el reporte en INSPECCIÓN (PDF 06-nov); el motivo es obligatorio */
+  cancelarReporte: (id: number, motivo: string) =>
+    httpClient.post<ResultadoFlujo>(`/flujo/reportes/${id}/cancelar`, { motivo }),
   rechazarReporte: (id: number, motivos: MotivoRechazo[], observacion?: string) =>
     httpClient.post<ResultadoFlujo>(`/flujo/reportes/${id}/rechazar`, { motivos, observacion }),
   corregirReporte: (id: number, cambios: CorregirReporte) =>

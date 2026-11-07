@@ -14,6 +14,12 @@ Después corre **`17_materiales_y_ordenes_pago.sql`** (también antes de publica
 - Las órdenes de pago se generan solas al validar la reparación. Para las órdenes que ya estaban validadas,
   en Control de Pagos aparece el botón "Generar órdenes de pago pendientes".
 
+Luego **`19_correcciones_06nov.sql`** (documento del 06-nov, antes de publicar la API):
+- Columna `VehicleImagePoints.ChecklistItemId`: la actividad del checklist que genera cada componente de la
+  foto al reportarlo (se configura en Fallas visuales → Editor de hotspots; vacía = se liga sola por nombre).
+- Recalcula "puede operar" de los reportes sin orden según el tipo de mantenimiento
+  (Correctivo = no puede operar, Preventivo = puede operar).
+
 ---
 
 

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.DTOs;
+using MantenimientoEquipos.Models.Enums;
 
 namespace MantenimientoEquipos.Services;
 
@@ -12,6 +13,12 @@ public class OrdenTrabajoChecklistItemService
     {
         _db = db;
     }
+
+    public const string SinIniciar = "Inicia la reparación para registrar avances en el checklist.";
+
+    /// <summary>PDF 06-nov: el avance del checklist solo se captura con la reparación iniciada (en proceso)</summary>
+    public static bool EnReparacion(EstadoOrdenTrabajoEnum estado) =>
+        estado == EstadoOrdenTrabajoEnum.EnProceso || estado == EstadoOrdenTrabajoEnum.EsperandoRefacciones;
 
     /// <summary>
     /// Obtiene todos los ítems del checklist asignados a una orden de trabajo específica
@@ -73,6 +80,8 @@ public class OrdenTrabajoChecklistItemService
         var ordenTrabajo = await _db.OrdenesTrabajo.FindAsync(request.OrdenTrabajoId);
         if (ordenTrabajo == null)
             return null;
+        if (!EnReparacion(ordenTrabajo.Estado))
+            throw new ArgumentException(SinIniciar);
 
         // Verificar que el ítem del checklist exista
         var checklistItem = await _db.ChecklistItems.FindAsync(request.ChecklistItemId);
@@ -157,12 +166,16 @@ public class OrdenTrabajoChecklistItemService
             var item = await _db.OrdenesTrabajoChecklistItems.FindAsync(id);
             if (item == null)
                 return false;
+            var estadoOrden = await _db.OrdenesTrabajo.Where(o => o.Id == item.OrdenTrabajoId).Select(o => o.Estado).FirstAsync();
+            if (!EnReparacion(estadoOrden))
+                throw new InvalidOperationException(SinIniciar);
 
             if (!string.IsNullOrEmpty(request.Estado))
                 item.Estado = request.Estado;
 
-            if (!string.IsNullOrEmpty(request.Notas))
-                item.Notas = request.Notas;
+            // null = sin cambio; "" = la borra
+            if (request.Notas != null)
+                item.Notas = request.Notas.Length == 0 ? null : request.Notas;
 
             if (request.Cantidad.HasValue)
                 item.Cantidad = request.Cantidad.Value;
@@ -170,11 +183,24 @@ public class OrdenTrabajoChecklistItemService
             if (request.FechaCompletado.HasValue)
                 item.FechaCompletado = request.FechaCompletado.Value;
 
-            if (!string.IsNullOrEmpty(request.FotoUrl))
-                item.FotoUrl = request.FotoUrl;
+            // null = sin cambio; "" = se borró la evidencia (y sin evidencia la actividad no puede quedar completada)
+            if (request.FotoUrl != null)
+            {
+                item.FotoUrl = request.FotoUrl.Length == 0 ? null : request.FotoUrl;
+                if (item.FotoUrl == null && item.Estado == "Completado")
+                {
+                    item.Estado = "Pendiente";
+                    item.FechaCompletado = null;
+                }
+            }
+
+            if (item.Estado == "Completado" && string.IsNullOrEmpty(item.FotoUrl))
+                throw new InvalidOperationException("Sube la foto de evidencia antes de marcar la actividad como completada.");
 
             if (request.Estado?.ToLower() == "completado" && !item.FechaCompletado.HasValue)
                 item.FechaCompletado = DateTime.UtcNow;
+            else if (request.Estado != null && request.Estado.ToLower() != "completado")
+                item.FechaCompletado = null;
 
             await _db.SaveChangesAsync();
             return true;

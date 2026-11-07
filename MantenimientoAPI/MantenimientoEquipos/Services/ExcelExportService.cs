@@ -81,7 +81,7 @@ public class ExcelExportService
             resumen.Cell(5 + i, 1).Value = estado[i].Hoja;
             resumen.Cell(5 + i, 2).Value = estado[i].Resultado;
         }
-        resumen.Columns().AdjustToContents();
+        AjustarAnchos(resumen.Columns());
         return Guardar(wb);
     }
 
@@ -343,7 +343,7 @@ public class ExcelExportService
             ws.Cell(5 + r, 1).Value = filtros[r].Filtro;
             ws.Cell(5 + r, 2).Value = filtros[r].Valor;
         }
-        ws.Columns().AdjustToContents();
+        AjustarAnchos(ws.Columns());
 
         return (Guardar(wb), total);
     }
@@ -379,8 +379,9 @@ public class ExcelExportService
                         cell.Style.NumberFormat.Format = "#,##0.00";
                         break;
                     case string s:
-                        // Como texto, para que códigos numéricos largos no se vuelvan notación científica
-                        cell.Value = s;
+                        // Como texto, para que códigos numéricos largos no se vuelvan notación científica.
+                        // Sin caracteres de control (el archivo quedaba corrupto o no se generaba)
+                        cell.Value = TextoExcel(s);
                         break;
                     case var otro:
                         cell.Value = XLCellValue.FromObject(otro);
@@ -392,10 +393,52 @@ public class ExcelExportService
         EstiloEncabezado(ws.Range(1, 1, 1, titulos.Length));
         ws.SheetView.FreezeRows(1);
         ws.Range(1, 1, Math.Max(1, filas.Count + 1), titulos.Length).SetAutoFilter();
-        ws.Columns(1, titulos.Length).AdjustToContents(1, Math.Min(filas.Count + 1, 500));
+        AjustarAnchos(ws.Columns(1, titulos.Length), 1, Math.Min(filas.Count + 1, 500));
         foreach (var col in ws.Columns(1, titulos.Length))
             if (col.Width > 60) col.Width = 60;
         return filas.Count;
+    }
+
+    /// <summary>
+    /// Texto que Excel acepta: sin caracteres de control (salvo tabulador y saltos de línea), sin mitades de
+    /// emoji sueltas y con el máximo de 32,767 caracteres por celda. Datos capturados desde el celular o pegados de
+    /// otros sistemas los traían y la descarga fallaba.
+    /// </summary>
+    internal static string TextoExcel(string s)
+    {
+        if (s.Length == 0) return s;
+        var sb = new System.Text.StringBuilder(s.Length);
+        for (var i = 0; i < s.Length; i++)
+        {
+            var ch = s[i];
+            if (char.IsHighSurrogate(ch))
+            {
+                if (i + 1 < s.Length && char.IsLowSurrogate(s[i + 1])) { sb.Append(ch).Append(s[i + 1]); i++; }
+                continue;
+            }
+            if (char.IsLowSurrogate(ch)) continue;
+            if (ch < 0x20 && ch != '\t' && ch != '\n' && ch != '\r') continue;
+            if (ch == '\uFFFE' || ch == '\uFFFF') continue;
+            sb.Append(ch);
+        }
+        return sb.Length > 32767 ? sb.ToString(0, 32767) : sb.ToString();
+    }
+
+    /// <summary>
+    /// Ancho de columnas según el contenido. Si el servidor no puede medir el texto (sin fuentes instaladas para el
+    /// usuario del sitio en IIS), se usa un ancho fijo en lugar de que falle toda la descarga.
+    /// </summary>
+    internal static void AjustarAnchos(IXLColumns columnas, int? desdeFila = null, int? hastaFila = null)
+    {
+        try
+        {
+            if (desdeFila.HasValue && hastaFila.HasValue) columnas.AdjustToContents(desdeFila.Value, hastaFila.Value);
+            else columnas.AdjustToContents();
+        }
+        catch (Exception)
+        {
+            foreach (var col in columnas) col.Width = 22;
+        }
     }
 
     internal static void EstiloEncabezado(IXLRange rango)

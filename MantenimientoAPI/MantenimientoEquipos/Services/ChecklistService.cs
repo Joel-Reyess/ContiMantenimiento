@@ -337,6 +337,10 @@ public class ChecklistService
 
     public async Task<bool> GuardarRespuestasAsync(GuardarRespuestasChecklistRequest request, int userId)
     {
+        // PDF 06-nov: el avance del checklist de una orden solo se captura con la reparación iniciada
+        var estadoOrden = await _db.OrdenesTrabajo.Where(o => o.Id == request.OrdenTrabajoId).Select(o => (EstadoOrdenTrabajoEnum?)o.Estado).FirstOrDefaultAsync();
+        if (estadoOrden.HasValue && !OrdenTrabajoChecklistItemService.EnReparacion(estadoOrden.Value))
+            throw new InvalidOperationException(OrdenTrabajoChecklistItemService.SinIniciar);
         // Eliminar respuestas existentes para esta orden
         var respuestasExistentes = await _db.ChecklistRespuestas
             .Where(r => r.OrdenTrabajoId == request.OrdenTrabajoId)

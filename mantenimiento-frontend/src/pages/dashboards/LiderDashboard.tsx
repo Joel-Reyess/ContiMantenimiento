@@ -269,8 +269,8 @@ export function LiderDashboard({ rol = 'Lider' }: LiderDashboardProps) {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="font-semibold text-continental-black">{reporte.folio}</span>
-                      <Badge variant={reporte.tieneOrdenTrabajo ? 'success' : reporte.estadoInspeccion === 2 ? 'destructive' : 'warning'}>
-                        {reporte.tieneOrdenTrabajo ? 'Con orden' : reporte.estadoInspeccion === 2 ? 'Rechazado' : 'En validación'}
+                      <Badge variant={reporte.tieneOrdenTrabajo ? 'success' : reporte.estadoInspeccion === 3 ? 'secondary' : reporte.estadoInspeccion === 2 ? 'destructive' : 'warning'}>
+                        {reporte.tieneOrdenTrabajo ? 'Con orden' : reporte.estadoInspeccion === 3 ? 'Cancelado' : reporte.estadoInspeccion === 2 ? 'Rechazado' : 'En validación'}
                       </Badge>
                     </div>
                     <p className="text-continental-gray-1 text-sm">

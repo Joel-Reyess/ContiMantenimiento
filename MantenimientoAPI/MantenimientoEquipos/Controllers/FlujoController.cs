@@ -79,6 +79,12 @@ public class FlujoController : ControllerBase
     public Task<IActionResult> ValidarReporte(int id, [FromBody] ValidarReporteRequest req) =>
         Accion(() => _flujo.ValidarReporteAsync(id, req, User.UsuarioFlujo()));
 
+    /// <summary>Cancela el reporte en INSPECCIÓN (PDF 06-nov): Administrador, Líder y Gerente de Mantenimiento</summary>
+    [HttpPost("reportes/{id:int}/cancelar")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Lider", "Supervisor")]
+    public Task<IActionResult> CancelarReporte(int id, [FromBody] CancelarReporteRequest req) =>
+        Accion(() => _flujo.CancelarReporteAsync(id, req.Motivo, User.UsuarioFlujo()));
+
     [HttpPost("reportes/{id:int}/rechazar")]
     [RolesAllowed("SuperUsuario", "Administrador", "Lider")]
     public Task<IActionResult> RechazarReporte(int id, [FromBody] RechazoRequest req) =>
