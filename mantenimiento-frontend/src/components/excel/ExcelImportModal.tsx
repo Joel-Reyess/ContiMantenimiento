@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Copy, Download, FileSpreadsheet, KeyRound, Loader2, Upload } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle, Button, Modal, ModalFooter, useConfirm, useToast } from '@/components/ui';
-import { excelService, type EntidadImportable, type ExcelCredencial, type ExcelImportResult } from '@/services/excelService';
+import { excelService, HOJA_DE, type EntidadImportable, type ExcelCredencial, type ExcelImportResult, type FormatoExport } from '@/services/excelService';
 
 interface ExcelImportModalProps {
   isOpen: boolean;
@@ -80,11 +80,11 @@ export function ExcelImportModal({ isOpen, onClose, entidad, titulo, onImportado
     onClose();
   };
 
-  const descargarPlantilla = async () => {
+  const descargarPlantilla = async (formato: FormatoExport = 'xlsx') => {
     setProcesando('plantilla');
     setError('');
     try {
-      await excelService.descargarPlantilla(entidad);
+      await excelService.descargarPlantilla(entidad, formato);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo descargar la plantilla');
     } finally {
@@ -196,7 +196,7 @@ export function ExcelImportModal({ isOpen, onClose, entidad, titulo, onImportado
     <Modal
       isOpen={isOpen}
       onClose={() => void cerrar()}
-      title={`Importar ${titulo} desde Excel`}
+      title={`Importar ${titulo}`}
       description="Primero se valida el archivo; solo se guarda si no tiene errores."
       size="lg"
     >
@@ -204,22 +204,27 @@ export function ExcelImportModal({ isOpen, onClose, entidad, titulo, onImportado
         <div className="flex flex-col gap-2">
           <p className="text-sm font-semibold text-continental-black">1. Descarga la plantilla y llénala</p>
           <p className="text-xs text-continental-gray-1">
-            Trae las columnas correctas, listas desplegables e instrucciones. También puedes usar un archivo generado con "Exportar Excel".
+            La de Excel trae las columnas correctas, listas desplegables e instrucciones; la de CSV, solo los encabezados.
+            También sirve el archivo de "Exportar" de esta pantalla o el de "Exportar todo" de Configuración: se toma la hoja «{HOJA_DE[entidad]}».
           </p>
-          <div>
-            <Button type="button" size="sm" variant="outline" className="flex items-center gap-2" onClick={descargarPlantilla} disabled={!!procesando}>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" variant="outline" className="flex items-center gap-2" onClick={() => void descargarPlantilla('xlsx')} disabled={!!procesando}>
               {procesando === 'plantilla' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               Descargar plantilla
+            </Button>
+            <Button type="button" size="sm" variant="ghost" className="flex items-center gap-2" onClick={() => void descargarPlantilla('csv')} disabled={!!procesando}>
+              <Download className="h-4 w-4" />
+              Plantilla en CSV
             </Button>
           </div>
         </div>
 
         <div className="flex flex-col gap-2">
-          <p className="text-sm font-semibold text-continental-black">2. Selecciona el archivo (.xlsx)</p>
+          <p className="text-sm font-semibold text-continental-black">2. Selecciona el archivo (Excel .xlsx, CSV .csv o .zip de CSV)</p>
           <input
             ref={inputRef}
             type="file"
-            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            accept=".xlsx,.csv,.zip,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,application/zip"
             className="hidden"
             onChange={(e) => {
               setArchivo(e.target.files?.[0] ?? null);

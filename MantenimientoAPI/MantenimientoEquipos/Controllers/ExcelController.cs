@@ -19,7 +19,8 @@ namespace MantenimientoEquipos.Controllers;
 public class ExcelController : ControllerBase
 {
     // El Supervisor solo exporta lo que ve en sus pantallas; el resto es para administradores
-    private static readonly string[] ExportablesSupervisor = { "vehiculos", "inventario" };
+    private static readonly string[] ExportablesSupervisor = { "vehiculos", "inventario", "reportes", "ordenes", "pagos" };
+    private static readonly string[] ExtensionesImportables = { ".xlsx", ".csv", ".zip" };
 
     private readonly ExcelExportService _exportService;
     private readonly ExcelImportService _importService;
@@ -35,7 +36,7 @@ public class ExcelController : ControllerBase
     /// <summary>Exporta un módulo: vehiculos, inventario, reportes, ordenes, pagos, etc.</summary>
     [HttpGet("exportar/{entidad}")]
     [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
-    public async Task<IActionResult> Exportar(string entidad)
+    public async Task<IActionResult> Exportar(string entidad, [FromQuery] string? formato = null)
     {
         entidad = entidad.ToLowerInvariant();
         if (!ExcelExportService.Hojas.ContainsKey(entidad))
@@ -54,7 +55,7 @@ public class ExcelController : ControllerBase
         }
 
         var bytes = await _exportService.ExportarAsync(entidad, tiposPermitidos);
-        return File(bytes, ExcelExportService.ContentType, NombreArchivo(ExcelExportService.Hojas[entidad]));
+        return Archivo(bytes, ExcelExportService.Hojas[entidad], formato, ExcelExportService.Hojas[entidad]);
     }
 
     /// <summary>
@@ -68,7 +69,8 @@ public class ExcelController : ControllerBase
         [FromQuery] TipoVehiculoEnum? tipo = null,
         [FromQuery] int? areaId = null,
         [FromQuery] TipoVehiculoEnum? excluirTipo = null,
-        [FromQuery] string? prefijo = null)
+        [FromQuery] string? prefijo = null,
+        [FromQuery] string? formato = null)
     {
         var esAdmin = User.IsInRole("SuperUsuario") || User.IsInRole("Administrador");
         List<TipoVehiculoEnum>? tiposPermitidos = null;
@@ -89,28 +91,31 @@ public class ExcelController : ControllerBase
         };
         var (archivo, _) = await _exportService.ExportarFlotaFiltradaAsync(filtro,
             User.FindFirst("NombreCompleto")?.Value ?? User.FindFirst(ClaimTypes.Name)?.Value);
-        return File(archivo, ExcelExportService.ContentType, NombreArchivo("Flota filtrada"));
+        return Archivo(archivo, "Flota filtrada", formato, ExcelExportService.Hojas["vehiculos"]);
     }
 
     /// <summary>Un solo libro con todos los módulos (una hoja por módulo)</summary>
     [HttpGet("exportar-todo")]
     [RolesAllowed("SuperUsuario", "Administrador")]
-    public async Task<IActionResult> ExportarTodo()
+    public async Task<IActionResult> ExportarTodo([FromQuery] string? formato = null)
     {
         var bytes = await _exportService.ExportarTodoAsync(User.FindFirst("NombreCompleto")?.Value ?? User.FindFirst(ClaimTypes.Name)?.Value);
+        // En CSV: un .zip con un .csv por hoja ("Vehículos.csv", "Usuarios.csv"...)
+        if (EsCsv(formato))
+            return File(CsvLibro.XlsxAZip(bytes), CsvLibro.ContentTypeZip, NombreArchivo("Exportacion completa", ".zip"));
         return File(bytes, ExcelExportService.ContentType, NombreArchivo("Exportacion completa"));
     }
 
     [HttpGet("plantilla/{entidad}")]
     [RolesAllowed("SuperUsuario", "Administrador")]
-    public async Task<IActionResult> Plantilla(string entidad)
+    public async Task<IActionResult> Plantilla(string entidad, [FromQuery] string? formato = null)
     {
         entidad = entidad.ToLowerInvariant();
         if (!ExcelImportService.Entidades.Contains(entidad))
             return NotFound(ApiResponse<string>.Error($"No existe plantilla para '{entidad}'"));
 
         var bytes = await _importService.GenerarPlantillaAsync(entidad);
-        return File(bytes, ExcelExportService.ContentType, NombreArchivo($"Plantilla {ExcelExportService.Hojas[entidad]}"));
+        return Archivo(bytes, $"Plantilla {ExcelExportService.Hojas[entidad]}", formato, ExcelExportService.Hojas[entidad]);
     }
 
     /// <summary>
@@ -127,8 +132,8 @@ public class ExcelController : ControllerBase
             return NotFound(ApiResponse<string>.Error($"No se puede importar '{entidad}'"));
         if (archivo == null || archivo.Length == 0)
             return BadRequest(ApiResponse<string>.Error("Selecciona un archivo de Excel (.xlsx)"));
-        if (!Path.GetExtension(archivo.FileName).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
-            return BadRequest(ApiResponse<string>.Error("Solo se aceptan archivos .xlsx (Excel 2007 o posterior)"));
+        if (!ExtensionesImportables.Contains(Path.GetExtension(archivo.FileName).ToLowerInvariant()))
+            return BadRequest(ApiResponse<string>.Error("Solo se aceptan archivos de Excel (.xlsx), CSV (.csv) o un .zip con archivos CSV"));
 
         try
         {
@@ -148,8 +153,49 @@ public class ExcelController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Importación masiva desde Configuración: el archivo de "Exportar todo" (Excel o .zip de CSV), todas las hojas
+    /// importables a la vez y en un solo paso (si una tiene errores no se guarda ninguna).
+    /// </summary>
+    [HttpPost("importar-todo")]
+    [RolesAllowed("SuperUsuario", "Administrador")]
+    [RequestSizeLimit(30_000_000)]
+    public async Task<IActionResult> ImportarTodo(IFormFile? archivo, [FromQuery] bool aplicar = false)
+    {
+        if (archivo == null || archivo.Length == 0)
+            return BadRequest(ApiResponse<string>.Error("Selecciona el archivo (.xlsx o .zip de CSV)"));
+        var ext = Path.GetExtension(archivo.FileName).ToLowerInvariant();
+        if (ext != ".xlsx" && ext != ".zip")
+            return BadRequest(ApiResponse<string>.Error("Para importar todo usa el archivo de \"Exportar todo\": Excel (.xlsx) o .zip con un CSV por hoja"));
+        try
+        {
+            using var stream = archivo.OpenReadStream();
+            var r = await _importService.ImportarTodoAsync(stream, aplicar, UserId(), User.NombreUsuario(), archivo.FileName);
+            var nuevos = r.Hojas.Sum(h => h.Nuevos);
+            var actualizados = r.Hojas.Sum(h => h.Actualizados);
+            var mensaje = r.Aplicado
+                ? $"Importación aplicada: {nuevos} nuevo(s) y {actualizados} actualizado(s) en {r.Hojas.Count} hoja(s)"
+                : r.TotalErrores > 0
+                    ? $"Se encontraron {r.TotalErrores} error(es); no se guardó nada"
+                    : $"Archivo válido: {nuevos} nuevo(s) y {actualizados} actualizado(s) en {r.Hojas.Count} hoja(s)";
+            return Ok(ApiResponse<ExcelImportTodoResultDto>.Ok(r, mensaje));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponse<string>.Error(ex.Message));
+        }
+    }
+
+    private static bool EsCsv(string? formato) => string.Equals(formato, "csv", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>El libro tal cual (.xlsx) o, con formato=csv, su hoja principal como .csv</summary>
+    private FileContentResult Archivo(byte[] xlsx, string nombre, string? formato, string hoja) =>
+        EsCsv(formato)
+            ? File(CsvLibro.XlsxACsv(xlsx, hoja), CsvLibro.ContentTypeCsv, NombreArchivo(nombre, ".csv"))
+            : File(xlsx, ExcelExportService.ContentType, NombreArchivo(nombre));
+
     private int UserId() => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
 
-    private static string NombreArchivo(string nombre) =>
-        $"ContiMantenimiento - {nombre} - {DateTime.Now:yyyy-MM-dd}.xlsx";
+    private static string NombreArchivo(string nombre, string extension = ".xlsx") =>
+        $"ContiMantenimiento - {nombre} - {DateTime.Now:yyyy-MM-dd}{extension}";
 }

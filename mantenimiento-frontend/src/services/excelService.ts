@@ -6,6 +6,18 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 /** Módulos que se pueden importar (los que se exportan son más; ver ExcelExportService en el backend) */
 export type EntidadImportable = 'vehiculos' | 'inventario' | 'areas' | 'prefijos' | 'usuarios';
 
+/** Excel (.xlsx, con hojas) o CSV (un .csv por módulo; "todo" = .zip con un .csv por hoja) */
+export type FormatoExport = 'xlsx' | 'csv';
+
+/** Nombre de la hoja de cada módulo: el archivo de "Exportar todo" la trae y la importación la busca por nombre */
+export const HOJA_DE: Record<EntidadImportable, string> = {
+  vehiculos: 'Vehículos',
+  inventario: 'Inventario',
+  areas: 'Áreas',
+  prefijos: 'Prefijos',
+  usuarios: 'Usuarios'
+};
+
 export interface ExcelImportError {
   fila: number;
   columna?: string;
@@ -29,6 +41,14 @@ export interface ExcelImportResult {
   errores: ExcelImportError[];
   aplicado: boolean;
   credenciales?: ExcelCredencial[];
+}
+
+/** Importación masiva (Configuración): resultado por hoja */
+export interface ExcelImportTodoResult {
+  hojas: ExcelImportResult[];
+  omitidas: string[];
+  totalErrores: number;
+  aplicado: boolean;
 }
 
 /** Descarga un archivo del backend (con el token) y lo guarda con el nombre que manda el servidor */
@@ -66,26 +86,39 @@ async function descargar(endpoint: string, nombrePorDefecto: string): Promise<vo
 }
 
 export const excelService = {
-  exportar(entidad: string): Promise<void> {
-    return descargar(`/excel/exportar/${entidad}`, `ContiMantenimiento - ${entidad}.xlsx`);
+  exportar(entidad: string, formato: FormatoExport = 'xlsx'): Promise<void> {
+    return descargar(`/excel/exportar/${entidad}${formato === 'csv' ? '?formato=csv' : ''}`, `ContiMantenimiento - ${entidad}.${formato}`);
   },
 
   /** La flota con los mismos filtros de la pantalla ("lo que estoy viendo") */
-  exportarFlotaFiltrada(filtros: { busqueda?: string; tipo?: number; areaId?: number; prefijo?: string; excluirTipo?: number }): Promise<void> {
+  exportarFlotaFiltrada(
+    filtros: { busqueda?: string; tipo?: number; areaId?: number; prefijo?: string; excluirTipo?: number },
+    formato: FormatoExport = 'xlsx'
+  ): Promise<void> {
     const params = new URLSearchParams();
+    if (formato === 'csv') params.append('formato', 'csv');
     Object.entries(filtros).forEach(([clave, valor]) => {
       if (valor !== undefined && valor !== null && valor !== '') params.append(clave, String(valor));
     });
     const qs = params.toString();
-    return descargar(`/excel/exportar-flota${qs ? `?${qs}` : ''}`, 'ContiMantenimiento - Flota filtrada.xlsx');
+    return descargar(`/excel/exportar-flota${qs ? `?${qs}` : ''}`, `ContiMantenimiento - Flota filtrada.${formato}`);
   },
 
-  exportarTodo(): Promise<void> {
-    return descargar('/excel/exportar-todo', 'ContiMantenimiento - Exportacion completa.xlsx');
+  /** Excel: un archivo con una hoja por módulo. CSV: un .zip con un .csv por hoja */
+  exportarTodo(formato: FormatoExport = 'xlsx'): Promise<void> {
+    return descargar(`/excel/exportar-todo${formato === 'csv' ? '?formato=csv' : ''}`,
+      `ContiMantenimiento - Exportacion completa.${formato === 'csv' ? 'zip' : 'xlsx'}`);
   },
 
-  descargarPlantilla(entidad: EntidadImportable): Promise<void> {
-    return descargar(`/excel/plantilla/${entidad}`, `Plantilla ${entidad}.xlsx`);
+  descargarPlantilla(entidad: EntidadImportable, formato: FormatoExport = 'xlsx'): Promise<void> {
+    return descargar(`/excel/plantilla/${entidad}${formato === 'csv' ? '?formato=csv' : ''}`, `Plantilla ${entidad}.${formato}`);
+  },
+
+  /** Todas las hojas importables del archivo de "Exportar todo" a la vez (todo o nada) */
+  async importarTodo(archivo: File, aplicar: boolean): Promise<ApiResponse<ExcelImportTodoResult>> {
+    const formData = new FormData();
+    formData.append('archivo', archivo);
+    return await httpClient.uploadFile<ExcelImportTodoResult>(`/excel/importar-todo?aplicar=${aplicar}`, formData);
   },
 
   /** Con aplicar=false solo valida; con aplicar=true guarda si el archivo no tiene errores */

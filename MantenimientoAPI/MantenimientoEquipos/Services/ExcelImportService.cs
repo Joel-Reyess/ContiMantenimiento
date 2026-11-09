@@ -272,36 +272,90 @@ public class ExcelImportService
     /// <summary>Datos de la importación en curso: quién, con qué archivo y si se aplica o solo se valida</summary>
     private sealed record Importacion(string Entidad, bool Aplicar, int UsuarioId, string? NombreUsuario, string? Archivo);
 
+    /// <summary>
+    /// Importa un módulo. Acepta Excel (.xlsx), CSV (.csv) o un .zip de CSV: del archivo de "Exportar todo" se toma
+    /// la hoja del módulo ("Vehículos", "Usuarios"...), así el mismo archivo sirve para exportar y para importar.
+    /// </summary>
     public async Task<ExcelImportResultDto> ImportarAsync(
         string entidad, Stream archivo, bool aplicar, int userId, string? nombreUsuario = null, string? nombreArchivo = null)
     {
-        XLWorkbook wb;
-        try
-        {
-            wb = new XLWorkbook(archivo);
-        }
-        catch (Exception)
-        {
-            throw new ArgumentException("El archivo no es un Excel válido. Guárdalo como .xlsx e inténtalo de nuevo.");
-        }
+        using var wb = CsvLibro.Abrir(archivo, nombreArchivo, ExcelExportService.Hojas[entidad]);
+        var hoja = BuscarHoja(wb, ExcelExportService.Hojas[entidad]);
+        return await ImportarHojaAsync(entidad, hoja, new Importacion(entidad, aplicar, userId, nombreUsuario, nombreArchivo));
+    }
 
-        using (wb)
+    private async Task<ExcelImportResultDto> ImportarHojaAsync(string entidad, IXLWorksheet hoja, Importacion imp)
+    {
+        var tabla = LeerTabla(hoja, MaxFilas);
+        var resultado = new ExcelImportResultDto { Entidad = entidad, Hoja = hoja.Name, TotalFilas = tabla.Filas.Count };
+        return entidad switch
         {
-            var hoja = BuscarHoja(wb, ExcelExportService.Hojas[entidad]);
-            var tabla = LeerTabla(hoja, MaxFilas);
-            var resultado = new ExcelImportResultDto { Entidad = entidad, Hoja = hoja.Name, TotalFilas = tabla.Filas.Count };
-            var imp = new Importacion(entidad, aplicar, userId, nombreUsuario, nombreArchivo);
+            "vehiculos" => await ImportarVehiculosAsync(tabla, resultado, imp),
+            "inventario" => await ImportarInventarioAsync(tabla, resultado, imp),
+            "areas" => await ImportarAreasAsync(tabla, resultado, imp),
+            "prefijos" => await ImportarPrefijosAsync(tabla, resultado, imp),
+            "usuarios" => await ImportarUsuariosAsync(tabla, resultado, imp),
+            _ => throw new ArgumentException($"No se puede importar '{entidad}'")
+        };
+    }
 
-            return entidad switch
+    /// <summary>Orden de la importación masiva: primero lo que otros usan (áreas y prefijos antes que vehículos y usuarios)</summary>
+    public static readonly string[] OrdenImportacionTodo = { "areas", "prefijos", "usuarios", "vehiculos", "inventario" };
+
+    /// <summary>
+    /// Importación masiva (Configuración): el archivo de "Exportar todo" (Excel o .zip de CSV), una hoja por módulo.
+    /// Se importan las hojas que traiga de vehículos, inventario, áreas, prefijos y usuarios; las demás (reportes,
+    /// órdenes, pagos...) son de consulta y se ignoran. Todo o nada: si una hoja tiene errores no se guarda ninguna.
+    /// Para validar también se corre todo dentro de una transacción que se deshace, así una hoja ve lo que crean
+    /// las anteriores (un vehículo puede usar un área nueva del mismo archivo).
+    /// </summary>
+    public async Task<ExcelImportTodoResultDto> ImportarTodoAsync(Stream archivo, bool aplicar, int userId, string? nombreUsuario, string? nombreArchivo)
+    {
+        using var wb = CsvLibro.Abrir(archivo, nombreArchivo, "Hoja");
+        var resultado = new ExcelImportTodoResultDto();
+        var importables = OrdenImportacionTodo.Select(e => Normalizar(ExcelExportService.Hojas[e])).ToHashSet();
+        resultado.Omitidas = wb.Worksheets
+            .Where(w => w.Visibility == XLWorksheetVisibility.Visible
+                        && !importables.Contains(Normalizar(w.Name))
+                        && !new[] { "instrucciones", "listas", "resumen" }.Contains(Normalizar(w.Name)))
+            .Select(w => w.Name).ToList();
+
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        foreach (var entidad in OrdenImportacionTodo)
+        {
+            var hoja = wb.Worksheets.FirstOrDefault(w => Normalizar(w.Name) == Normalizar(ExcelExportService.Hojas[entidad]));
+            if (hoja == null) continue;
+            ExcelImportResultDto r;
+            try
             {
-                "vehiculos" => await ImportarVehiculosAsync(tabla, resultado, imp),
-                "inventario" => await ImportarInventarioAsync(tabla, resultado, imp),
-                "areas" => await ImportarAreasAsync(tabla, resultado, imp),
-                "prefijos" => await ImportarPrefijosAsync(tabla, resultado, imp),
-                "usuarios" => await ImportarUsuariosAsync(tabla, resultado, imp),
-                _ => throw new ArgumentException($"No se puede importar '{entidad}'")
-            };
+                r = await ImportarHojaAsync(entidad, hoja, new Importacion(entidad, true, userId, nombreUsuario, nombreArchivo));
+            }
+            catch (ArgumentException ex)
+            {
+                r = new ExcelImportResultDto { Entidad = entidad, Hoja = hoja.Name, TotalErrores = 1 };
+                r.Errores.Add(new ExcelImportErrorDto { Fila = 1, Mensaje = ex.Message });
+            }
+            resultado.Hojas.Add(r);
         }
+        if (resultado.Hojas.Count == 0)
+            throw new ArgumentException("El archivo no tiene hojas que se puedan importar (Vehículos, Inventario, Áreas, Prefijos o Usuarios).");
+
+        resultado.TotalErrores = resultado.Hojas.Sum(h => h.TotalErrores);
+        if (aplicar && resultado.TotalErrores == 0)
+        {
+            await tx.CommitAsync();
+            resultado.Aplicado = true;
+        }
+        else
+        {
+            await tx.RollbackAsync();
+            foreach (var h in resultado.Hojas)
+            {
+                h.Aplicado = false;
+                h.Credenciales.Clear();
+            }
+        }
+        return resultado;
     }
 
     private async Task<ExcelImportResultDto> ImportarVehiculosAsync(TablaExcel tabla, ExcelImportResultDto resultado, Importacion imp)
@@ -888,11 +942,19 @@ public class ExcelImportService
         resultado.Actualizados = cambios.Actualizados.Count;
         if (!imp.Aplicar || resultado.TotalErrores > 0 || cambios.Acciones.Count == 0) return resultado;
 
-        using var tx = await _db.Database.BeginTransactionAsync();
-        foreach (var cambio in cambios.Acciones) cambio();
-        _bitacora.Registrar(imp.UsuarioId, imp.NombreUsuario, EntidadBitacora[imp.Entidad], null, DescripcionBitacora(imp, cambios), "Importar");
-        await _db.SaveChangesAsync();
-        await tx.CommitAsync();
+        // En la importación masiva ya hay una transacción para todas las hojas
+        var propia = _db.Database.CurrentTransaction == null ? await _db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            foreach (var cambio in cambios.Acciones) cambio();
+            _bitacora.Registrar(imp.UsuarioId, imp.NombreUsuario, EntidadBitacora[imp.Entidad], null, DescripcionBitacora(imp, cambios), "Importar");
+            await _db.SaveChangesAsync();
+            if (propia != null) await propia.CommitAsync();
+        }
+        finally
+        {
+            if (propia != null) await propia.DisposeAsync();
+        }
         resultado.Aplicado = true;
         return resultado;
     }
@@ -908,7 +970,7 @@ public class ExcelImportService
         var archivo = string.IsNullOrWhiteSpace(imp.Archivo) ? "" : $" ({Path.GetFileName(imp.Archivo)})";
         var partes = new List<string>
         {
-            $"Importación desde Excel{archivo}: {cambios.Nuevos.Count} nuevo(s) y {cambios.Actualizados.Count} actualizado(s)"
+            $"Importación desde {(Path.GetExtension(imp.Archivo ?? "").Equals(".xlsx", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(imp.Archivo) ? "Excel" : "archivo")}{archivo}: {cambios.Nuevos.Count} nuevo(s) y {cambios.Actualizados.Count} actualizado(s)"
         };
         if (cambios.Nuevos.Count > 0) partes.Add($"Nuevos: {Lista(cambios.Nuevos)}");
         if (cambios.Actualizados.Count > 0) partes.Add($"Actualizados: {Lista(cambios.Actualizados)}");

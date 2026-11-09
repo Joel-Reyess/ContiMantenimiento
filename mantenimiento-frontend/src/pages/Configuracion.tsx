@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState, type ReactNode } from 'react';
-import { Settings, Plus, Loader2, RefreshCcw, ListChecks, Trash2, Package, Users, AlertTriangle, Calendar, FileText, Download, FileSpreadsheet, MapPin, Truck, Tag, UserCheck, Database, ArrowLeft, History, Warehouse, Building2 } from 'lucide-react';
+import { Settings, Plus, Loader2, RefreshCcw, ListChecks, Trash2, Package, Users, AlertTriangle, Calendar, FileText, Upload, FileSpreadsheet, MapPin, Truck, Tag, UserCheck, Database, ArrowLeft, History, Warehouse, Building2 } from 'lucide-react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getFullImageUrl } from '@/lib/utils';
 import {
@@ -24,6 +24,8 @@ import type { TipoVehiculoItem } from '@/services/catalogosService';
 import { ChecklistsPorTipo } from '@/components/configuracion/ChecklistsPorTipo';
 import { Bitacora } from '@/components/configuracion/Bitacora';
 import { ExcelCatalogoBotones } from '@/components/excel/ExcelCatalogoBotones';
+import { BotonExportar } from '@/components/excel/BotonExportar';
+import { ImportarTodoModal } from '@/components/excel/ImportarTodoModal';
 import { CapacidadZonaConfig } from '@/components/flujo';
 import { useAuth } from '@/contexts/AuthContext';
 import { excelService } from '@/services/excelService';
@@ -103,8 +105,8 @@ export function ConfiguracionPage() {
   const [resetMessage, setResetMessage] = useState('');
   const [resetError, setResetError] = useState('');
   const [claveMaestra, setClaveMaestra] = useState('');
-  const [exportandoTodo, setExportandoTodo] = useState(false);
   const [errorExportar, setErrorExportar] = useState('');
+  const [importarTodoOpen, setImportarTodoOpen] = useState(false);
   const canReset = hasRole(['Administrador', 'SuperUsuario', 'Superusuario']);
 
   const navigate = useNavigate();
@@ -1002,33 +1004,36 @@ export function ConfiguracionPage() {
                 <FileSpreadsheet className="h-5 w-5" />
               </div>
               <div>
-                <p className="text-sm uppercase tracking-[0.25em] text-continental-gray-1">Respaldo en Excel</p>
-                <h3 className="text-lg font-semibold text-continental-black">Exportar toda la información</h3>
+                <p className="text-sm uppercase tracking-[0.25em] text-continental-gray-1">Exportación e importación masiva</p>
+                <h3 className="text-lg font-semibold text-continental-black">Toda la información en un archivo</h3>
                 <p className="text-sm text-continental-gray-1">
-                  Descarga un solo archivo de Excel con una hoja por módulo: vehículos, inventario y sus movimientos, reportes de falla,
-                  órdenes de trabajo, pagos, órdenes de compra, áreas, tipos de vehículo, prefijos y usuarios. Recomendado antes de reiniciar los datos.
+                  "Exportar todo" genera un archivo con una hoja por módulo: vehículos, inventario y sus movimientos, reportes de falla,
+                  órdenes de trabajo, pagos, órdenes de compra, áreas, tipos de vehículo, prefijos y usuarios (en Excel, o en CSV como .zip
+                  con un archivo por hoja). Ese mismo archivo sirve para importar: aquí con "Importar todo", o en cada pantalla
+                  (Flota, Inventario, Usuarios, Áreas, Prefijos), que toma solo su hoja. Recomendado antes de reiniciar los datos.
                 </p>
               </div>
             </div>
-            <Button
-              className="flex flex-shrink-0 items-center gap-2"
-              disabled={exportandoTodo}
-              onClick={async () => {
-                setExportandoTodo(true);
-                setErrorExportar('');
-                try {
-                  await excelService.exportarTodo();
-                } catch (err) {
-                  setErrorExportar(err instanceof Error ? err.message : 'No se pudo exportar');
-                } finally {
-                  setExportandoTodo(false);
-                }
-              }}
-            >
-              {exportandoTodo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              {exportandoTodo ? 'Generando...' : 'Exportar todo'}
-            </Button>
+            <div className="flex flex-shrink-0 flex-wrap gap-2">
+              <BotonExportar
+                variant="default"
+                etiqueta="Exportar todo"
+                textoExcel="Excel (una hoja por módulo)"
+                textoCsv="CSV (.zip, un archivo por hoja)"
+                onExportar={(formato) => { setErrorExportar(''); return excelService.exportarTodo(formato); }}
+                onError={setErrorExportar}
+              />
+              <Button variant="outline" className="flex items-center gap-2" onClick={() => setImportarTodoOpen(true)}>
+                <Upload className="h-4 w-4" />
+                Importar todo
+              </Button>
+            </div>
           </div>
+          <ImportarTodoModal
+            isOpen={importarTodoOpen}
+            onClose={() => setImportarTodoOpen(false)}
+            onImportado={() => { void loadAreas(); }}
+          />
           {errorExportar && (
             <Alert variant="destructive">
               <AlertTitle>Error</AlertTitle>

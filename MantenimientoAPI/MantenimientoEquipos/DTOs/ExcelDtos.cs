@@ -36,3 +36,13 @@ public class ExcelCredencialDto
     public required string Nombre { get; set; }
     public required string Contrasena { get; set; }
 }
+
+/// <summary>Importación masiva (Configuración): resultado por hoja del archivo de "Exportar todo"</summary>
+public class ExcelImportTodoResultDto
+{
+    public List<ExcelImportResultDto> Hojas { get; set; } = new();
+    /// <summary>Hojas del archivo que solo son de consulta (reportes, órdenes, pagos...) y no se importan</summary>
+    public List<string> Omitidas { get; set; } = new();
+    public int TotalErrores { get; set; }
+    public bool Aplicado { get; set; }
+}
