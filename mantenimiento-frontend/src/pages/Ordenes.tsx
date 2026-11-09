@@ -50,6 +50,8 @@ import type { OrdenTrabajo, OrdenTrabajoList, ReporteFalla, Evidencia, VehicleIm
 import { EstadoOrdenNombres, EstadoOrdenTrabajo, Prioridad, PrioridadNombres } from '@/interfaces/Api.interface';
 import type { ChecklistItem as ChecklistTemplateItem } from '@/services/checklistService';
 import { useAuth } from '@/contexts/AuthContext';
+import { BotonExportar } from '@/components/excel/BotonExportar';
+import { excelService } from '@/services/excelService';
 
 interface FiltersState {
   busqueda: string;
@@ -1832,6 +1834,9 @@ export function OrdenesPage() {
               <Filter className="h-4 w-4" />
               Filtrar
             </Button>
+            {puedeAsignarYCancelar && !isMisOrdenes && (
+              <BotonExportar onExportar={(formato) => excelService.exportar('ordenes', formato)} />
+            )}
             {canCreate && (
               <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => setCreateOpen(true)}>
                 <Plus className="h-4 w-4" />

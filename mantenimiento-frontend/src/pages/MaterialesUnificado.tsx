@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Package, Plus, CheckCircle, XCircle, Loader2, RefreshCcw, Search, AlertTriangle, Warehouse, Check, Download, Upload, Trash2 } from 'lucide-react';
+import { Package, Plus, CheckCircle, XCircle, Loader2, RefreshCcw, Search, AlertTriangle, Warehouse, Check, Upload, Trash2 } from 'lucide-react';
 import {
   Alert,
   AlertDescription,
@@ -26,6 +26,7 @@ import type { Consumible } from '@/services';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { ExcelImportModal } from '@/components/excel/ExcelImportModal';
+import { BotonExportar } from '@/components/excel/BotonExportar';
 import { excelService } from '@/services/excelService';
 
 type TabType = 'stock' | 'solicitudes';
@@ -91,7 +92,6 @@ export function MaterialesUnificadoPage() {
   // El Gerente de Mantenimiento registra refacciones y consumibles y autoriza ajustes (PDF 29-oct); eliminar sigue siendo de administración
   const puedeGestionarStock = hasRole(['SuperUsuario', 'Administrador', 'Supervisor']);
   const [importOpen, setImportOpen] = useState(false);
-  const [exportando, setExportando] = useState(false);
   const [mensajeExcel, setMensajeExcel] = useState<{ tipo: 'success' | 'destructive'; texto: string } | null>(null);
   const [form, setForm] = useState<FormState>({
     codigo: '',
@@ -501,23 +501,10 @@ export function MaterialesUnificadoPage() {
                 <RefreshCcw className="h-4 w-4 mr-1" /> Actualizar
               </Button>
               {puedeAprobar && (
-              <Button
-                variant="outline"
-                disabled={exportando}
-                onClick={async () => {
-                  setExportando(true);
-                  setMensajeExcel(null);
-                  try {
-                    await excelService.exportar('inventario');
-                  } catch (err) {
-                    setMensajeExcel({ tipo: 'destructive', texto: err instanceof Error ? err.message : 'No se pudo exportar' });
-                  } finally {
-                    setExportando(false);
-                  }
-                }}
-              >
-                {exportando ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Download className="h-4 w-4 mr-1" />} Exportar Excel
-              </Button>
+                <BotonExportar
+                  onExportar={(formato) => { setMensajeExcel(null); return excelService.exportar('inventario', formato); }}
+                  onError={(texto) => setMensajeExcel({ tipo: 'destructive', texto })}
+                />
               )}
               {canImport && (
                 <Button
@@ -527,7 +514,7 @@ export function MaterialesUnificadoPage() {
                     setImportOpen(true);
                   }}
                 >
-                  <Upload className="h-4 w-4 mr-1" /> Importar Excel
+                  <Upload className="h-4 w-4 mr-1" /> Importar
                 </Button>
               )}
               {/* Dar de alta materiales: administración y Gerente de Mantenimiento */}

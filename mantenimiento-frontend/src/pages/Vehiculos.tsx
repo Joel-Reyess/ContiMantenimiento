@@ -11,7 +11,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { UbicacionLegend, UbicacionBadge } from '@/components/vehiculos/UbicacionLegend';
 import { VehiculoFotosInput } from '@/components/vehiculos/VehiculoFotosInput';
 import { ExcelImportModal } from '@/components/excel/ExcelImportModal';
-import { excelService } from '@/services/excelService';
+import { excelService, type FormatoExport } from '@/services/excelService';
 import { useAllowedTipoVehiculo } from '@/hooks/useAllowedTipoVehiculo';
 
 interface FiltersState {
@@ -89,6 +89,7 @@ export function VehiculosPage() {
   // Exportar: "lo que estoy viendo" (filtros aplicados y pestaña) o toda la flota
   const [exportOpen, setExportOpen] = useState(false);
   const [alcanceExport, setAlcanceExport] = useState<'vista' | 'todo'>('vista');
+  const [formatoExport, setFormatoExport] = useState<FormatoExport>('xlsx');
   const [errorExport, setErrorExport] = useState('');
   // Eliminación por filtro (área, tipo, prefijo): primero se ve cuántos y cuáles, y se confirma escribiendo el total
   const [eliminarFiltroOpen, setEliminarFiltroOpen] = useState(false);
@@ -129,8 +130,8 @@ export function VehiculosPage() {
     setExportando(true);
     setErrorExport('');
     try {
-      if (alcanceExport === 'todo') await excelService.exportar('vehiculos');
-      else await excelService.exportarFlotaFiltrada(filtrosDeLaVista());
+      if (alcanceExport === 'todo') await excelService.exportar('vehiculos', formatoExport);
+      else await excelService.exportarFlotaFiltrada(filtrosDeLaVista(), formatoExport);
       toast.exito(alcanceExport === 'todo' ? 'Se descargó toda la flota' : 'Se descargó la flota filtrada');
       setExportOpen(false);
     } catch (err) {
@@ -619,7 +620,7 @@ export function VehiculosPage() {
           {puedeEditar && (
             <Button variant="outline" className="flex items-center gap-2" onClick={handleExportar} disabled={exportando}>
               {exportando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              Exportar Excel
+              Exportar
             </Button>
           )}
           {canDelete && (
@@ -632,7 +633,7 @@ export function VehiculosPage() {
               }}
             >
               <Upload className="h-4 w-4" />
-              Importar Excel
+              Importar
             </Button>
           )}
           {puedeEditar && (
@@ -1135,8 +1136,8 @@ export function VehiculosPage() {
       <Modal
         isOpen={exportOpen}
         onClose={() => !exportando && setExportOpen(false)}
-        title="Exportar flota a Excel"
-        description="Elige qué vehículos quieres descargar."
+        title="Exportar flota"
+        description="Elige qué vehículos quieres descargar y en qué formato."
         size="md"
       >
         {(() => {
@@ -1164,6 +1165,23 @@ export function VehiculosPage() {
                 describirFiltros()
               )}
               {opcion('todo', 'Toda la flota', 'Todos los vehículos, incluidos Tuggers e inactivos.')}
+              <div className="flex flex-wrap items-center gap-2 text-sm" role="radiogroup" aria-label="Formato">
+                <span className="font-semibold text-continental-black">Formato:</span>
+                {(['xlsx', 'csv'] as const).map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    data-icon="true"
+                    role="radio"
+                    aria-checked={formatoExport === f}
+                    onClick={() => setFormatoExport(f)}
+                    className={`rounded-lg border-2 ${formatoExport === f ? 'border-continental-yellow bg-continental-yellow/10' : 'border-continental-gray-3'}`}
+                    style={{ padding: '6px 12px' }}
+                  >
+                    {f === 'xlsx' ? 'Excel (.xlsx)' : 'CSV (.csv)'}
+                  </button>
+                ))}
+              </div>
               {sinAplicar && alcanceExport === 'vista' && (
                 <p className="text-sm font-medium" style={{ color: '#b45309', marginBottom: 0 }}>
                   Tienes cambios en los filtros que no has aplicado; el archivo usa los filtros aplicados. Presiona "Aplicar" para incluirlos.

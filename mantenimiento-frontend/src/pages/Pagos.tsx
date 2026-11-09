@@ -19,6 +19,8 @@ import { pagosService } from '@/services/pagosService';
 import { ordenesService } from '@/services/ordenesService';
 import { empresasService, type Empresa } from '@/services/empresasService';
 import { useAuth } from '@/contexts/AuthContext';
+import { BotonExportar } from '@/components/excel/BotonExportar';
+import { excelService } from '@/services/excelService';
 import { Undo } from 'lucide-react';
 import type { DetalleOrdenPago, RegistroPago } from '@/services/pagosService';
 import { EstadoPago } from '@/interfaces/Api.interface';
@@ -559,6 +561,7 @@ export function PagosPage() {
             <RefreshCcw className="h-4 w-4" />
             Actualizar
           </Button>
+          <BotonExportar onExportar={(formato) => excelService.exportar('pagos', formato)} />
           {puedeGenerarPendientes && sinGenerar > 0 && (
             <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => void generarPendientes()} disabled={generando}>
               {generando ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}

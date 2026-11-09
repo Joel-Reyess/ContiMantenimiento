@@ -24,6 +24,8 @@ import type { ReporteFalla, ReporteFallaList, VehicleImagePoint } from '@/interf
 import { PrioridadNombres } from '@/interfaces/Api.interface';
 import { getFullImageUrl } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
+import { BotonExportar } from '@/components/excel/BotonExportar';
+import { excelService } from '@/services/excelService';
 
 interface FiltersState {
   busqueda: string;
@@ -40,6 +42,8 @@ export function ReportesPage() {
   const { hasRole } = useAuth();
   // Eliminar reportes: solo administradores (requerimiento 9.3)
   const canEliminar = hasRole(['Administrador', 'SuperUsuario']);
+  // Exportar (Excel o CSV): administración y Gerente de Mantenimiento
+  const puedeExportar = hasRole(['Administrador', 'SuperUsuario', 'Supervisor']);
   const { confirmar } = useConfirm();
   const toast = useToast();
   const navigate = useNavigate();
@@ -626,6 +630,7 @@ export function ReportesPage() {
               <Calculator className="h-4 w-4" />
               Falla / Reparación con costos
             </Link>
+            {puedeExportar && <BotonExportar onExportar={(formato) => excelService.exportar('reportes', formato)} />}
             <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => setCrearOpen(true)}>
               <Plus className="h-4 w-4" />
               Nuevo reporte
