@@ -437,7 +437,7 @@ export function FallasImagenPage() {
           Cargando configuración...
         </Card>
       ) : (
-        <Card className="p-5 space-y-4" data-testid="editor-hotspots">
+        <Card className="p-5 flex flex-col gap-4" data-testid="editor-hotspots">
           <h2 className="text-lg font-semibold text-continental-black">Editor de hotspots</h2>
 
           <div className="grid gap-3 md:grid-cols-2">
@@ -490,10 +490,10 @@ export function FallasImagenPage() {
             </p>
           )}
 
-          <div className="rounded-lg border border-continental-gray-3/60 p-3 space-y-3 bg-continental-gray-5/30">
-            <p className="text-sm text-continental-gray-1">
+          <div className="rounded-lg border border-continental-gray-3 flex flex-col gap-3 bg-continental-gray-4/40" style={{ padding: 12 }}>
+            <p className="text-sm text-continental-gray-1" style={{ marginBottom: 0 }}>
               Imagen usada para fallas visuales:
-              <span className="ml-1 font-medium text-continental-black">
+              <span className="font-medium text-continental-black" style={{ marginLeft: 4 }}>
                 {selectedTipo?.imagenFallasUrl ? 'Personalizada (fallas)' : 'No hay imagen de fallas configurada'}
               </span>
             </p>
@@ -530,7 +530,7 @@ export function FallasImagenPage() {
 
           {/* Imagen a la izquierda, puntos a la derecha */}
           <div className="grid gap-6 lg:grid-cols-2">
-            <div className="space-y-3">
+            <div className="flex flex-col gap-3">
               <InteractiveVehicleImage
                 imageUrl={selectedImageUrl}
                 points={vehicleImagePoints.filter((p) => p.active)}
@@ -543,16 +543,16 @@ export function FallasImagenPage() {
                 emptyMessage="Aún no hay actividades ubicadas en esta imagen."
               />
 
-              <div className="rounded-md border border-continental-blue-dark/20 bg-continental-blue-dark/5 px-3 py-2 text-xs text-continental-blue-dark">
-                <p className="font-medium">
+              <div className="rounded-md border border-blue-200 bg-blue-50 text-xs text-continental-blue-dark" style={{ padding: '8px 12px' }}>
+                <p className="font-medium" style={{ marginBottom: 0 }}>
                   Vista previa: X {draftPointPreview?.xPct ?? '--'}% · Y {draftPointPreview?.yPct ?? '--'}% · R{' '}
                   {draftPointPreview?.radiusPct ?? DEFAULT_RADIUS}%
                 </p>
-                <p className="mt-1 text-continental-gray-1">Elige la actividad y haz clic en la imagen para colocar o mover el punto.</p>
+                <p className="mt-1 text-continental-gray-1" style={{ marginBottom: 0 }}>Elige la actividad y haz clic en la imagen para colocar o mover el punto.</p>
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="flex flex-col gap-4">
               <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
                 <Input label="X (%)" value={draftXPct} onChange={(e) => setDraftXPct(e.target.value)} />
                 <Input label="Y (%)" value={draftYPct} onChange={(e) => setDraftYPct(e.target.value)} />
@@ -586,20 +586,21 @@ export function FallasImagenPage() {
                   className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${
                     pointMsg.tipo === 'ok' ? 'border-green-200 bg-green-50 text-green-800' : 'border-red-200 bg-red-50 text-red-700'
                   }`}
+                  style={{ padding: '8px 12px' }}
                 >
                   {pointMsg.tipo === 'error' && <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />}
                   <span>{pointMsg.texto}</span>
                 </div>
               )}
 
-              <div className="rounded-lg border" data-testid="puntos-configurados">
-                <div className="flex items-center justify-between border-b px-3 py-2">
-                  <p className="text-sm font-medium text-continental-black">Actividades en la foto ({vehicleImagePoints.length})</p>
+              <div className="rounded-lg border border-continental-gray-3 bg-white" data-testid="puntos-configurados">
+                <div className="flex items-center justify-between border-b border-continental-gray-3 bg-continental-gray-4/40" style={{ padding: '8px 12px' }}>
+                  <p className="text-sm font-medium text-continental-black" style={{ marginBottom: 0 }}>Actividades en la foto ({vehicleImagePoints.length})</p>
                   {loadingPoints && <Loader2 className="h-4 w-4 animate-spin text-continental-gray-1" />}
                 </div>
                 <div className="max-h-80 overflow-y-auto">
                   {vehicleImagePoints.length === 0 ? (
-                    <p className="p-3 text-sm text-continental-gray-1">
+                    <p className="text-sm text-continental-gray-1" style={{ padding: 12, marginBottom: 0 }}>
                       {selectedTipoVehiculoId ? 'Aún no hay actividades ubicadas en esta imagen.' : 'Elige el tipo de vehículo.'}
                     </p>
                   ) : (
@@ -610,17 +611,18 @@ export function FallasImagenPage() {
                         <div
                           key={point.id}
                           data-testid={`punto-${point.id}`}
-                          className={`flex items-start justify-between gap-2 border-b px-3 py-2 text-sm last:border-b-0 ${point.sinActividad ? 'bg-amber-50' : ''}`}
+                          className={`flex items-start justify-between gap-2 border-b border-continental-gray-3 text-sm last:border-b-0 ${point.sinActividad ? 'bg-amber-50' : ''}`}
+                          style={{ padding: '10px 12px' }}
                         >
                           <div className="min-w-0">
-                            <p className="font-medium text-continental-black">{nombrePunto(point)}</p>
+                            <p className="font-medium text-continental-black" style={{ marginBottom: 2 }}>{nombrePunto(point)}</p>
                             {!point.sinActividad && (
-                              <p className="text-xs text-continental-gray-1">
+                              <p className="text-xs text-continental-gray-1" style={{ marginBottom: 2 }}>
                                 {point.actividadDescripcion && point.actividadDescripcion !== point.actividadTitulo && <>{point.actividadDescripcion} · </>}
                                 {moneda(point.actividadCosto)}
                               </p>
                             )}
-                            <p className="text-xs text-continental-gray-1">
+                            <p className="text-xs text-continental-gray-1" style={{ marginBottom: 0 }}>
                               X: {point.xPct}% · Y: {point.yPct}% · R: {point.radiusPct ?? DEFAULT_RADIUS}%
                               {!point.active && <span className="text-amber-700"> · Oculto (edítalo y guarda para mostrarlo)</span>}
                             </p>
@@ -633,7 +635,8 @@ export function FallasImagenPage() {
                                   <div className="flex flex-wrap items-center gap-2">
                                     <select
                                       aria-label={`Actividad de ${nombrePunto(point)}`}
-                                      className="max-w-[260px] rounded border border-continental-gray-3 px-2 py-1 text-xs"
+                                      className="max-w-[260px] rounded border border-continental-gray-3 bg-white text-xs"
+                                      style={{ padding: '4px 8px' }}
                                       value={valorLigar}
                                       onChange={(e) => setLigarA((prev) => ({ ...prev, [point.id]: e.target.value }))}
                                     >
@@ -687,7 +690,7 @@ export function FallasImagenPage() {
               </div>
 
               {tipoListo && listaActividades.length > 0 && (
-                <div className="rounded-lg border px-3 py-2 text-xs text-continental-gray-1" data-testid="sin-ubicar">
+                <div className="rounded-lg border border-continental-gray-3 text-xs text-continental-gray-1" style={{ padding: '8px 12px' }} data-testid="sin-ubicar">
                   <p className="flex items-center gap-1 font-medium text-continental-black" style={{ marginBottom: 2 }}>
                     <ListChecks className="h-4 w-4" />
                     Actividades del checklist sin ubicar en la foto: {sinUbicar.length} de {listaActividades.length}
