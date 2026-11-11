@@ -21,6 +21,7 @@ export interface ChecklistTemplateRequest {
     id?: number;
     orden: number;
     pregunta: string;
+    titulo?: string;
     tipoRespuesta: number;
     opciones?: string;
     obligatorio?: boolean;
@@ -32,7 +33,12 @@ export interface ChecklistTemplateRequest {
 export interface ChecklistItem {
   id: number;
   orden: number;
+  /** Descripción del ítem (la actividad) */
   pregunta: string;
+  /** FV-03: título corto (p. ej. "Rodillos principales"); sin título se usa la descripción */
+  titulo?: string | null;
+  /** FV-03: en cuántos puntos de la foto del tipo está ubicada (Fallas visuales) */
+  puntosEnFoto?: number;
   tipoRespuesta: number;
   tipoRespuestaNombre?: string;
   opciones?: string;

@@ -1,53 +1,48 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Loader2, Plus, RefreshCcw, Trash2 } from 'lucide-react';
-import { Button, Card, Input, Select, useConfirm, useToast } from '@/components/ui';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { AlertTriangle, ListChecks, Loader2, Plus, RefreshCcw, Trash2 } from 'lucide-react';
+import { Alert, AlertDescription, Button, Card, Input, SearchableSelect, Select, useConfirm, useToast } from '@/components/ui';
+import type { SearchableSelectOption } from '@/components/ui';
 import { InteractiveVehicleImage } from '@/components/vehiculos/InteractiveVehicleImage';
-import { catalogosService, imageFaultsService, vehicleImagePointsService } from '@/services';
+import { catalogosService, vehicleImagePointsService } from '@/services';
 import { checklistService, type ChecklistItem } from '@/services/checklistService';
-import { actividadPorNombre } from '@/lib/componentesActividades';
-import type {
-  ImageFault,
-  ImageFaultCreateRequest,
-  ImageFaultUpdateRequest,
-  VehicleImagePoint,
-  VehicleImagePointCreateRequest,
-  VehicleImagePointUpdateRequest,
-} from '@/interfaces';
+import { nombreActividad, sugerirActividad } from '@/lib/componentesActividades';
+import type { VehicleImagePoint, VehicleImagePointCreateRequest, VehicleImagePointUpdateRequest } from '@/interfaces';
 import type { TipoVehiculoItem } from '@/services/catalogosService';
 import { getFullImageUrl } from '@/lib/utils';
 
 import { VolverConfiguracion } from '@/components/configuracion/VolverConfiguracion';
 const DEFAULT_RADIUS = 1.8;
 
-type TabType = 'catalogo' | 'hotspots';
+const moneda = (n?: number | null) => `$${(Number(n) || 0).toFixed(2)}`;
 
+/**
+ * FV-03 (documento del 11-nov): Fallas visuales = actividades del checklist ubicadas en la foto del tipo de vehículo.
+ * Las actividades (título, descripción y costo) se capturan una sola vez en Configuración → Checklists; aquí solo se
+ * elige una actividad, se ubica en la foto y se ajusta su posición. Los reportes la toman de aquí automáticamente.
+ */
 export function FallasImagenPage() {
   const { confirmar } = useConfirm();
   const toast = useToast();
-  const [activeTab, setActiveTab] = useState<TabType>('catalogo');
+  const [searchParams] = useSearchParams();
   const [tiposVehiculo, setTiposVehiculo] = useState<TipoVehiculoItem[]>([]);
-  const [imageFaults, setImageFaults] = useState<ImageFault[]>([]);
   const [vehicleImagePoints, setVehicleImagePoints] = useState<VehicleImagePoint[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [loadingPoints, setLoadingPoints] = useState(false);
-  const [savingFault, setSavingFault] = useState(false);
   const [savingPoint, setSavingPoint] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
 
   const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
   // Resultado del editor de puntos: se muestra junto al botón de guardar, donde el usuario está trabajando (13.1)
   const [pointMsg, setPointMsg] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null);
   const savingPointRef = useRef(false);
 
-  const [selectedTipoVehiculoId, setSelectedTipoVehiculoId] = useState('');
+  const [selectedTipoVehiculoId, setSelectedTipoVehiculoId] = useState(searchParams.get('tipo') || '');
   const [imageKey, setImageKey] = useState('');
-  const [selectedFaultId, setSelectedFaultId] = useState('');
-
-  const [faultName, setFaultName] = useState('');
-  const [faultDescription, setFaultDescription] = useState('');
-  const [editingFaultId, setEditingFaultId] = useState<number | null>(null);
+  const [selectedActividadId, setSelectedActividadId] = useState('');
+  // Cambia para limpiar el buscador de actividades después de guardar
+  const [buscadorVersion, setBuscadorVersion] = useState(0);
 
   const [editingPointId, setEditingPointId] = useState<number | null>(null);
   const [draftXPct, setDraftXPct] = useState('');
@@ -55,16 +50,18 @@ export function FallasImagenPage() {
   const [draftRadiusPct, setDraftRadiusPct] = useState(String(DEFAULT_RADIUS));
   const [fallbackImageUpload, setFallbackImageUpload] = useState<File | null>(null);
   const [imageVersion, setImageVersion] = useState<number>(Date.now());
-  // Actividades del checklist del tipo: cada componente genera la suya al reportarlo (PDF 06-nov)
-  const [actividadesTipo, setActividadesTipo] = useState<ChecklistItem[]>([]);
+  // Actividades del checklist del tipo (null = cargando; [] y sinChecklist = el tipo no tiene checklist)
+  const [actividades, setActividades] = useState<ChecklistItem[] | null>(null);
+  const [sinChecklist, setSinChecklist] = useState(false);
+  // Actividad elegida para ligar cada punto "Sin actividad"
+  const [ligarA, setLigarA] = useState<Record<number, string>>({});
 
   const selectedTipo = useMemo(
     () => tiposVehiculo.find((t) => t.id === Number(selectedTipoVehiculoId)),
     [tiposVehiculo, selectedTipoVehiculoId]
   );
   const selectedImageUrl = useMemo(() => {
-    // Only use the specific failure container image (imagenFallasUrl)
-    // Do NOT fall back to imagenUrl since some models have different associated images
+    // Solo la imagen de fallas del tipo (imagenFallasUrl); la foto general puede ser de otro modelo
     const path = selectedTipo?.imagenFallasUrl;
     if (!path) return undefined;
     const full = getFullImageUrl(path);
@@ -72,65 +69,67 @@ export function FallasImagenPage() {
     return `${full}${sep}v=${imageVersion}`;
   }, [selectedTipo, imageVersion]);
 
+  const listaActividades = actividades ?? [];
+  const actividadPorId = useMemo(() => new Map(listaActividades.map((a) => [a.id, a])), [listaActividades]);
+  const selectedActividad = actividadPorId.get(Number(selectedActividadId));
+  const puntosPorActividad = useMemo(() => {
+    const m = new Map<number, number>();
+    vehicleImagePoints.forEach((p) => {
+      if (!p.sinActividad && p.checklistItemId) m.set(p.checklistItemId, (m.get(p.checklistItemId) ?? 0) + 1);
+    });
+    return m;
+  }, [vehicleImagePoints]);
+  const pendientes = vehicleImagePoints.filter((p) => p.sinActividad);
+  const sugeridas = pendientes
+    .map((p) => ({ punto: p, actividad: sugerirActividad(p, listaActividades) }))
+    .filter((x): x is { punto: VehicleImagePoint; actividad: ChecklistItem } => !!x.actividad);
+  const sinUbicar = listaActividades.filter((a) => !puntosPorActividad.has(a.id));
+
+  const cargarActividades = useCallback(async (tipoId: number) => {
+    setActividades(null);
+    setSinChecklist(false);
+    try {
+      const r = await checklistService.getPorTipo(tipoId);
+      const items = r.success && r.data ? r.data.items || [] : [];
+      setSinChecklist(!(r.success && r.data));
+      setActividades(items);
+    } catch (err) {
+      console.error(err);
+      setActividades([]);
+    }
+  }, []);
+
   useEffect(() => {
     const tipoId = Number(selectedTipoVehiculoId);
+    setSelectedActividadId('');
+    setLigarA({});
     if (!tipoId) {
-      setActividadesTipo([]);
+      setActividades([]);
+      setSinChecklist(false);
       return;
     }
-    let cancelado = false;
-    void checklistService.getPorTipo(tipoId).then((r) => {
-      if (!cancelado) setActividadesTipo(r.success && r.data ? r.data.items || [] : []);
-    });
-    return () => {
-      cancelado = true;
-    };
-  }, [selectedTipoVehiculoId]);
-
-  /** Liga el componente con su actividad del checklist (vacío = automática por nombre) */
-  const ligarActividad = async (point: VehicleImagePoint, valor: string) => {
-    const checklistItemId = valor ? Number(valor) : null;
-    const res = await vehicleImagePointsService.ligarActividad(point.id, checklistItemId);
-    if (!res.success) {
-      toast.error(res.message || 'No se pudo ligar la actividad');
-      return;
-    }
-    setVehicleImagePoints((prev) => prev.map((p) => (p.id === point.id ? { ...p, checklistItemId } : p)));
-    toast.exito(res.message || 'Actividad ligada');
-  };
-
-  const resetFaultForm = () => {
-    setFaultNameError('');
-    setFaultName('');
-    setFaultDescription('');
-    setEditingFaultId(null);
-  };
+    void cargarActividades(tipoId);
+  }, [selectedTipoVehiculoId, cargarActividades]);
 
   const resetPointDraft = () => {
     setEditingPointId(null);
     setDraftXPct('');
     setDraftYPct('');
     setDraftRadiusPct(String(DEFAULT_RADIUS));
+    setSelectedActividadId('');
+    setBuscadorVersion((v) => v + 1);
   };
 
   const loadInitialData = async () => {
     setLoading(true);
     setError('');
-    setMessage('');
     try {
-      const [tiposRes, faultsRes] = await Promise.all([
-        catalogosService.getTiposVehiculo(),
-        imageFaultsService.getAll(false),
-      ]);
-
+      const tiposRes = await catalogosService.getTiposVehiculo();
       if (tiposRes.success && tiposRes.data) setTiposVehiculo(tiposRes.data);
       else setTiposVehiculo([]);
-
-      if (faultsRes.success && faultsRes.data) setImageFaults(faultsRes.data);
-      else setImageFaults([]);
     } catch (err) {
       console.error(err);
-      setError('No se pudo cargar la configuración de fallas por imagen.');
+      setError('No se pudo cargar la configuración de fallas visuales.');
     } finally {
       setLoading(false);
     }
@@ -144,11 +143,7 @@ export function FallasImagenPage() {
     setLoadingPoints(true);
     try {
       const res = await vehicleImagePointsService.getAll({ imageKey: key.trim(), onlyActive: false });
-      if (res.success && res.data) {
-        setVehicleImagePoints(res.data);
-      } else {
-        setVehicleImagePoints([]);
-      }
+      setVehicleImagePoints(res.success && res.data ? res.data : []);
     } catch (err) {
       console.error(err);
       setVehicleImagePoints([]);
@@ -162,9 +157,14 @@ export function FallasImagenPage() {
   }, []);
 
   useEffect(() => {
-    if (!selectedTipoVehiculoId) return;
+    if (!selectedTipoVehiculoId) {
+      setImageKey('');
+      return;
+    }
     setImageKey(`tipo_${selectedTipoVehiculoId}`);
     setImageVersion(Date.now());
+    resetPointDraft();
+    setPointMsg(null);
   }, [selectedTipoVehiculoId]);
 
   useEffect(() => {
@@ -175,70 +175,39 @@ export function FallasImagenPage() {
     void loadPoints(imageKey);
   }, [imageKey]);
 
-  // Error bajo el campo "Nombre" del catálogo de fallas (antes salía en el aviso de arriba de la página)
-  const [faultNameError, setFaultNameError] = useState('');
-
-  const handleSaveFault = async () => {
-    if (!faultName.trim()) {
-      setFaultNameError('Escribe el nombre de la falla.');
-      return;
-    }
-    setFaultNameError('');
-    setSavingFault(true);
-    setError('');
-    setMessage('');
-    try {
-      if (editingFaultId) {
-        const payload: ImageFaultUpdateRequest = {
-          id: editingFaultId,
-          name: faultName.trim(),
-          description: faultDescription.trim() || undefined,
-          // "Desactivar" se quitó (13.1.1): al guardar, una falla que estaba oculta vuelve a estar disponible
-          active: true,
-        };
-        const res = await imageFaultsService.update(payload);
-        if (!res.success) throw new Error(res.message || 'No se pudo actualizar la falla.');
-        toast.exito('Falla de imagen actualizada');
-      } else {
-        const payload: ImageFaultCreateRequest = {
-          name: faultName.trim(),
-          description: faultDescription.trim() || undefined,
-          active: true,
-        };
-        const res = await imageFaultsService.create(payload);
-        if (!res.success) throw new Error(res.message || 'No se pudo crear la falla.');
-        toast.exito('Falla de imagen creada');
-      }
-      resetFaultForm();
-      const faultsRes = await imageFaultsService.getAll(false);
-      if (faultsRes.success && faultsRes.data) setImageFaults(faultsRes.data);
-    } catch (err: any) {
-      // Junto al formulario: "ya existe" va bajo el nombre; el resto en un aviso visible
-      const mensaje = err.message || 'Error al guardar la falla.';
-      if (/existe|duplicad|repetid/i.test(mensaje)) setFaultNameError(mensaje);
-      else toast.error(mensaje);
-    } finally {
-      setSavingFault(false);
-    }
+  const recargar = async () => {
+    await loadInitialData();
+    if (selectedTipoVehiculoId) await cargarActividades(Number(selectedTipoVehiculoId));
+    if (imageKey) await loadPoints(imageKey);
   };
 
-  const handleDeleteFault = async (fault: ImageFault) => {
-    const ok = await confirmar({
-      titulo: 'Eliminar falla',
-      mensaje: `¿Eliminar la falla "${fault.name}" del catálogo? También se eliminarán sus puntos en las imágenes. Si ya se usó en reportes no se podrá eliminar (para conservar el historial).`,
-      textoConfirmar: 'Eliminar',
-      tono: 'peligro'
-    });
-    if (!ok) return;
-    const res = await imageFaultsService.delete(fault.id);
-    if (!res.success) {
-      toast.error(res.message || 'No se pudo eliminar la falla.');
-      return;
-    }
-    toast.exito(`Falla "${fault.name}" eliminada`);
-    const faultsRes = await imageFaultsService.getAll(false);
-    if (faultsRes.success && faultsRes.data) setImageFaults(faultsRes.data);
-  };
+  // Buscador de actividades del checklist del tipo: título, descripción y costo
+  const opcionActividad = useCallback(
+    (a: ChecklistItem): SearchableSelectOption => {
+      const titulo = nombreActividad(a);
+      const partes = [titulo !== a.pregunta ? a.pregunta : '', moneda(a.costoEstimado)];
+      const veces = puntosPorActividad.get(a.id);
+      if (veces) partes.push(`ya en la foto${veces > 1 ? ` (${veces})` : ''}`);
+      return { value: a.id, label: titulo, description: partes.filter(Boolean).join(' · ') };
+    },
+    [puntosPorActividad]
+  );
+  const buscarActividades = useCallback(
+    async (texto: string) => {
+      const t = texto
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .toLowerCase()
+        .trim();
+      const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+      // Al abrir con una actividad elegida el buscador trae su nombre: se muestran todas
+      const filtrar = t && !(selectedActividad && norm(nombreActividad(selectedActividad)) === t);
+      return listaActividades
+        .filter((a) => !filtrar || norm(`${a.titulo || ''} ${a.pregunta}`).includes(t))
+        .map(opcionActividad);
+    },
+    [listaActividades, opcionActividad, selectedActividad]
+  );
 
   const parsePct = (value: string) => {
     const num = Number(value);
@@ -251,25 +220,18 @@ export function FallasImagenPage() {
     const x = parsePct(draftXPct);
     const y = parsePct(draftYPct);
     if (x === null || y === null) return null;
-
     const parsedRadius = parsePct(draftRadiusPct || String(DEFAULT_RADIUS));
-    return {
-      xPct: x,
-      yPct: y,
-      radiusPct: parsedRadius === null ? DEFAULT_RADIUS : parsedRadius,
-    };
+    return { xPct: x, yPct: y, radiusPct: parsedRadius === null ? DEFAULT_RADIUS : parsedRadius };
   })();
 
-  const draftPointLabel = (() => {
-    if (editingPointId) return 'Punto en edicion';
-    const selectedFault = imageFaults.find((fault) => fault.id === Number(selectedFaultId));
-    return selectedFault?.name || '';
-  })();
+  const draftPointLabel = selectedActividad ? nombreActividad(selectedActividad) : editingPointId ? 'Punto en edición' : '';
 
   const handleImageClick = (xPct: number, yPct: number) => {
     setDraftXPct(String(xPct));
     setDraftYPct(String(yPct));
   };
+
+  const nombrePunto = (p: VehicleImagePoint) => p.actividadTitulo || p.imageFaultName || `Punto #${p.id}`;
 
   const handleSavePoint = async () => {
     if (savingPointRef.current) return;
@@ -278,8 +240,9 @@ export function FallasImagenPage() {
       setPointMsg({ tipo: 'error', texto: 'Selecciona el tipo de vehículo.' });
       return;
     }
-    if (!selectedFaultId) {
-      setPointMsg({ tipo: 'error', texto: 'Selecciona la falla asociada al punto.' });
+    const editando = editingPointId ? vehicleImagePoints.find((p) => p.id === editingPointId) : undefined;
+    if (!selectedActividad && !(editando && !editando.sinActividad)) {
+      setPointMsg({ tipo: 'error', texto: 'Elige la actividad del checklist que vas a ubicar en la foto.' });
       return;
     }
 
@@ -292,19 +255,17 @@ export function FallasImagenPage() {
     }
 
     // Duplicados y superposición con los puntos ya guardados en esta imagen (13.1)
+    const actividadId = selectedActividad?.id ?? editando?.checklistItemId ?? undefined;
     const otros = vehicleImagePoints.filter((p) => p.id !== editingPointId);
-    const mismaFalla = otros.filter((p) => p.imageFaultId === Number(selectedFaultId));
-    const encimados = otros.filter(
-      (p) => Math.hypot(p.xPct - x, p.yPct - y) < r + (p.radiusPct ?? DEFAULT_RADIUS)
-    );
-    if (mismaFalla.length > 0 || encimados.length > 0) {
-      const nombre = (p: VehicleImagePoint) => p.imageFaultName || `Falla #${p.imageFaultId}`;
+    const mismaActividad = otros.filter((p) => !p.sinActividad && p.checklistItemId === actividadId);
+    const encimados = otros.filter((p) => Math.hypot(p.xPct - x, p.yPct - y) < r + (p.radiusPct ?? DEFAULT_RADIUS));
+    if (mismaActividad.length > 0 || encimados.length > 0) {
       const ok = await confirmar({
         titulo: 'Revisa el punto antes de guardar',
         mensaje: (
           <div className="space-y-2">
-            {mismaFalla.length > 0 && <p>Esta falla ya tiene {mismaFalla.length} punto(s) en la imagen.</p>}
-            {encimados.length > 0 && <p>El punto se encima con: {encimados.map(nombre).join(', ')}.</p>}
+            {mismaActividad.length > 0 && <p>Esta actividad ya está ubicada {mismaActividad.length} vez/veces en la foto.</p>}
+            {encimados.length > 0 && <p>El punto se encima con: {encimados.map(nombrePunto).join(', ')}.</p>}
             <p>¿Guardarlo de todos modos?</p>
           </div>
         ),
@@ -317,21 +278,19 @@ export function FallasImagenPage() {
     savingPointRef.current = true;
     setSavingPoint(true);
     setError('');
-    setMessage('');
     try {
       if (editingPointId) {
-        const current = vehicleImagePoints.find((p) => p.id === editingPointId);
+        if (!editando) throw new Error('El punto que estabas editando ya no existe.');
         const payload: VehicleImagePointUpdateRequest = {
           id: editingPointId,
           imageKey: imageKey.trim(),
           xPct: x,
           yPct: y,
           radiusPct: r,
-          imageFaultId: Number(selectedFaultId),
+          checklistItemId: selectedActividad?.id,
           // Sin "Desactivar" (13.1.1): al guardar, un punto que estaba oculto vuelve a mostrarse en los reportes
-          active: true,
+          active: true
         };
-        if (!current) throw new Error('El punto que estabas editando ya no existe.');
         const res = await vehicleImagePointsService.update(payload);
         if (!res.success) throw new Error(res.message || 'No se pudo actualizar el punto.');
         setPointMsg({ tipo: 'ok', texto: 'Punto actualizado correctamente.' });
@@ -342,13 +301,13 @@ export function FallasImagenPage() {
           xPct: x,
           yPct: y,
           radiusPct: r,
-          imageFaultId: Number(selectedFaultId),
-          active: true,
+          checklistItemId: selectedActividad!.id,
+          active: true
         };
         const res = await vehicleImagePointsService.create(payload);
-        if (!res.success) throw new Error(res.message || 'No se pudo crear el punto.');
-        setPointMsg({ tipo: 'ok', texto: 'Punto guardado correctamente.' });
-        toast.exito('Punto guardado');
+        if (!res.success) throw new Error(res.message || 'No se pudo guardar el punto.');
+        setPointMsg({ tipo: 'ok', texto: `"${nombreActividad(selectedActividad!)}" ubicada en la foto.` });
+        toast.exito('Actividad ubicada en la foto');
       }
       resetPointDraft();
       await loadPoints(imageKey.trim());
@@ -360,10 +319,54 @@ export function FallasImagenPage() {
     }
   };
 
+  const ligar = async (point: VehicleImagePoint, actividadId: number, silencioso = false) => {
+    const res = await vehicleImagePointsService.ligarActividad(point.id, actividadId);
+    if (!res.success) {
+      toast.error(res.message || 'No se pudo ligar la actividad');
+      return false;
+    }
+    if (!silencioso) toast.exito(res.message || 'Actividad ligada');
+    return true;
+  };
+
+  const ligarPendiente = async (point: VehicleImagePoint) => {
+    const valor = ligarA[point.id] ?? String(sugerirActividad(point, listaActividades)?.id ?? '');
+    if (!valor) {
+      toast.error('Elige la actividad para este punto.');
+      return;
+    }
+    if (await ligar(point, Number(valor))) await loadPoints(point.imageKey);
+  };
+
+  const ligarSugeridas = async () => {
+    const ok = await confirmar({
+      titulo: 'Ligar las sugeridas',
+      mensaje: (
+        <div className="space-y-2">
+          <p>Cada punto se ligará con la actividad que se le parece por nombre:</p>
+          <ul className="list-disc pl-5 text-sm">
+            {sugeridas.map((s) => (
+              <li key={s.punto.id}>
+                {s.punto.imageFaultName} → {nombreActividad(s.actividad)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ),
+      textoConfirmar: 'Ligar',
+      tono: 'advertencia'
+    });
+    if (!ok) return;
+    let ligados = 0;
+    for (const s of sugeridas) if (await ligar(s.punto, s.actividad.id, true)) ligados++;
+    toast.exito(`${ligados} punto(s) ligado(s)`);
+    await loadPoints(imageKey);
+  };
+
   const handleDeletePoint = async (point: VehicleImagePoint) => {
     const ok = await confirmar({
       titulo: 'Eliminar punto',
-      mensaje: `¿Eliminar el punto de "${point.imageFaultName || `Falla #${point.imageFaultId}`}" de la imagen? Esta acción no se puede deshacer.`,
+      mensaje: `¿Quitar "${nombrePunto(point)}" de la foto? La actividad sigue en el checklist. Esta acción no se puede deshacer.`,
       textoConfirmar: 'Eliminar',
       tono: 'peligro'
     });
@@ -385,14 +388,11 @@ export function FallasImagenPage() {
       toast.error('Selecciona el tipo de vehículo y el archivo de imagen.');
       return;
     }
-
     setUploadingImage(true);
     setError('');
-    setMessage('');
     try {
       const res = await catalogosService.uploadImagenFallasTipoVehiculo(selectedTipo.id, fallbackImageUpload);
       if (!res.success) throw new Error(res.message || 'No se pudo subir imagen de fallas.');
-
       toast.exito('Imagen de fallas subida correctamente');
       setFallbackImageUpload(null);
       setImageVersion(Date.now());
@@ -404,15 +404,21 @@ export function FallasImagenPage() {
     }
   };
 
+  const tipoListo = !!selectedTipoVehiculoId && actividades !== null;
+
   return (
     <div className="dashboard-wrapper space-y-5">
       <VolverConfiguracion />
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm uppercase tracking-[0.3em] text-continental-gray-1">Configuración visual</p>
-          <h1 className="text-3xl font-semibold text-continental-black">Fallas por imagen</h1>
+          <h1 className="text-3xl font-semibold text-continental-black">Fallas visuales</h1>
+          <p className="text-sm text-continental-gray-1" style={{ marginBottom: 0 }}>
+            Ubica en la foto de cada tipo de vehículo las actividades de su checklist. Las actividades (título, descripción y
+            costo) se crean una sola vez en <Link to="/configuracion/checklists" className="underline">Checklists</Link>.
+          </p>
         </div>
-        <Button variant="outline" onClick={loadInitialData} className="flex items-center gap-2">
+        <Button variant="outline" onClick={() => void recargar()} className="flex items-center gap-2">
           <RefreshCcw className="h-4 w-4" />
           Actualizar
         </Button>
@@ -424,7 +430,6 @@ export function FallasImagenPage() {
           {error}
         </Card>
       )}
-      {message && <Card className="border-green-200 bg-green-50 p-4 text-sm text-green-700">{message}</Card>}
 
       {loading ? (
         <Card className="p-8 flex items-center justify-center gap-2">
@@ -432,255 +437,221 @@ export function FallasImagenPage() {
           Cargando configuración...
         </Card>
       ) : (
-        <div className="grid gap-5">
-          {/* Tabs */}
-          <div className="flex border-b border-continental-gray-3/50">
-            <button
-              type="button"
-              onClick={() => setActiveTab('catalogo')}
-              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-                activeTab === 'catalogo'
-                  ? 'border-continental-blue-dark text-continental-blue-dark'
-                  : 'border-transparent text-continental-gray-1 hover:text-continental-black hover:border-continental-gray-3'
-              }`}
-            >
-              Catálogo de fallas
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('hotspots')}
-              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-                activeTab === 'hotspots'
-                  ? 'border-continental-blue-dark text-continental-blue-dark'
-                  : 'border-transparent text-continental-gray-1 hover:text-continental-black hover:border-continental-gray-3'
-              }`}
-            >
-              Editor de hotspots
-            </button>
-          </div>
+        <Card className="p-5 space-y-4" data-testid="editor-hotspots">
+          <h2 className="text-lg font-semibold text-continental-black">Editor de hotspots</h2>
 
-          {/* Tab Content */}
-          {/* Catálogo de fallas - Solo visible cuando está activa la pestaña */}
-          {activeTab === 'catalogo' && (
-            <Card className="p-5 space-y-4">
-              <h2 className="text-lg font-semibold text-continental-black">Catálogo de fallas</h2>
-
-              <Input
-                label="Nombre"
-                value={faultName}
-                onChange={(e) => {
-                  setFaultName(e.target.value);
-                  if (faultNameError) setFaultNameError('');
+          <div className="grid gap-3 md:grid-cols-2">
+            <Select
+              label="Tipo de vehículo"
+              value={selectedTipoVehiculoId}
+              onChange={(value) => setSelectedTipoVehiculoId(value)}
+              options={[{ value: '', label: 'Seleccionar' }, ...tiposVehiculo.map((t) => ({ value: String(t.id), label: t.nombre }))]}
+            />
+            <div data-testid="selector-actividad">
+              <SearchableSelect
+                key={`${selectedTipoVehiculoId}-${buscadorVersion}`}
+                label="Actividad del checklist"
+                placeholder={
+                  !selectedTipoVehiculoId
+                    ? 'Primero elige el tipo de vehículo'
+                    : listaActividades.length === 0
+                      ? 'Este tipo no tiene actividades en su checklist'
+                      : 'Busca por título o descripción'
+                }
+                disabled={!tipoListo || listaActividades.length === 0}
+                selected={selectedActividad ? opcionActividad(selectedActividad) : null}
+                fetchOptions={buscarActividades}
+                onSelect={(o) => {
+                  setSelectedActividadId(o ? String(o.value) : '');
+                  setPointMsg(null);
                 }}
-                error={faultNameError || undefined}
-              />
-              <Input
-                label="Descripción"
-                value={faultDescription}
-                onChange={(e) => setFaultDescription(e.target.value)}
-                placeholder="Opcional"
-              />
-              <div className="flex gap-2">
-                <Button onClick={handleSaveFault} disabled={savingFault} className="flex items-center gap-2">
-                  {savingFault ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                  {editingFaultId ? 'Actualizar' : 'Crear'}
-                </Button>
-                {editingFaultId && (
-                  <Button variant="outline" onClick={resetFaultForm}>
-                    Cancelar
-                  </Button>
-                )}
-              </div>
-
-              <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
-                {imageFaults.map((fault) => (
-                  <div key={fault.id} className="rounded-lg border p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="font-medium text-continental-black">{fault.name}</p>
-                        <p className="text-xs text-continental-gray-1">{fault.description || 'Sin descripción'}</p>
-                        {!fault.active && (
-                          <p className="text-xs mt-1 text-amber-700">Oculta en reportes (desactivada antes). Edítala y guarda para mostrarla, o elimínala.</p>
-                        )}
-                      </div>
-                      <div className="flex gap-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setEditingFaultId(fault.id);
-                            setFaultName(fault.name);
-                            setFaultDescription(fault.description || '');
-                          }}
-                        >
-                          Editar
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          aria-label={`Eliminar falla ${fault.name}`}
-                          title="Eliminar falla"
-                          onClick={() => void handleDeleteFault(fault)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
-
-          {/* Editor de hotspots - Solo visible cuando está activa la pestaña */}
-          {activeTab === 'hotspots' && (
-            <Card className="p-5 space-y-4">
-              <h2 className="text-lg font-semibold text-continental-black">Editor visual de hotspots</h2>
-
-              <div className="grid gap-3 md:grid-cols-2">
-              <Select
-                label="Tipo de vehículo"
-                value={selectedTipoVehiculoId}
-                onChange={(value) => setSelectedTipoVehiculoId(value)}
-                options={[{ value: '', label: 'Seleccionar' }, ...tiposVehiculo.map((t) => ({ value: t.id, label: t.nombre }))]}
-              />
-              <Select
-                label="Falla asociada"
-                value={selectedFaultId}
-                onChange={(value) => setSelectedFaultId(value)}
-                options={[{ value: '', label: 'Seleccionar' }, ...imageFaults.map((f) => ({ value: f.id, label: f.name }))]}
+                noResultsText="Ninguna actividad del checklist coincide"
               />
             </div>
+          </div>
 
-              <div className="rounded-lg border border-continental-gray-3/60 p-3 space-y-3 bg-continental-gray-5/30">
-                <p className="text-sm text-continental-gray-1">
-                  Imagen usada para fallas visuales:
-                  <span className="ml-1 font-medium text-continental-black">
-                    {selectedTipo?.imagenFallasUrl ? 'Personalizada (fallas)' : 'No hay imagen de fallas configurada'}
+          {selectedTipoVehiculoId && actividades !== null && (sinChecklist || listaActividades.length === 0) && (
+            <Alert variant="warning">
+              <AlertDescription>
+                {selectedTipo?.nombre || 'Este tipo'} no tiene actividades en su checklist. Créalas en{' '}
+                <Link to="/configuracion/checklists" className="font-semibold underline">
+                  Configuración → Checklists
+                </Link>{' '}
+                y vuelve aquí para ubicarlas en la foto.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {selectedActividad && (
+            <p className="text-sm text-continental-gray-1" style={{ marginBottom: 0 }} data-testid="actividad-elegida">
+              <strong className="text-continental-black">{nombreActividad(selectedActividad)}</strong>
+              {nombreActividad(selectedActividad) !== selectedActividad.pregunta && <> · {selectedActividad.pregunta}</>} ·{' '}
+              {moneda(selectedActividad.costoEstimado)}. Haz clic en la foto donde está y guarda el punto.
+            </p>
+          )}
+
+          <div className="rounded-lg border border-continental-gray-3/60 p-3 space-y-3 bg-continental-gray-5/30">
+            <p className="text-sm text-continental-gray-1">
+              Imagen usada para fallas visuales:
+              <span className="ml-1 font-medium text-continental-black">
+                {selectedTipo?.imagenFallasUrl ? 'Personalizada (fallas)' : 'No hay imagen de fallas configurada'}
+              </span>
+            </p>
+            <div className="flex flex-wrap items-center gap-2 md:justify-end">
+              <input type="file" accept="image/*" onChange={(e) => setFallbackImageUpload(e.target.files?.[0] || null)} className="block text-sm" />
+              <Button
+                onClick={handleUploadImageFallas}
+                disabled={!selectedTipoVehiculoId || !fallbackImageUpload || uploadingImage}
+                className="flex items-center gap-2"
+              >
+                {uploadingImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                Subir imagen de fallas
+              </Button>
+            </div>
+          </div>
+
+          {pendientes.length > 0 && (
+            <Alert variant="warning" data-testid="aviso-sin-actividad">
+              <AlertDescription>
+                <span className="flex flex-wrap items-center justify-between gap-2">
+                  <span>
+                    {pendientes.length} punto(s) <strong>sin actividad</strong>: no aparecen en los reportes hasta que elijas su
+                    actividad del checklist (abajo, en la lista de puntos).
                   </span>
+                  {sugeridas.length > 0 && (
+                    <Button size="sm" variant="outline" onClick={() => void ligarSugeridas()}>
+                      Ligar sugeridas ({sugeridas.length})
+                    </Button>
+                  )}
+                </span>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Imagen a la izquierda, puntos a la derecha */}
+          <div className="grid gap-6 lg:grid-cols-2">
+            <div className="space-y-3">
+              <InteractiveVehicleImage
+                imageUrl={selectedImageUrl}
+                points={vehicleImagePoints.filter((p) => p.active)}
+                selectedPointIds={editingPointId ? [editingPointId] : []}
+                onImageClick={handleImageClick}
+                draftPoint={draftPointPreview || undefined}
+                draftPointLabel={draftPointLabel}
+                readonly={false}
+                className="w-full"
+                emptyMessage="Aún no hay actividades ubicadas en esta imagen."
+              />
+
+              <div className="rounded-md border border-continental-blue-dark/20 bg-continental-blue-dark/5 px-3 py-2 text-xs text-continental-blue-dark">
+                <p className="font-medium">
+                  Vista previa: X {draftPointPreview?.xPct ?? '--'}% · Y {draftPointPreview?.yPct ?? '--'}% · R{' '}
+                  {draftPointPreview?.radiusPct ?? DEFAULT_RADIUS}%
                 </p>
-                <div className="flex flex-wrap items-center gap-2 md:justify-end">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => setFallbackImageUpload(e.target.files?.[0] || null)}
-                    className="block text-sm"
-                  />
+                <p className="mt-1 text-continental-gray-1">Elige la actividad y haz clic en la imagen para colocar o mover el punto.</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+                <Input label="X (%)" value={draftXPct} onChange={(e) => setDraftXPct(e.target.value)} />
+                <Input label="Y (%)" value={draftYPct} onChange={(e) => setDraftYPct(e.target.value)} />
+                <Input label="Radio (%)" value={draftRadiusPct} onChange={(e) => setDraftRadiusPct(e.target.value)} />
+                <div className="col-span-full flex flex-wrap items-end justify-end gap-2">
                   <Button
-                    onClick={handleUploadImageFallas}
-                    disabled={!selectedTipoVehiculoId || !fallbackImageUpload || uploadingImage}
-                    className="flex items-center gap-2"
+                    size="sm"
+                    onClick={handleSavePoint}
+                    disabled={savingPoint || loadingPoints || !tipoListo}
+                    className="!min-h-10 px-4 py-2 w-full sm:w-auto"
                   >
-                    {uploadingImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                    Subir imagen de fallas
+                    {savingPoint ? <Loader2 className="h-4 w-4 animate-spin" /> : editingPointId ? 'Actualizar punto' : 'Guardar punto'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      resetPointDraft();
+                      setPointMsg(null);
+                    }}
+                    className="!min-h-10 px-4 py-2 w-full sm:w-auto"
+                  >
+                    Limpiar
                   </Button>
                 </div>
               </div>
 
-            {/* Side-by-side layout: Image on left, Points config on right */}
-            <div className="grid gap-6 lg:grid-cols-2">
-              {/* Left side: Image */}
-              <div className="space-y-3">
-                <InteractiveVehicleImage
-                  imageUrl={selectedImageUrl}
-                  points={vehicleImagePoints.filter((p) => p.active)}
-                  selectedPointIds={editingPointId ? [editingPointId] : []}
-                  onImageClick={handleImageClick}
-                  draftPoint={draftPointPreview || undefined}
-                  draftPointLabel={draftPointLabel}
-                  readonly={false}
-                  className="w-full"
-                  emptyMessage="No hay puntos activos en esta imagen."
-                />
-
-                <div className="rounded-md border border-continental-blue-dark/20 bg-continental-blue-dark/5 px-3 py-2 text-xs text-continental-blue-dark">
-                  <p className="font-medium">
-                    Vista previa: X {draftPointPreview?.xPct ?? '--'}% · Y {draftPointPreview?.yPct ?? '--'}% · R{' '}
-                    {draftPointPreview?.radiusPct ?? DEFAULT_RADIUS}%
-                  </p>
-                  <p className="mt-1 text-continental-gray-1">Haz click en la imagen para colocar o mover el punto visualmente.</p>
+              {pointMsg && (
+                <div
+                  role={pointMsg.tipo === 'error' ? 'alert' : 'status'}
+                  className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${
+                    pointMsg.tipo === 'ok' ? 'border-green-200 bg-green-50 text-green-800' : 'border-red-200 bg-red-50 text-red-700'
+                  }`}
+                >
+                  {pointMsg.tipo === 'error' && <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />}
+                  <span>{pointMsg.texto}</span>
                 </div>
-              </div>
+              )}
 
-              {/* Right side: Points configuration */}
-              <div className="space-y-4">
-                <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-                  <Input label="X (%)" value={draftXPct} onChange={(e) => setDraftXPct(e.target.value)} />
-                  <Input label="Y (%)" value={draftYPct} onChange={(e) => setDraftYPct(e.target.value)} />
-                  <Input label="Radio (%)" value={draftRadiusPct} onChange={(e) => setDraftRadiusPct(e.target.value)} />
-                  <div className="col-span-full flex flex-wrap items-end justify-end gap-2">
-                    <Button
-                      size="sm"
-                      onClick={handleSavePoint}
-                      disabled={savingPoint || loadingPoints}
-                      className="!min-h-10 px-4 py-2 w-full sm:w-auto"
-                    >
-                      {savingPoint ? <Loader2 className="h-4 w-4 animate-spin" /> : editingPointId ? 'Actualizar punto' : 'Guardar punto'}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        resetPointDraft();
-                        setPointMsg(null);
-                      }}
-                      className="!min-h-10 px-4 py-2 w-full sm:w-auto"
-                    >
-                      Limpiar
-                    </Button>
-                  </div>
+              <div className="rounded-lg border" data-testid="puntos-configurados">
+                <div className="flex items-center justify-between border-b px-3 py-2">
+                  <p className="text-sm font-medium text-continental-black">Actividades en la foto ({vehicleImagePoints.length})</p>
+                  {loadingPoints && <Loader2 className="h-4 w-4 animate-spin text-continental-gray-1" />}
                 </div>
-
-                {pointMsg && (
-                  <div
-                    role={pointMsg.tipo === 'error' ? 'alert' : 'status'}
-                    className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${
-                      pointMsg.tipo === 'ok' ? 'border-green-200 bg-green-50 text-green-800' : 'border-red-200 bg-red-50 text-red-700'
-                    }`}
-                  >
-                    {pointMsg.tipo === 'error' && <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />}
-                    <span>{pointMsg.texto}</span>
-                  </div>
-                )}
-
-                <div className="rounded-lg border">
-                  <div className="flex items-center justify-between border-b px-3 py-2">
-                    <p className="text-sm font-medium text-continental-black">Puntos configurados ({vehicleImagePoints.length})</p>
-                    {loadingPoints && <Loader2 className="h-4 w-4 animate-spin text-continental-gray-1" />}
-                  </div>
-                  <div className="max-h-64 overflow-y-auto">
-                    {vehicleImagePoints.length === 0 ? (
-                      <p className="p-3 text-sm text-continental-gray-1">No hay puntos para el `imageKey` seleccionado.</p>
-                    ) : (
-                      vehicleImagePoints.map((point) => (
-                        <div key={point.id} className="flex items-center justify-between gap-2 border-b px-3 py-2 text-sm last:border-b-0">
-                          <div>
-                            <p className="font-medium text-continental-black">{point.imageFaultName || `Falla #${point.imageFaultId}`}</p>
+                <div className="max-h-80 overflow-y-auto">
+                  {vehicleImagePoints.length === 0 ? (
+                    <p className="p-3 text-sm text-continental-gray-1">
+                      {selectedTipoVehiculoId ? 'Aún no hay actividades ubicadas en esta imagen.' : 'Elige el tipo de vehículo.'}
+                    </p>
+                  ) : (
+                    vehicleImagePoints.map((point) => {
+                      const sugerida = point.sinActividad ? sugerirActividad(point, listaActividades) : undefined;
+                      const valorLigar = ligarA[point.id] ?? (sugerida ? String(sugerida.id) : '');
+                      return (
+                        <div
+                          key={point.id}
+                          data-testid={`punto-${point.id}`}
+                          className={`flex items-start justify-between gap-2 border-b px-3 py-2 text-sm last:border-b-0 ${point.sinActividad ? 'bg-amber-50' : ''}`}
+                        >
+                          <div className="min-w-0">
+                            <p className="font-medium text-continental-black">{nombrePunto(point)}</p>
+                            {!point.sinActividad && (
+                              <p className="text-xs text-continental-gray-1">
+                                {point.actividadDescripcion && point.actividadDescripcion !== point.actividadTitulo && <>{point.actividadDescripcion} · </>}
+                                {moneda(point.actividadCosto)}
+                              </p>
+                            )}
                             <p className="text-xs text-continental-gray-1">
                               X: {point.xPct}% · Y: {point.yPct}% · R: {point.radiusPct ?? DEFAULT_RADIUS}%
                               {!point.active && <span className="text-amber-700"> · Oculto (edítalo y guarda para mostrarlo)</span>}
                             </p>
-                            {actividadesTipo.length > 0 && (() => {
-                              const automatica = actividadPorNombre(point.imageFaultName, actividadesTipo);
-                              return (
-                                <label className="mt-1 flex flex-wrap items-center gap-2 text-xs text-continental-gray-1">
-                                  Actividad que genera:
-                                  <select
-                                    aria-label={`Actividad de ${point.imageFaultName || 'componente'}`}
-                                    className="max-w-[260px] rounded border border-continental-gray-3 px-2 py-1 text-xs"
-                                    value={point.checklistItemId ? String(point.checklistItemId) : ''}
-                                    onChange={(e) => void ligarActividad(point, e.target.value)}
-                                  >
-                                    <option value="">
-                                      {automatica ? `Automática: ${automatica.pregunta}` : 'Automática: sin coincidencia (no genera actividad)'}
-                                    </option>
-                                    {actividadesTipo.map((a) => (
-                                      <option key={a.id} value={a.id}>{a.pregunta}</option>
-                                    ))}
-                                  </select>
-                                </label>
-                              );
-                            })()}
+                            {point.sinActividad && (
+                              <div className="mt-1 flex flex-col gap-1">
+                                <p className="text-xs font-semibold" style={{ color: '#b45309', marginBottom: 0 }}>
+                                  Sin actividad: elige la actividad del checklist que corresponde a este punto.
+                                </p>
+                                {listaActividades.length > 0 && (
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <select
+                                      aria-label={`Actividad de ${nombrePunto(point)}`}
+                                      className="max-w-[260px] rounded border border-continental-gray-3 px-2 py-1 text-xs"
+                                      value={valorLigar}
+                                      onChange={(e) => setLigarA((prev) => ({ ...prev, [point.id]: e.target.value }))}
+                                    >
+                                      <option value="">Elige la actividad…</option>
+                                      {listaActividades.map((a) => (
+                                        <option key={a.id} value={a.id}>
+                                          {nombreActividad(a)}
+                                          {sugerida?.id === a.id ? ' (sugerida)' : ''}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <Button size="sm" variant="outline" disabled={!valorLigar} onClick={() => void ligarPendiente(point)}>
+                                      Ligar
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                           <div className="flex gap-1">
                             <Button
@@ -688,10 +659,12 @@ export function FallasImagenPage() {
                               variant="outline"
                               onClick={() => {
                                 setEditingPointId(point.id);
-                                setSelectedFaultId(String(point.imageFaultId));
+                                setSelectedActividadId(!point.sinActividad && point.checklistItemId ? String(point.checklistItemId) : '');
+                                setBuscadorVersion((v) => v + 1);
                                 setDraftXPct(String(point.xPct));
                                 setDraftYPct(String(point.yPct));
                                 setDraftRadiusPct(String(point.radiusPct ?? DEFAULT_RADIUS));
+                                setPointMsg(null);
                               }}
                             >
                               Editar
@@ -707,15 +680,28 @@ export function FallasImagenPage() {
                             </Button>
                           </div>
                         </div>
-                      ))
-                    )}
-                  </div>
+                      );
+                    })
+                  )}
                 </div>
               </div>
+
+              {tipoListo && listaActividades.length > 0 && (
+                <div className="rounded-lg border px-3 py-2 text-xs text-continental-gray-1" data-testid="sin-ubicar">
+                  <p className="flex items-center gap-1 font-medium text-continental-black" style={{ marginBottom: 2 }}>
+                    <ListChecks className="h-4 w-4" />
+                    Actividades del checklist sin ubicar en la foto: {sinUbicar.length} de {listaActividades.length}
+                  </p>
+                  {sinUbicar.length > 0 && (
+                    <p style={{ marginBottom: 0 }}>
+                      {sinUbicar.map(nombreActividad).join(' · ')}. En el reporte salen en "Otras actividades del checklist".
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
-          </Card>
-          )}
-        </div>
+          </div>
+        </Card>
       )}
     </div>
   );

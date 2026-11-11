@@ -30,6 +30,10 @@ public class ChecklistItemDto
     public int ChecklistTemplateId { get; set; }
     public int Orden { get; set; }
     public required string Pregunta { get; set; }
+    /// <summary>Título corto (FV-03); null = se muestra la descripción (Pregunta)</summary>
+    public string? Titulo { get; set; }
+    /// <summary>Puntos de la foto del vehículo donde está ubicada la actividad (Fallas visuales)</summary>
+    public int PuntosEnFoto { get; set; }
     public TipoChecklistItemEnum TipoRespuesta { get; set; }
     public string? TipoRespuestaNombre { get; set; }
     public string? Opciones { get; set; }
@@ -68,6 +72,10 @@ public class ChecklistItemCreateRequest
     [Required(ErrorMessage = "La pregunta es requerida")]
     [MaxLength(200)]
     public required string Pregunta { get; set; }
+
+    /// <summary>Título corto del ítem (FV-03), opcional</summary>
+    [MaxLength(100)]
+    public string? Titulo { get; set; }
 
     [Required]
     public TipoChecklistItemEnum TipoRespuesta { get; set; }

@@ -10,11 +10,13 @@ public class ChecklistService
 {
     private readonly MantenimientoDbContext _db;
     private readonly EliminacionService _eliminacion;
+    private readonly FallasVisualesService _fallas;
 
-    public ChecklistService(MantenimientoDbContext db, EliminacionService eliminacion)
+    public ChecklistService(MantenimientoDbContext db, EliminacionService eliminacion, FallasVisualesService fallas)
     {
         _db = db;
         _eliminacion = eliminacion;
+        _fallas = fallas;
     }
 
     // ===== TEMPLATES =====
@@ -38,9 +40,10 @@ public class ChecklistService
         var templates = await query.ToListAsync();
         var nombres = await NombresTipoAsync();
         var vigentes = await IdsVigentesAsync();
+        var puntos = await _fallas.PuntosPorActividadAsync();
 
         return templates
-            .Select(t => ToDto(t, nombres, vigentes))
+            .Select(t => ToDto(t, nombres, vigentes, puntos))
             .OrderBy(t => t.TipoVehiculo.HasValue ? 0 : 1)
             .ThenBy(t => t.Nombre)
             .ToList();
@@ -53,7 +56,7 @@ public class ChecklistService
             .FirstOrDefaultAsync(t => t.Id == id);
         if (template == null) return null;
 
-        return ToDto(template, await NombresTipoAsync(), await IdsVigentesAsync());
+        return ToDto(template, await NombresTipoAsync(), await IdsVigentesAsync(), await _fallas.PuntosPorActividadAsync());
     }
 
     /// <summary>Checklist que usan los vehículos del tipo indicado (null si el tipo no tiene)</summary>
@@ -68,7 +71,7 @@ public class ChecklistService
             .FirstOrDefaultAsync();
         if (template == null) return null;
 
-        return ToDto(template, await NombresTipoAsync(), new HashSet<int> { template.Id });
+        return ToDto(template, await NombresTipoAsync(), new HashSet<int> { template.Id }, await _fallas.PuntosPorActividadAsync());
     }
 
     /// <summary>Checklist del tipo del vehículo indicado (null si no existe o su tipo no tiene)</summary>
@@ -101,6 +104,7 @@ public class ChecklistService
             {
                 Orden = orden++,
                 Pregunta = itemReq.Pregunta.Trim(),
+                Titulo = TituloLimpio(itemReq.Titulo),
                 TipoRespuesta = itemReq.TipoRespuesta,
                 Opciones = itemReq.Opciones,
                 Obligatorio = itemReq.Obligatorio,
@@ -152,6 +156,8 @@ public class ChecklistService
             {
                 target.Orden = orden++;
                 target.Pregunta = itemReq.Pregunta.Trim();
+                // Sin título en la petición (clientes anteriores) se conserva; "" lo quita
+                if (itemReq.Titulo != null) target.Titulo = TituloLimpio(itemReq.Titulo);
                 target.TipoRespuesta = itemReq.TipoRespuesta;
                 target.Opciones = itemReq.Opciones;
                 target.Obligatorio = itemReq.Obligatorio;
@@ -165,6 +171,7 @@ public class ChecklistService
                 {
                     Orden = orden++,
                     Pregunta = itemReq.Pregunta.Trim(),
+                    Titulo = TituloLimpio(itemReq.Titulo),
                     TipoRespuesta = itemReq.TipoRespuesta,
                     Opciones = itemReq.Opciones,
                     Obligatorio = itemReq.Obligatorio,
@@ -185,6 +192,9 @@ public class ChecklistService
             else _db.ChecklistItems.Remove(item);
         }
 
+        // FV-03: lo ubicado en la foto toma el título y la descripción nuevos (los reportes nuevos los registran así)
+        await _fallas.SincronizarNombresAsync(existingItems.Where(i => incomingIds.Contains(i.Id)));
+
         await _db.SaveChangesAsync();
         return template;
     }
@@ -200,7 +210,7 @@ public class ChecklistService
             .FirstOrDefaultAsync(t => t.Id == id && t.Activo);
         if (template == null) return null;
 
-        var nombre = ToDto(template, await NombresTipoAsync(), new HashSet<int>()).Nombre;
+        var nombre = ToDto(template, await NombresTipoAsync(), new HashSet<int>(), new Dictionary<int, int>()).Nombre;
         var trabajos = template.Items.Count(i => i.Activo);
         var usados = await ItemsUsadosAsync(template.Items.Select(i => i.Id).ToList());
 
@@ -281,7 +291,14 @@ public class ChecklistService
 
     private static string Recortar(string texto, int max) => texto.Length > max ? texto[..max] : texto;
 
-    private static ChecklistTemplateDto ToDto(ChecklistTemplate t, Dictionary<int, string> nombresTipo, HashSet<int> vigentes)
+    private static string? TituloLimpio(string? titulo)
+    {
+        var limpio = string.Join(' ', (titulo ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        return limpio.Length == 0 ? null : Recortar(limpio, 100);
+    }
+
+    private static ChecklistTemplateDto ToDto(ChecklistTemplate t, Dictionary<int, string> nombresTipo, HashSet<int> vigentes,
+        Dictionary<int, int> puntosEnFoto)
     {
         string? nombreTipo = null;
         if (t.TipoVehiculo.HasValue)
@@ -304,6 +321,8 @@ public class ChecklistService
                 ChecklistTemplateId = t.Id,
                 Orden = i.Orden,
                 Pregunta = i.Pregunta,
+                Titulo = string.IsNullOrWhiteSpace(i.Titulo) ? null : i.Titulo,
+                PuntosEnFoto = puntosEnFoto.GetValueOrDefault(i.Id),
                 TipoRespuesta = i.TipoRespuesta,
                 TipoRespuestaNombre = i.TipoRespuesta.ToString(),
                 Opciones = i.Opciones,

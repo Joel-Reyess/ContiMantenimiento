@@ -69,6 +69,7 @@ builder.Services.AddScoped<DashboardService>();
 builder.Services.AddScoped<SolicitudRefaccionService>();
 builder.Services.AddScoped<SolicitudActividadAdicionalService>();
 builder.Services.AddScoped<ChecklistService>();
+builder.Services.AddScoped<FallasVisualesService>();
 builder.Services.AddScoped<VehiculoDocumentoService>();
 builder.Services.AddScoped<ITipoVehiculoRepository, TipoVehiculoRepository>();
 builder.Services.AddScoped<ReporteFallaChecklistItemService>();

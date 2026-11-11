@@ -41,6 +41,17 @@ Corre **`20_datos_equipo_por_tipo.sql`** (después del 19) **antes** de publicar
   al registrarlos o editarlos. Se activa sola en los tipos con "Tugger" o "Montacargas" en el nombre; después se
   cambia en Configuración → Tipos de vehículo.
 
+## ⭐ Nuevo (11-nov-2026): Fallas visuales = actividades del checklist (FV-03)
+Corre **`21_fallas_visuales_actividades.sql`** (después del 20) **antes** de publicar la API:
+- Columna `ChecklistItems.Titulo` (título corto del ítem, p. ej. "Rodillos principales"; la descripción sigue igual)
+  y `ImageFaults.ChecklistItemId` (falla interna de cada actividad; ya no se capturan fallas a mano).
+- Liga sola cada punto de la foto con su actividad cuando hay una única coincidencia en el checklist de su tipo
+  (la descripción del componente es la actividad, el nombre es la actividad o su título, o el nombre está dentro de
+  la actividad). A esas actividades sin título les pone el nombre del componente.
+- Al final imprime cuántos puntos quedan **"Sin actividad"**: no aparecen en los reportes hasta ligarlos en
+  **Configuración → Fallas visuales** (cada uno trae un selector con la actividad sugerida y "Ligar sugeridas").
+- Se puede correr dos veces sin problema. Haz respaldo antes.
+
 ---
 
 

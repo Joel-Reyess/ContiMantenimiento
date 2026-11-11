@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using MantenimientoEquipos.DTOs;
 using MantenimientoEquipos.Middlewares;
 using MantenimientoEquipos.Models;
+using MantenimientoEquipos.Services;
 
 namespace MantenimientoEquipos.Controllers;
 
@@ -13,13 +14,17 @@ namespace MantenimientoEquipos.Controllers;
 public class VehicleImagePointsController : ControllerBase
 {
     private readonly MantenimientoDbContext _db;
+    private readonly FallasVisualesService _fallas;
 
-    public VehicleImagePointsController(MantenimientoDbContext db)
+    public VehicleImagePointsController(MantenimientoDbContext db, FallasVisualesService fallas)
     {
         _db = db;
+        _fallas = fallas;
     }
 
     // GET: api/VehicleImagePoints
+    // FV-03: cada punto trae su actividad del checklist (título, descripción y costo leídos del checklist).
+    // Los que no tienen actividad vigente salen con SinActividad = true (el reporte no los ofrece).
     [HttpGet]
     [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(ApiResponse<List<VehicleImagePointDto>>))]
     public async Task<IActionResult> GetVehicleImagePoints([FromQuery] string? imageKey = null, [FromQuery] bool onlyActive = true)
@@ -39,25 +44,8 @@ public class VehicleImagePointsController : ControllerBase
             query = query.Where(p => p.Active && p.ImageFault.Active);
         }
 
-        var vehicleImagePoints = await query
-            .OrderBy(p => p.ImageKey)
-            .ThenBy(p => p.Id)
-            .Select(p => new VehicleImagePointDto
-            {
-                Id = p.Id,
-                ImageKey = p.ImageKey,
-                XPct = p.XPct,
-                YPct = p.YPct,
-                RadiusPct = p.RadiusPct,
-                ImageFaultId = p.ImageFaultId,
-                ImageFaultName = p.ImageFault.Name,
-                ImageFaultDescription = p.ImageFault.Description,
-                ChecklistItemId = p.ChecklistItemId,
-                Active = p.Active
-            })
-            .ToListAsync();
-
-        return Ok(ApiResponse<List<VehicleImagePointDto>>.Ok(vehicleImagePoints));
+        var puntos = await query.OrderBy(p => p.ImageKey).ThenBy(p => p.Id).ToListAsync();
+        return Ok(ApiResponse<List<VehicleImagePointDto>>.Ok(await _fallas.ADtoAsync(puntos)));
     }
 
     // GET: api/VehicleImagePoints/5
@@ -66,34 +54,21 @@ public class VehicleImagePointsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetVehicleImagePoint(int id)
     {
-        var vehicleImagePoint = await _db.VehicleImagePoints
+        var punto = await _db.VehicleImagePoints
             .AsNoTracking()
             .Include(p => p.ImageFault)
             .FirstOrDefaultAsync(p => p.Id == id);
 
-        if (vehicleImagePoint == null)
+        if (punto == null)
         {
             return NotFound(ApiResponse<string>.Error("Punto de imagen no encontrado"));
         }
 
-        var dto = new VehicleImagePointDto
-        {
-            Id = vehicleImagePoint.Id,
-            ImageKey = vehicleImagePoint.ImageKey,
-            XPct = vehicleImagePoint.XPct,
-            YPct = vehicleImagePoint.YPct,
-            RadiusPct = vehicleImagePoint.RadiusPct,
-            ImageFaultId = vehicleImagePoint.ImageFaultId,
-            ImageFaultName = vehicleImagePoint.ImageFault.Name,
-            ImageFaultDescription = vehicleImagePoint.ImageFault.Description,
-            ChecklistItemId = vehicleImagePoint.ChecklistItemId,
-            Active = vehicleImagePoint.Active
-        };
-
-        return Ok(ApiResponse<VehicleImagePointDto>.Ok(dto));
+        return Ok(ApiResponse<VehicleImagePointDto>.Ok((await _fallas.ADtoAsync(new List<VehicleImagePoint> { punto }))[0]));
     }
 
     // POST: api/VehicleImagePoints
+    // FV-03: el punto se crea con una actividad del checklist del tipo (ya no se elige una falla capturada aparte)
     [HttpPost]
     [RolesAllowed("SuperUsuario", "Administrador")] // Hotspots: solo administración
     [ProducesResponseType(StatusCodes.Status201Created, Type = typeof(ApiResponse<VehicleImagePointDto>))]
@@ -111,49 +86,40 @@ public class VehicleImagePointsController : ControllerBase
             return BadRequest(ApiResponse<string>.Error("Las coordenadas deben estar en rango de 0 a 100"));
         }
 
-        var imageFault = await _db.ImageFaults
-            .AsNoTracking()
-            .FirstOrDefaultAsync(f => f.Id == createDto.ImageFaultId);
-
-        if (imageFault == null)
+        ChecklistItem actividad;
+        try
         {
-            return BadRequest(ApiResponse<string>.Error("La falla seleccionada no existe"));
+            actividad = await _fallas.ValidarActividadAsync(createDto.ChecklistItemId, normalizedImageKey);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponse<string>.Error(ex.Message));
         }
 
-        var vehicleImagePoint = new VehicleImagePoint
+        var falla = await _fallas.FallaDeActividadAsync(actividad);
+        var punto = new VehicleImagePoint
         {
             ImageKey = normalizedImageKey,
             XPct = createDto.XPct,
             YPct = createDto.YPct,
             RadiusPct = createDto.RadiusPct,
-            ImageFaultId = createDto.ImageFaultId,
-            Active = createDto.Active,
+            ImageFault = falla,
+            ChecklistItemId = actividad.Id,
+            Active = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
 
-        _db.VehicleImagePoints.Add(vehicleImagePoint);
+        _db.VehicleImagePoints.Add(punto);
         await _db.SaveChangesAsync();
 
-        var dto = new VehicleImagePointDto
-        {
-            Id = vehicleImagePoint.Id,
-            ImageKey = vehicleImagePoint.ImageKey,
-            XPct = vehicleImagePoint.XPct,
-            YPct = vehicleImagePoint.YPct,
-            RadiusPct = vehicleImagePoint.RadiusPct,
-            ImageFaultId = vehicleImagePoint.ImageFaultId,
-            ImageFaultName = imageFault.Name,
-            ImageFaultDescription = imageFault.Description,
-            ChecklistItemId = vehicleImagePoint.ChecklistItemId,
-            Active = vehicleImagePoint.Active
-        };
-
-        return CreatedAtAction(nameof(GetVehicleImagePoint), new { id = vehicleImagePoint.Id },
-            ApiResponse<VehicleImagePointDto>.Ok(dto, "Punto de imagen creado exitosamente"));
+        var dto = (await _fallas.ADtoAsync(new List<VehicleImagePoint> { punto }))[0];
+        return CreatedAtAction(nameof(GetVehicleImagePoint), new { id = punto.Id },
+            ApiResponse<VehicleImagePointDto>.Ok(dto, "Actividad ubicada en la foto"));
     }
 
     // PUT: api/VehicleImagePoints/5
+    // Mueve el punto; si trae ChecklistItemId, también cambia su actividad
     [HttpPut("{id:int}")]
     [RolesAllowed("SuperUsuario", "Administrador")]
     [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(ApiResponse<VehicleImagePointDto>))]
@@ -177,50 +143,41 @@ public class VehicleImagePointsController : ControllerBase
             return BadRequest(ApiResponse<string>.Error("Las coordenadas deben estar en rango de 0 a 100"));
         }
 
-        var existingPoint = await _db.VehicleImagePoints.FindAsync(id);
-        if (existingPoint == null)
+        var punto = await _db.VehicleImagePoints.Include(p => p.ImageFault).FirstOrDefaultAsync(p => p.Id == id);
+        if (punto == null)
         {
             return NotFound(ApiResponse<string>.Error("Punto de imagen no encontrado"));
         }
 
-        var imageFault = await _db.ImageFaults
-            .AsNoTracking()
-            .FirstOrDefaultAsync(f => f.Id == updateDto.ImageFaultId);
-
-        if (imageFault == null)
+        if (updateDto.ChecklistItemId is > 0)
         {
-            return BadRequest(ApiResponse<string>.Error("La falla seleccionada no existe"));
+            try
+            {
+                var actividad = await _fallas.ValidarActividadAsync(updateDto.ChecklistItemId, normalizedImageKey);
+                punto.ImageFault = await _fallas.FallaDeActividadAsync(actividad);
+                punto.ChecklistItemId = actividad.Id;
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ApiResponse<string>.Error(ex.Message));
+            }
         }
 
-        existingPoint.ImageKey = normalizedImageKey;
-        existingPoint.XPct = updateDto.XPct;
-        existingPoint.YPct = updateDto.YPct;
-        existingPoint.RadiusPct = updateDto.RadiusPct;
-        existingPoint.ImageFaultId = updateDto.ImageFaultId;
-        existingPoint.Active = updateDto.Active;
-        existingPoint.UpdatedAt = DateTime.UtcNow;
+        punto.ImageKey = normalizedImageKey;
+        punto.XPct = updateDto.XPct;
+        punto.YPct = updateDto.YPct;
+        punto.RadiusPct = updateDto.RadiusPct;
+        punto.Active = updateDto.Active;
+        punto.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
 
-        var dto = new VehicleImagePointDto
-        {
-            Id = existingPoint.Id,
-            ImageKey = existingPoint.ImageKey,
-            XPct = existingPoint.XPct,
-            YPct = existingPoint.YPct,
-            RadiusPct = existingPoint.RadiusPct,
-            ImageFaultId = existingPoint.ImageFaultId,
-            ImageFaultName = imageFault.Name,
-            ImageFaultDescription = imageFault.Description,
-            ChecklistItemId = existingPoint.ChecklistItemId,
-            Active = existingPoint.Active
-        };
-
-        return Ok(ApiResponse<VehicleImagePointDto>.Ok(dto, "Punto de imagen actualizado"));
+        var dto = (await _fallas.ADtoAsync(new List<VehicleImagePoint> { punto }))[0];
+        return Ok(ApiResponse<VehicleImagePointDto>.Ok(dto, "Punto actualizado"));
     }
 
     /// <summary>
-    /// Liga el componente con la actividad del checklist que genera al reportarlo (PDF 06-nov). null = automática por nombre.
-    /// Va aparte de la edición del punto para que mover el punto no borre la liga.
+    /// Liga el punto con la actividad del checklist que representa (FV-03: obligatoria; así se corrigen los puntos
+    /// anteriores que quedaron "Sin actividad"). Va aparte de mover el punto.
     /// </summary>
     [HttpPut("{id:int}/actividad")]
     [RolesAllowed("SuperUsuario", "Administrador")]
@@ -228,12 +185,19 @@ public class VehicleImagePointsController : ControllerBase
     {
         var punto = await _db.VehicleImagePoints.FindAsync(id);
         if (punto == null) return NotFound(ApiResponse<string>.Error("Punto de imagen no encontrado"));
-        if (body.ChecklistItemId is > 0 && !await _db.ChecklistItems.AnyAsync(i => i.Id == body.ChecklistItemId && i.Activo))
-            return BadRequest(ApiResponse<string>.Error("La actividad elegida ya no existe en el checklist; actualiza la pantalla."));
-        punto.ChecklistItemId = body.ChecklistItemId is > 0 ? body.ChecklistItemId : null;
+        try
+        {
+            var actividad = await _fallas.ValidarActividadAsync(body.ChecklistItemId, punto.ImageKey);
+            punto.ImageFault = await _fallas.FallaDeActividadAsync(actividad);
+            punto.ChecklistItemId = actividad.Id;
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponse<string>.Error(ex.Message));
+        }
         punto.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
-        return Ok(ApiResponse<int?>.Ok(punto.ChecklistItemId, punto.ChecklistItemId == null ? "El componente se ligará por nombre" : "Actividad ligada al componente"));
+        return Ok(ApiResponse<int?>.Ok(punto.ChecklistItemId, "Actividad ligada al punto"));
     }
 
     // DELETE: api/VehicleImagePoints/5
