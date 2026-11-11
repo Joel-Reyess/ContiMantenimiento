@@ -61,6 +61,13 @@ public class ChecklistItem
     [MaxLength(200)]
     public required string Pregunta { get; set; }
 
+    /// <summary>
+    /// Título corto del ítem (p. ej. "Rodillos principales"); Pregunta es su descripción. FV-03: es el nombre
+    /// con el que la actividad aparece ubicada en la foto del vehículo. Null = se usa la descripción.
+    /// </summary>
+    [MaxLength(100)]
+    public string? Titulo { get; set; }
+
     [Required]
     public TipoChecklistItemEnum TipoRespuesta { get; set; }
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Building2, ClipboardPlus, ListChecks, Loader2, Pencil, Plus, Save, Trash2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { AlertTriangle, Building2, ClipboardPlus, ListChecks, Loader2, MapPin, Pencil, Plus, Save, Trash2 } from 'lucide-react';
 import {
   Alert,
   AlertDescription,
@@ -21,6 +22,8 @@ import type { Empresa } from '@/services/empresasService';
 
 interface ItemDraft {
   id?: number;
+  /** FV-03: título corto (p. ej. "Rodillos principales"); es el nombre con el que se ubica en la foto */
+  titulo: string;
   pregunta: string;
   costoEstimado: number;
   tipoRespuesta: number;
@@ -63,10 +66,12 @@ export function ChecklistsPorTipo() {
 
   // Ventana para agregar un ítem (12.3.2)
   const [itemAbierto, setItemAbierto] = useState(false);
+  const [nuevoTitulo, setNuevoTitulo] = useState('');
   const [nuevaPregunta, setNuevaPregunta] = useState('');
   const [nuevoCosto, setNuevoCosto] = useState('0');
   const [errorItem, setErrorItem] = useState('');
-  const preguntaRef = useRef<HTMLInputElement>(null);
+  const [errorTitulo, setErrorTitulo] = useState('');
+  const tituloRef = useRef<HTMLInputElement>(null);
 
   // Tarifario por empresa ('' = tarifa base)
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
@@ -196,6 +201,7 @@ export function ChecklistsPorTipo() {
     setItems(
       tpl.items.map((it) => ({
         id: it.id,
+        titulo: it.titulo || '',
         pregunta: it.pregunta,
         costoEstimado: Number(it.costoEstimado ?? 0),
         tipoRespuesta: it.tipoRespuesta || 1,
@@ -225,15 +231,26 @@ export function ChecklistsPorTipo() {
   };
 
   const abrirItem = () => {
+    setNuevoTitulo('');
     setNuevaPregunta('');
     setNuevoCosto('0');
     setErrorItem('');
+    setErrorTitulo('');
     setItemAbierto(true);
   };
 
   /** Agrega el ítem a la lista; `seguir` deja la ventana abierta para capturar otro */
   const agregarItem = (seguir: boolean) => {
+    const titulo = nuevoTitulo.trim().replace(/\s+/g, ' ');
     const pregunta = nuevaPregunta.trim().replace(/\s+/g, ' ');
+    if (!titulo) {
+      setErrorTitulo('Escribe el título del ítem (el componente, p. ej. "Rodillos principales").');
+      return;
+    }
+    if (titulo.length > 100) {
+      setErrorTitulo('El título no puede pasar de 100 caracteres.');
+      return;
+    }
     if (!pregunta) {
       setErrorItem('Escribe la descripción del ítem.');
       return;
@@ -248,15 +265,17 @@ export function ChecklistsPorTipo() {
     }
     setItems((prev) => [
       ...prev,
-      { pregunta, costoEstimado: parseNumero(nuevoCosto), tipoRespuesta: 1, obligatorio: true, requiereFoto: false }
+      { titulo, pregunta, costoEstimado: parseNumero(nuevoCosto), tipoRespuesta: 1, obligatorio: true, requiereFoto: false }
     ]);
     setErrorChecklist('');
-    toast.exito(`Ítem "${pregunta}" agregado. Guarda el checklist para conservarlo.`);
+    toast.exito(`Ítem "${titulo}" agregado. Guarda el checklist para conservarlo.`);
     if (seguir) {
+      setNuevoTitulo('');
       setNuevaPregunta('');
       setNuevoCosto('0');
       setErrorItem('');
-      preguntaRef.current?.focus();
+      setErrorTitulo('');
+      tituloRef.current?.focus();
     } else {
       setItemAbierto(false);
     }
@@ -267,7 +286,11 @@ export function ChecklistsPorTipo() {
       setErrorChecklist('Selecciona el tipo de vehículo.');
       return;
     }
-    const limpios = items.map((it) => ({ ...it, pregunta: it.pregunta.trim().replace(/\s+/g, ' ') }));
+    const limpios = items.map((it) => ({
+      ...it,
+      titulo: it.titulo.trim().replace(/\s+/g, ' '),
+      pregunta: it.pregunta.trim().replace(/\s+/g, ' ')
+    }));
     if (limpios.length === 0) {
       setErrorChecklist('Agrega al menos un ítem al checklist.');
       return;
@@ -275,6 +298,11 @@ export function ChecklistsPorTipo() {
     const vacio = limpios.findIndex((it) => !it.pregunta);
     if (vacio >= 0) {
       setErrorChecklist(`El ítem #${vacio + 1} está vacío: escribe su descripción o quítalo.`);
+      return;
+    }
+    const largo = limpios.findIndex((it) => it.titulo.length > 100);
+    if (largo >= 0) {
+      setErrorChecklist(`El título del ítem #${largo + 1} no puede pasar de 100 caracteres.`);
       return;
     }
     const vistos = new Set<string>();
@@ -293,6 +321,8 @@ export function ChecklistsPorTipo() {
         id: it.id,
         orden: idx + 1,
         pregunta: it.pregunta,
+        // "" quita el título; el servidor conserva el que ya tenía solo si no viene
+        titulo: it.titulo,
         tipoRespuesta: it.tipoRespuesta,
         opciones: it.opciones || undefined,
         obligatorio: it.obligatorio,
@@ -477,12 +507,38 @@ export function ChecklistsPorTipo() {
                     {aviso}
                   </p>
                 )}
+                {!empresa && tpl.tipoVehiculo && tpl.vigente && (
+                  <Link
+                    to={`/fallas-imagen?tipo=${tpl.tipoVehiculo}`}
+                    className="flex items-center gap-1 text-xs font-medium text-continental-blue-dark underline"
+                  >
+                    <MapPin className="h-3 w-3" />
+                    Ubicar en la foto ({tpl.items.filter((i) => i.puntosEnFoto).length} de {tpl.items.length})
+                  </Link>
+                )}
                 {/* Vista previa de precios */}
                 <div className="text-xs flex flex-col gap-1 max-h-32 overflow-y-auto pr-1">
                   {tpl.items.map((item, idx) => (
-                    <div key={item.id} className="flex items-center justify-between gap-2">
+                    <div key={item.id} className="flex items-center justify-between gap-2" data-testid={`item-${item.id}`}>
                       <span className="text-continental-black">
-                        <span className="text-continental-gray-2">#{idx + 1}</span> {item.pregunta}
+                        <span className="text-continental-gray-2">#{idx + 1}</span>{' '}
+                        {item.titulo ? (
+                          <>
+                            <strong>{item.titulo}</strong> <span className="text-continental-gray-1">· {item.pregunta}</span>
+                          </>
+                        ) : (
+                          item.pregunta
+                        )}{' '}
+                        {/* FV-03: si la actividad ya está ubicada en la foto del tipo (Fallas visuales) */}
+                        {item.puntosEnFoto ? (
+                          <span className="whitespace-nowrap font-medium" style={{ color: '#15803d' }} title="Ubicada en la foto (Fallas visuales)">
+                            <MapPin className="inline h-3 w-3" /> En la foto
+                          </span>
+                        ) : (
+                          <span className="whitespace-nowrap text-continental-gray-2" title="Aún no está ubicada en la foto: en el reporte sale en «Otras actividades»">
+                            Sin ubicar
+                          </span>
+                        )}
                       </span>
                       {empresa && tarifas[item.id] !== undefined ? (
                         <span className="flex-shrink-0 font-semibold text-continental-black">{moneda(tarifas[item.id])}</span>
@@ -540,13 +596,22 @@ export function ChecklistsPorTipo() {
               <div className="flex flex-col gap-2 max-h-80 overflow-y-auto pr-1">
                 <div className="flex gap-2 text-xs font-semibold text-continental-gray-1">
                   <span className="w-6" />
-                  <span className="flex-1">Ítem</span>
+                  <span className="w-40">Título</span>
+                  <span className="flex-1">Descripción</span>
                   <span className="w-32">Costo base (MXN)</span>
                   <span className="w-12" />
                 </div>
                 {items.map((item, idx) => (
                   <div key={item.id ?? `nuevo-${idx}`} className="flex items-end gap-2 rounded-lg border border-continental-gray-3" style={{ padding: 8 }}>
                     <span className="pb-3 text-xs text-continental-gray-2 w-6 text-right">#{idx + 1}</span>
+                    <div className="w-40">
+                      <Input
+                        aria-label={`Título del ítem ${idx + 1}`}
+                        placeholder="Título"
+                        value={item.titulo}
+                        onChange={(e) => actualizarItem(idx, { titulo: e.target.value })}
+                      />
+                    </div>
                     <div className="flex-1 min-w-0">
                       <Input
                         aria-label={`Ítem ${idx + 1}`}
@@ -613,7 +678,10 @@ export function ChecklistsPorTipo() {
             {tarifasDe.items.map((item, idx) => (
               <div key={item.id} className="flex items-center gap-2 rounded-lg border border-continental-gray-3" style={{ padding: 8 }}>
                 <span className="text-xs text-continental-gray-2 w-6 text-right">#{idx + 1}</span>
-                <span className="flex-1 min-w-0 text-sm text-continental-black break-words">{item.pregunta}</span>
+                <span className="flex-1 min-w-0 text-sm text-continental-black break-words">
+                  {item.titulo ? <strong>{item.titulo} · </strong> : null}
+                  {item.pregunta}
+                </span>
                 <span className="w-28 text-right text-sm text-continental-gray-1">{moneda(Number(item.costoEstimado ?? 0))}</span>
                 <div className="w-36">
                   <Input
@@ -652,11 +720,21 @@ export function ChecklistsPorTipo() {
       <Modal isOpen={itemAbierto} onClose={() => setItemAbierto(false)} title="Agregar ítem" size="md">
         <div className="flex flex-col gap-4">
           <Input
-            ref={preguntaRef}
-            label="Descripción del ítem"
-            placeholder="Ej: Cambiar rueda delantera"
-            value={nuevaPregunta}
+            ref={tituloRef}
+            label="Título del ítem"
+            placeholder="Ej: Rodillos principales"
+            value={nuevoTitulo}
             autoFocus
+            onChange={(e) => {
+              setNuevoTitulo(e.target.value);
+              setErrorTitulo('');
+            }}
+            error={errorTitulo}
+          />
+          <Input
+            label="Descripción del ítem"
+            placeholder="Ej: Reparación de rodillos principales"
+            value={nuevaPregunta}
             onChange={(e) => {
               setNuevaPregunta(e.target.value);
               setErrorItem('');
@@ -667,7 +745,7 @@ export function ChecklistsPorTipo() {
             error={errorItem}
           />
           <Input
-            label="Costo estimado (MXN)"
+            label="Costo de la actividad (MXN)"
             type="number"
             min={0}
             step="0.01"

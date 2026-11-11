@@ -29,6 +29,8 @@ interface ChecklistItem {
   id: number;
   orden: number;
   pregunta: string;
+  /** FV-03: título corto del ítem */
+  titulo?: string | null;
   tipoRespuesta: number;
   tipoRespuestaNombre?: string;
   opciones?: string;
@@ -98,17 +100,18 @@ export function ReportFailureModal({
   const [loadingImagePoints, setLoadingImagePoints] = useState(false);
   const [showImageSelectorModal, setShowImageSelectorModal] = useState(false);
 
+  // FV-03: cada punto de la foto es una actividad del checklist (se ubica en Fallas visuales). Los puntos sin
+  // actividad (anteriores sin ligar) no se ofrecen: el administrador los liga en Fallas visuales.
+  const actividadPorPunto: Record<number, ChecklistItem | undefined> = {};
+  vehicleImagePoints.forEach((point) => {
+    actividadPorPunto[point.id] = actividadDeComponente(point, checklistItems);
+  });
   // Numeracion estable de los componentes: se ordena por id (orden de carga) y se enumera 1..N.
   // Ese numero es el que se pinta sobre la foto y en la lista lateral (estilo cajitas de la presentacion).
-  const orderedImagePoints = [...vehicleImagePoints].sort((a, b) => a.id - b.id);
+  const orderedImagePoints = vehicleImagePoints.filter((point) => actividadPorPunto[point.id]).sort((a, b) => a.id - b.id);
   const imagePointNumbers: Record<number, number> = {};
   orderedImagePoints.forEach((point, index) => {
     imagePointNumbers[point.id] = index + 1;
-  });
-  // PDF 06-nov: cada componente trae su actividad; las actividades sin componente se eligen aparte en la misma sección
-  const actividadPorPunto: Record<number, ChecklistItem | undefined> = {};
-  orderedImagePoints.forEach((point) => {
-    actividadPorPunto[point.id] = actividadDeComponente(point, checklistItems);
   });
   const actividadesConComponente = new Set(Object.values(actividadPorPunto).filter(Boolean).map((a) => a!.id));
   const otrasActividades = checklistItems.filter((i) => !actividadesConComponente.has(i.id));
@@ -1269,14 +1272,11 @@ const checklistReqSeqRef = useRef(0);
                               </span>
                               <span className="min-w-0 text-sm text-gray-800">
                                 <span className="block font-medium uppercase">{point.imageFaultName || `Componente #${point.imageFaultId}`}</span>
-                                {point.imageFaultDescription && (
-                                  <span className="block text-xs text-gray-500">{point.imageFaultDescription}</span>
-                                )}
-                                {checked && !actividad && (
-                                  <span className="block text-xs" style={{ color: '#b45309' }}>
-                                    Sin actividad ligada en el checklist: se reporta el componente, sin costo de actividad.
-                                  </span>
-                                )}
+                                {(() => {
+                                  // Descripción de la actividad (FV-03); en puntos anteriores, la del componente
+                                  const detalle = point.imageFaultDescription || (actividad && actividad.pregunta !== point.imageFaultName ? actividad.pregunta : '');
+                                  return detalle ? <span className="block text-xs text-gray-500">{detalle}</span> : null;
+                                })()}
                               </span>
                             </label>
                             <div className="flex items-center gap-1.5 shrink-0">
@@ -1328,7 +1328,15 @@ const checklistReqSeqRef = useRef(0);
                                     style={{ width: '1rem', height: '1rem' }}
                                     aria-label={item.pregunta}
                                   />
-                                  <span className="text-sm text-gray-700">{item.pregunta}</span>
+                                  <span className="text-sm text-gray-700">
+                                    {item.titulo ? (
+                                      <>
+                                        <strong>{item.titulo}</strong> · {item.pregunta}
+                                      </>
+                                    ) : (
+                                      item.pregunta
+                                    )}
+                                  </span>
                                 </label>
                                 <div className="flex items-center gap-1.5 shrink-0">
                                   <span className={`text-xs font-medium ${isSelected ? 'text-gray-700' : 'text-gray-400'}`}>Cant:</span>
