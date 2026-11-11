@@ -35,6 +35,12 @@ Corre **`19_correcciones_06nov.sql`** (después del 18) **antes** de publicar la
 - Recalcula "puede operar" de los reportes sin orden según el tipo de mantenimiento
   (Correctivo = no puede operar, Preventivo = puede operar).
 
+## ⭐ Nuevo (11-nov-2026): datos de equipo por tipo de vehículo
+Corre **`20_datos_equipo_por_tipo.sql`** (después del 19) **antes** de publicar la API:
+- Columna `TiposVehiculo.PideDatosEquipo`: los vehículos de ese tipo piden Marca, Modelo, Año y Número de serie
+  al registrarlos o editarlos. Se activa sola en los tipos con "Tugger" o "Montacargas" en el nombre; después se
+  cambia en Configuración → Tipos de vehículo.
+
 ---
 
 

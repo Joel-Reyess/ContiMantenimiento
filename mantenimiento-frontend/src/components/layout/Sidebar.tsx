@@ -1,7 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
-import { LayoutDashboard, Truck, AlertTriangle, Wrench, DollarSign, Settings, FileText, Package, X, ClipboardList, CheckSquare, Building2 } from 'lucide-react';
+import { LayoutDashboard, Truck, AlertTriangle, Wrench, DollarSign, Settings, FileText, Package, ClipboardList, CheckSquare, Building2 } from 'lucide-react';
 
 interface NavItem {
   label: string;
@@ -51,26 +51,22 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
   return (
     <aside
+      aria-hidden={!isOpen}
       className={cn(
         'fixed left-0 top-[7rem] z-40 h-[calc(100vh-7rem)] w-72 bg-white/97 backdrop-blur-xl border-r border-continental-gray-3 shadow-[0_20px_45px_rgba(15,23,42,0.18)] transition-transform duration-300 ease-in-out',
         isOpen ? 'translate-x-0 lg:translate-x-0' : '-translate-x-full'
       )}
     >
-      <div className="flex items-center justify-between px-6 pt-7 pb-5 border-b border-continental-gray-3 bg-white/95">
+      {/* Sin botón de cerrar: el menú se cierra solo al elegir una sección o con el botón de menú del encabezado (GEN-06) */}
+      <div className="px-6 pt-7 pb-5 border-b border-continental-gray-3 bg-white/95">
         <span className="text-base font-bold tracking-wide text-continental-black">Navegación</span>
-        <button
-          onClick={onClose}
-          className="inline-flex h-14 w-14 items-center justify-center rounded-full border-2 border-continental-black/20 bg-continental-black/5 text-continental-black shadow-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-continental-yellow/80 hover:bg-continental-yellow/90 hover:text-continental-black"
-          aria-label="Cerrar menú"
-        >
-          <X className="h-7 w-7" strokeWidth={3} />
-        </button>
       </div>
       <nav className="flex flex-col gap-2 px-4 pb-6 pt-4">
         {filteredNavItems.map((item) => (
           <NavLink
             key={item.href}
             to={item.href}
+            onClick={onClose}
             className={({ isActive }) =>
               cn(
                 'group relative flex items-center gap-3 rounded-xl px-4 py-3.5 text-base font-semibold transition-all duration-200 shadow-sm',

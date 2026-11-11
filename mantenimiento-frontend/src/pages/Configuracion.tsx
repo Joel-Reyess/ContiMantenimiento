@@ -780,6 +780,9 @@ export function ConfiguracionPage() {
                             Técnico: {tipo.proveedorNombre || 'Asignado'}
                           </p>
                         )}
+                        {tipo.pideDatosEquipo && (
+                          <p className="text-xs text-continental-gray-1">Pide marca, modelo, año y número de serie</p>
+                        )}
                       </div>
                     </div>
                     <div className="flex flex-row gap-2 sm:flex-col shrink-0">
@@ -1240,6 +1243,23 @@ export function ConfiguracionPage() {
             value={editingTipo?.descripcion || ''}
             onChange={(e) => setEditingTipo(prev => prev ? { ...prev, descripcion: e.target.value } : null)}
           />
+
+          {/* Marca, Modelo, Año y Número de serie solo para equipos como Tuggers y Montacargas */}
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-continental-gray-3" style={{ padding: 12 }}>
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-continental-yellow"
+              checked={!!editingTipo?.pideDatosEquipo}
+              onChange={(e) => setEditingTipo(prev => prev ? { ...prev, pideDatosEquipo: e.target.checked } : null)}
+              data-testid="tipo-pide-datos-equipo"
+            />
+            <span>
+              <span className="block text-sm font-medium text-continental-black">Pedir marca, modelo, año y número de serie</span>
+              <span className="block text-xs text-continental-gray-1">
+                Al registrar o editar un vehículo de este tipo aparecen esos campos (por ejemplo Tuggers y Montacargas).
+              </span>
+            </span>
+          </label>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input

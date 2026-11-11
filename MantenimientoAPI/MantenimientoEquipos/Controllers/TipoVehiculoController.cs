@@ -40,6 +40,7 @@ namespace MantenimientoEquipos.Controllers
                 ProgramadosPorSemana = t.ProgramadosPorSemana,
                 FechaProximoMantenimiento = t.FechaProximoMantenimiento,
                 Activo = t.Activo,
+                PideDatosEquipo = t.PideDatosEquipo,
                 ProveedorId = t.ProveedorId,
                 ProveedorNombre = t.Proveedor?.NombreCompleto,
                 TotalVehiculos = t.TotalVehiculos
@@ -71,6 +72,7 @@ namespace MantenimientoEquipos.Controllers
                 ProgramadosPorSemana = tipo.ProgramadosPorSemana,
                 FechaProximoMantenimiento = tipo.FechaProximoMantenimiento,
                 Activo = tipo.Activo,
+                PideDatosEquipo = tipo.PideDatosEquipo,
                 ProveedorId = tipo.ProveedorId,
                 ProveedorNombre = tipo.Proveedor?.NombreCompleto
             };
@@ -115,6 +117,7 @@ namespace MantenimientoEquipos.Controllers
             tipo.ProgramadosPorSemana = await CalcularProgramadosPorSemanaAsync(id, tipoDto);
             tipo.FechaProximoMantenimiento = tipoDto.FechaProximoMantenimiento;
             tipo.Activo = tipoDto.Activo;
+            if (tipoDto.PideDatosEquipo.HasValue) tipo.PideDatosEquipo = tipoDto.PideDatosEquipo.Value;
             tipo.ProveedorId = tipoDto.ProveedorId;
             tipo.UpdatedAt = DateTime.UtcNow;
 
@@ -145,6 +148,7 @@ namespace MantenimientoEquipos.Controllers
                 ProgramadosPorSemana = null,
                 FechaProximoMantenimiento = tipoDto.FechaProximoMantenimiento,
                 Activo = true,
+                PideDatosEquipo = tipoDto.PideDatosEquipo ?? false,
                 ProveedorId = tipoDto.ProveedorId,
                 CreatedAt = DateTime.UtcNow
             };
@@ -158,6 +162,7 @@ namespace MantenimientoEquipos.Controllers
             tipoDto.Id = tipo.Id;
             tipoDto.Activo = tipo.Activo;
             tipoDto.ProgramadosPorSemana = tipo.ProgramadosPorSemana;
+            tipoDto.PideDatosEquipo = tipo.PideDatosEquipo;
 
             return CreatedAtAction(nameof(GetTipoVehiculo), new { id = tipo.Id }, ApiResponse<TipoVehiculoDto>.Ok(tipoDto, "Tipo de vehículo creado exitosamente"));
         }

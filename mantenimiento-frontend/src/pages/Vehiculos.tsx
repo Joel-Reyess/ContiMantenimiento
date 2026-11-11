@@ -26,6 +26,8 @@ interface CrearVehiculoForm {
   tipo: string;
   marca: string;
   modelo: string;
+  numeroSerie: string;
+  anio: string;
   notas: string;
   documentacionDibujos: string;
   documentacionEspecificaciones: string;
@@ -40,6 +42,8 @@ const FORM_VACIO: CrearVehiculoForm = {
   tipo: '',
   marca: '',
   modelo: '',
+  numeroSerie: '',
+  anio: '',
   notas: '',
   documentacionDibujos: '',
   documentacionEspecificaciones: '',
@@ -48,10 +52,18 @@ const FORM_VACIO: CrearVehiculoForm = {
   areaId: ''
 };
 
+/** Año de 4 dígitos entre 1950 y el próximo año (igual que el backend) */
+function errorDatosEquipo(form: CrearVehiculoForm): string | null {
+  const anio = form.anio.trim();
+  if (!anio) return null;
+  const maximo = new Date().getFullYear() + 1;
+  const n = Number(anio);
+  return /^\d{4}$/.test(anio) && n >= 1950 && n <= maximo ? null : `El año debe estar entre 1950 y ${maximo}`;
+}
+
 export function VehiculosPage() {
   const { hasRole } = useAuth();
   const { allowedTipoIds } = useAllowedTipoVehiculo();
-  const [activeTab, setActiveTab] = useState<'general' | 'tuggers'>('general');
   const [filters, setFilters] = useState<FiltersState>({ busqueda: '' });
   // Filtros con los que se cargó la lista (lo escrito en el buscador sin "Aplicar" no cuenta).
   // Se reutilizan al recargar después de guardar, para no perder la búsqueda (requerimiento 8.5).
@@ -74,6 +86,8 @@ export function VehiculosPage() {
   const [validando, setValidando] = useState(false);
 
   const [tiposVehiculo, setTiposVehiculo] = useState<{ value: string; label: string }[]>([]);
+  // Tipos que piden Marca, Modelo, Año y Número de serie (Tuggers y Montacargas; se configura en Tipos de vehículo)
+  const [tiposConDatosEquipo, setTiposConDatosEquipo] = useState<Set<string>>(new Set());
   const [loadingTipos, setLoadingTipos] = useState(true);
 
   const canDelete = hasRole(['SuperUsuario', 'Administrador']);
@@ -106,10 +120,9 @@ export function VehiculosPage() {
     const f = filtrosAplicados.current;
     return {
       busqueda: f.busqueda?.trim() || undefined,
-      tipo: activeTab === 'tuggers' ? TipoVehiculo.Tugger : f.tipo ? Number(f.tipo) : undefined,
+      tipo: f.tipo ? Number(f.tipo) : undefined,
       areaId: f.areaId ? Number(f.areaId) : undefined,
-      prefijo: f.prefijo || undefined,
-      excluirTipo: activeTab === 'general' ? TipoVehiculo.Tugger : undefined
+      prefijo: f.prefijo || undefined
     };
   };
 
@@ -151,6 +164,7 @@ export function VehiculosPage() {
             label: tipo.nombre
           }));
           setTiposVehiculo(options);
+          setTiposConDatosEquipo(new Set(res.data.filter((t) => t.pideDatosEquipo).map((t) => String(t.id))));
         }
         setLoadingTipos(false);
       } catch (error) {
@@ -231,13 +245,9 @@ export function VehiculosPage() {
   /** Los filtros aplicados en palabras (los muestran Exportar y Eliminar por filtro) */
   const describirFiltros = () => {
     const f = filtrosAplicados.current;
-    const tipoNombre = activeTab === 'tuggers'
-      ? 'Tugger'
-      : f.tipo
-        ? tipoOptions.find((t) => t.value === f.tipo)?.label ?? f.tipo
-        : 'Todos (sin Tuggers)';
+    const tipoNombre = f.tipo ? tipoOptions.find((t) => t.value === f.tipo)?.label ?? f.tipo : 'Todos';
     const areaNombre = f.areaId ? areaFilterOptions.find((o) => o.value === f.areaId)?.label ?? f.areaId : 'Todas';
-    return `Pestaña: ${activeTab === 'tuggers' ? 'Tuggers' : 'Contenedores'} · Búsqueda: ${f.busqueda?.trim() ? `"${f.busqueda.trim()}"` : 'ninguna'} · ` +
+    return `Búsqueda: ${f.busqueda?.trim() ? `"${f.busqueda.trim()}"` : 'ninguna'} · ` +
       `Tipo: ${tipoNombre} · Área: ${areaNombre} · Prefijo: ${f.prefijo || 'Todos'}`;
   };
 
@@ -283,22 +293,12 @@ export function VehiculosPage() {
     setError('');
     setSelectedIds(new Set());
     try {
-      // Determine type filter based on tab
-      // If 'tuggers' tab, force type Tugger.
-      // If 'general' tab, use selected filter OR undefined (which returns all).
-      // Note: If 'general', we will filter OUT tuggers client-side to separate them.
-      let typeFilter = f.tipo ? Number(f.tipo) : undefined;
-      if (activeTab === 'tuggers') {
-        typeFilter = TipoVehiculo.Tugger;
-      }
-
+      // FLT-10: sin pestañas Contenedores/Tuggers; el tipo se filtra solo con el selector de tipo
       const res = await vehiculosService.getAll({
         busqueda: f.busqueda || undefined,
-        tipo: typeFilter,
+        tipo: f.tipo ? Number(f.tipo) : undefined,
         areaId: f.areaId ? Number(f.areaId) : undefined,
         prefijo: f.prefijo || undefined,
-        // La pestaña Contenedores excluye Tuggers en el servidor, así el total y las páginas cuadran
-        excluirTipo: activeTab === 'general' ? TipoVehiculo.Tugger : undefined,
         page: page,
         pageSize: 100 // Request more items to handle client-side filtering if needed
       });
@@ -315,15 +315,6 @@ export function VehiculosPage() {
         // Filter by allowed types if necessary
         if (allowedTipoIds && allowedTipoIds.length > 0) {
            items = items.filter((v) => allowedTipoIds.includes(Number(v.tipo)));
-        }
-
-        // Handle Tab Logic
-        if (activeTab === 'general') {
-          // Exclude Tuggers from General tab to keep them separate
-          items = items.filter(v => Number(v.tipo) !== TipoVehiculo.Tugger);
-        } else if (activeTab === 'tuggers') {
-          // Ensure only Tuggers (already filtered by API usually, but safe double check)
-          items = items.filter(v => Number(v.tipo) === TipoVehiculo.Tugger);
         }
 
         setVehiculos(items);
@@ -354,7 +345,7 @@ export function VehiculosPage() {
   useEffect(() => {
     loadVehiculos(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allowedTipoIds, activeTab]);
+  }, [allowedTipoIds]);
 
   const applyFilters = () => {
     filtrosAplicados.current = filters;
@@ -403,6 +394,8 @@ export function VehiculosPage() {
           tipo: String(data.tipo),
           marca: data.marca || '',
           modelo: data.modelo || '',
+          numeroSerie: data.numeroSerie || '',
+          anio: data.anio ? String(data.anio) : '',
           notas: data.notas || '',
           documentacionDibujos: data.documentacionDibujos || '',
           documentacionEspecificaciones: data.documentacionEspecificaciones || '',
@@ -444,7 +437,56 @@ export function VehiculosPage() {
     loadVehiculos(pagination.page, filtrosAplicados.current, true);
   };
 
+  // Marca, Modelo, Año y Número de serie: solo para los tipos que los piden (o si el vehículo ya los tiene capturados)
+  const pideDatosEquipo = tiposConDatosEquipo.has(form.tipo);
+  const mostrarDatosEquipoEdicion =
+    pideDatosEquipo || Boolean(form.marca.trim() || form.modelo.trim() || form.numeroSerie.trim() || form.anio.trim());
+
+  const datosEquipoCampos = (
+    <div className="rounded-lg border border-continental-gray-3 bg-continental-gray-4/40" style={{ padding: 12 }} data-testid="datos-equipo">
+      <p className="text-sm font-semibold text-continental-black" style={{ marginBottom: 8 }}>
+        Datos del equipo
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Input
+          label="Marca"
+          placeholder="Ej. Toyota"
+          value={form.marca}
+          maxLength={100}
+          onChange={(e) => setForm((prev) => ({ ...prev, marca: e.target.value }))}
+        />
+        <Input
+          label="Modelo"
+          placeholder="Ej. 8FGU25"
+          value={form.modelo}
+          maxLength={100}
+          onChange={(e) => setForm((prev) => ({ ...prev, modelo: e.target.value }))}
+        />
+        <Input
+          label="Número de serie"
+          placeholder="Número de serie del fabricante"
+          value={form.numeroSerie}
+          maxLength={50}
+          onChange={(e) => setForm((prev) => ({ ...prev, numeroSerie: e.target.value }))}
+        />
+        <Input
+          label="Año"
+          placeholder={`Ej. ${new Date().getFullYear()}`}
+          inputMode="numeric"
+          maxLength={4}
+          value={form.anio}
+          onChange={(e) => setForm((prev) => ({ ...prev, anio: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
+        />
+      </div>
+    </div>
+  );
+
   const handleCreate = async () => {
+    const errorDatos = pideDatosEquipo ? errorDatosEquipo(form) : null;
+    if (errorDatos) {
+      setFormError(errorDatos);
+      return;
+    }
     setCreando(true);
     setFormError('');
     try {
@@ -452,7 +494,15 @@ export function VehiculosPage() {
         codigo: form.codigo.trim(),
         // Si no se eligió, el backend lo detecta por prefijo
         tipo: form.tipo ? (Number(form.tipo) as TipoVehiculo) : undefined,
-        areaId: form.areaId ? Number(form.areaId) : undefined
+        areaId: form.areaId ? Number(form.areaId) : undefined,
+        ...(pideDatosEquipo
+          ? {
+              marca: form.marca.trim() || undefined,
+              modelo: form.modelo.trim() || undefined,
+              numeroSerie: form.numeroSerie.trim() || undefined,
+              anio: form.anio.trim() ? Number(form.anio) : undefined
+            }
+          : {})
       });
       if (!res.success || !res.data) {
         setFormError(res.message || 'No se pudo crear el vehiculo');
@@ -474,13 +524,25 @@ export function VehiculosPage() {
 
   const handleEdit = async () => {
     if (!form.id) return;
+    const errorDatos = mostrarDatosEquipoEdicion ? errorDatosEquipo(form) : null;
+    if (errorDatos) {
+      setFormError(errorDatos);
+      return;
+    }
     setCreando(true);
     setFormError('');
     try {
       const payload = {
         tipo: Number(form.tipo),
-        marca: form.marca.trim() || undefined,
-        modelo: form.modelo.trim() || undefined,
+        // Con la sección visible se mandan tal cual: vacío = se borra el dato
+        ...(mostrarDatosEquipoEdicion
+          ? {
+              marca: form.marca.trim(),
+              modelo: form.modelo.trim(),
+              numeroSerie: form.numeroSerie.trim(),
+              anio: form.anio.trim() ? Number(form.anio) : 0
+            }
+          : {}),
         notas: form.notas.trim() || undefined,
         // 0 = quitar el área asignada
         areaId: form.areaId ? Number(form.areaId) : 0
@@ -553,9 +615,8 @@ export function VehiculosPage() {
 
   const targetsConHistorial = (deleteTargets || []).filter((v) => (v.totalReportes ?? 0) > 0);
 
-  // Eliminar por filtro: solo con un tipo, área o prefijo aplicado (la pestaña Tuggers ya es un tipo)
-  const filtroEliminable =
-    activeTab === 'tuggers' || Boolean(filtrosAplicados.current.tipo || filtrosAplicados.current.areaId || filtrosAplicados.current.prefijo);
+  // Eliminar por filtro: solo con un tipo, área o prefijo aplicado
+  const filtroEliminable = Boolean(filtrosAplicados.current.tipo || filtrosAplicados.current.areaId || filtrosAplicados.current.prefijo);
 
   const cargarVistaEliminar = async () => {
     setCargandoVistaEliminar(true);
@@ -645,34 +706,11 @@ export function VehiculosPage() {
         </div>
       </div>
 
-      {/* Tabs Custom Implementation */}
-      <div className="flex border-b border-gray-200">
-        <button
-          className={`py-2 px-4 text-sm font-medium transition-colors border-b-2 ${
-            activeTab === 'general'
-              ? 'border-continental-blue text-continental-blue'
-              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-          }`}
-          onClick={() => {
-            setActiveTab('general');
-            setPagination(prev => ({ ...prev, page: 1 }));
-          }}
-        >
-          Contenedores
-        </button>
-        <button
-          className={`py-2 px-4 text-sm font-medium transition-colors border-b-2 ${
-            activeTab === 'tuggers'
-              ? 'border-continental-blue text-continental-blue'
-              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-          }`}
-          onClick={() => {
-            setActiveTab('tuggers');
-            setPagination(prev => ({ ...prev, page: 1 }));
-          }}
-        >
-          Tuggers
-        </button>
+      {/* FLT-10: título neutral en lugar de las pestañas Contenedores / Tuggers */}
+      <div className="border-b border-gray-200">
+        <h2 className="py-2 text-sm font-semibold text-continental-black" style={{ marginBottom: 0 }} data-testid="titulo-vehiculos">
+          Vehículos
+        </h2>
       </div>
 
       <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
@@ -970,6 +1008,7 @@ export function VehiculosPage() {
               />
             </>
           )}
+          {!validando && validacion && !validacion.existe && pideDatosEquipo && datosEquipoCampos}
           <Select
             label="Área"
             value={form.areaId}
@@ -1027,18 +1066,7 @@ export function VehiculosPage() {
             onChange={(value) => setForm((prev) => ({ ...prev, areaId: value }))}
             options={areaFormOptions}
           />
-          <Input
-            label="Marca"
-            placeholder="Marca"
-            value={form.marca}
-            onChange={(e) => setForm((prev) => ({ ...prev, marca: e.target.value }))}
-          />
-          <Input
-            label="Modelo"
-            placeholder="Modelo"
-            value={form.modelo}
-            onChange={(e) => setForm((prev) => ({ ...prev, modelo: e.target.value }))}
-          />
+          {mostrarDatosEquipoEdicion && datosEquipoCampos}
           <Textarea
             label="Notas"
             placeholder="Notas adicionales"
@@ -1164,7 +1192,7 @@ export function VehiculosPage() {
                 `Lo que estoy viendo (${pagination.totalItems} vehículo${pagination.totalItems === 1 ? '' : 's'})`,
                 describirFiltros()
               )}
-              {opcion('todo', 'Toda la flota', 'Todos los vehículos, incluidos Tuggers e inactivos.')}
+              {opcion('todo', 'Toda la flota', 'Todos los vehículos, incluidos los inactivos.')}
               <div className="flex flex-wrap items-center gap-2 text-sm" role="radiogroup" aria-label="Formato">
                 <span className="font-semibold text-continental-black">Formato:</span>
                 {(['xlsx', 'csv'] as const).map((f) => (
