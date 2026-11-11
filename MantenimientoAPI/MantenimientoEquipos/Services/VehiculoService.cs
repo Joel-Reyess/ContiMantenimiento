@@ -177,7 +177,9 @@ public class VehiculoService
         }
 
         var tipoId = await _prefijoConfigService.GetTipoVehiculoIdByCodigoAsync(codigo);
-        if (tipoId.HasValue && Enum.IsDefined(typeof(TipoVehiculoEnum), tipoId.Value))
+        // PRE-03: cualquier tipo registrado en Tipos de vehículo (también los creados después del catálogo original,
+        // con Id mayor a los del enum). Antes se descartaban y los tipos nuevos nunca se autodetectaban.
+        if (tipoId.HasValue && tipos.ContainsKey((TipoVehiculoEnum)tipoId.Value))
         {
             resultado.TipoDetectado = (TipoVehiculoEnum)tipoId.Value;
             resultado.TipoDetectadoNombre = tipos.GetValueOrDefault(resultado.TipoDetectado.Value, resultado.TipoDetectado.Value.ToString());
@@ -222,10 +224,10 @@ public class VehiculoService
         {
             Codigo = request.Codigo,
             Tipo = request.Tipo ?? throw new ArgumentException("El tipo de vehículo es requerido"),
-            Marca = request.Marca,
-            Modelo = request.Modelo,
-            NumeroSerie = request.NumeroSerie,
-            Anio = request.Anio,
+            Marca = Limpio(request.Marca),
+            Modelo = Limpio(request.Modelo),
+            NumeroSerie = Limpio(request.NumeroSerie),
+            Anio = request.Anio > 0 ? request.Anio : null,
             Estado = EstadoVehiculoEnum.Operativo,
             AreaId = request.AreaId,
             FechaAdquisicion = request.FechaAdquisicion,
@@ -244,15 +246,29 @@ public class VehiculoService
         return vehiculo;
     }
 
+    private static string? Limpio(string? texto) => string.IsNullOrWhiteSpace(texto) ? null : texto.Trim();
+
+    /// <summary>Marca, Modelo, Número de serie y Año (datos del equipo de Tuggers y Montacargas). Null si todo está bien.</summary>
+    public static string? ValidarDatosEquipo(string? marca, string? modelo, string? numeroSerie, int? anio)
+    {
+        if ((marca?.Trim().Length ?? 0) > 100) return "La marca admite máximo 100 caracteres";
+        if ((modelo?.Trim().Length ?? 0) > 100) return "El modelo admite máximo 100 caracteres";
+        if ((numeroSerie?.Trim().Length ?? 0) > 50) return "El número de serie admite máximo 50 caracteres";
+        var maximo = DateTime.Now.Year + 1;
+        if (anio is > 0 && (anio < 1950 || anio > maximo)) return $"El año debe estar entre 1950 y {maximo}";
+        return null;
+    }
+
     public async Task<bool> UpdateAsync(int id, VehiculoUpdateRequest request, int userId)
     {
         var vehiculo = await _db.Vehiculos.FindAsync(id);
         if (vehiculo == null) return false;
 
-        if (request.Marca != null) vehiculo.Marca = request.Marca;
-        if (request.Modelo != null) vehiculo.Modelo = request.Modelo;
-        if (request.NumeroSerie != null) vehiculo.NumeroSerie = request.NumeroSerie;
-        if (request.Anio.HasValue) vehiculo.Anio = request.Anio.Value;
+        // null = no cambia; "" (o año 0) = lo borra
+        if (request.Marca != null) vehiculo.Marca = Limpio(request.Marca);
+        if (request.Modelo != null) vehiculo.Modelo = Limpio(request.Modelo);
+        if (request.NumeroSerie != null) vehiculo.NumeroSerie = Limpio(request.NumeroSerie);
+        if (request.Anio.HasValue) vehiculo.Anio = request.Anio.Value > 0 ? request.Anio.Value : null;
         if (request.Estado.HasValue) vehiculo.Estado = request.Estado.Value;
         // AreaId = 0 quita el área asignada
         if (request.AreaId.HasValue) vehiculo.AreaId = request.AreaId.Value > 0 ? request.AreaId.Value : null;

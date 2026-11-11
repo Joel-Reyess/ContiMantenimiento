@@ -29,10 +29,11 @@ public class ChecklistsController : ControllerBase
     /// </summary>
     [HttpGet("templates")]
     public async Task<IActionResult> GetAllTemplates(
-        [FromQuery] TipoVehiculoEnum? tipoVehiculo = null,
+        [FromQuery] int? tipoVehiculo = null,
         [FromQuery] string? tipoMantenimiento = null)
     {
-        var templates = await _checklistService.GetAllTemplatesAsync(tipoVehiculo, tipoMantenimiento);
+        // int: los tipos nuevos (Id > 15) no son valores del enum y el enlace de modelo los rechazaba (PRE-03)
+        var templates = await _checklistService.GetAllTemplatesAsync((TipoVehiculoEnum?)tipoVehiculo, tipoMantenimiento);
         return Ok(ApiResponse<List<ChecklistTemplateDto>>.Ok(templates));
     }
 

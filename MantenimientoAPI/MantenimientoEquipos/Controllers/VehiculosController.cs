@@ -29,16 +29,18 @@ public class VehiculosController : ControllerBase
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> GetAll(
-        [FromQuery] TipoVehiculoEnum? tipo = null,
+        [FromQuery] int? tipo = null,
         [FromQuery] EstadoVehiculoEnum? estado = null,
         [FromQuery] int? areaId = null,
         [FromQuery] UbicacionVehiculoEnum? ubicacion = null,
         [FromQuery] string? busqueda = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 10,
-        [FromQuery] TipoVehiculoEnum? excluirTipo = null,
+        [FromQuery] int? excluirTipo = null,
         [FromQuery] string? prefijo = null)
     {
+        // int y no TipoVehiculoEnum: el enlace de modelo rechaza valores fuera del enum ("The value '21' is invalid")
+        // y los tipos creados en Tipos de vehículo tienen Id mayor a 15 (PRE-03)
         List<TipoVehiculoEnum>? tiposPermitidos = null;
         
         if (User.IsInRole("Lider") || User.IsInRole("Supervisor"))
@@ -51,7 +53,7 @@ public class VehiculosController : ControllerBase
             }
         }
 
-        var vehiculos = await _vehiculoService.GetAllAsync(tipo, estado, areaId, ubicacion, tiposPermitidos, busqueda, page, pageSize, excluirTipo, prefijo);
+        var vehiculos = await _vehiculoService.GetAllAsync((TipoVehiculoEnum?)tipo, estado, areaId, ubicacion, tiposPermitidos, busqueda, page, pageSize, (TipoVehiculoEnum?)excluirTipo, prefijo);
         return Ok(ApiResponse<PaginatedResponse<VehiculoListDto>>.Ok(vehiculos));
     }
 
@@ -99,6 +101,8 @@ public class VehiculosController : ControllerBase
     public async Task<IActionResult> Create([FromBody] VehiculoCreateRequest request)
     {
         request.Codigo = request.Codigo.Trim();
+        var errorDatos = VehiculoService.ValidarDatosEquipo(request.Marca, request.Modelo, request.NumeroSerie, request.Anio);
+        if (errorDatos != null) return BadRequest(ApiResponse<string>.Error(errorDatos));
         var validacion = await _vehiculoService.ValidarCodigoAsync(request.Codigo);
 
         if (validacion.Existe)
@@ -130,6 +134,8 @@ public class VehiculosController : ControllerBase
     [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
     public async Task<IActionResult> Update(int id, [FromBody] VehiculoUpdateRequest request)
     {
+        var errorDatos = VehiculoService.ValidarDatosEquipo(request.Marca, request.Modelo, request.NumeroSerie, request.Anio);
+        if (errorDatos != null) return BadRequest(ApiResponse<string>.Error(errorDatos));
         var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
         var result = await _vehiculoService.UpdateAsync(id, request, userId);
 

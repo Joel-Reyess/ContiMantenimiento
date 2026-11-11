@@ -16,6 +16,8 @@ export interface TipoVehiculoItem {
   proveedorId?: number;
   proveedorNombre?: string;
   totalVehiculos?: number;
+  /** Pide Marca, Modelo, Año y Número de serie al registrar vehículos de este tipo (Tuggers y Montacargas) */
+  pideDatosEquipo?: boolean;
 }
 
 export interface EstadoItem {

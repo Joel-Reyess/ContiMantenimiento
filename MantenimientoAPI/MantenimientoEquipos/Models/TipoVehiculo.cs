@@ -30,6 +30,12 @@ namespace MantenimientoEquipos.Models
         public DateTime? FechaProximoMantenimiento { get; set; }
         
         public bool Activo { get; set; } = true;
+
+        /// <summary>
+        /// Al registrar o editar un vehículo de este tipo se piden Marca, Modelo, Año y Número de serie
+        /// (Tuggers y Montacargas; los contenedores no los llevan). Script 20.
+        /// </summary>
+        public bool PideDatosEquipo { get; set; }
         
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         

@@ -66,9 +66,9 @@ public class ExcelController : ControllerBase
     [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
     public async Task<IActionResult> ExportarFlotaFiltrada(
         [FromQuery] string? busqueda = null,
-        [FromQuery] TipoVehiculoEnum? tipo = null,
+        [FromQuery] int? tipo = null,
         [FromQuery] int? areaId = null,
-        [FromQuery] TipoVehiculoEnum? excluirTipo = null,
+        [FromQuery] int? excluirTipo = null,
         [FromQuery] string? prefijo = null,
         [FromQuery] string? formato = null)
     {
@@ -83,9 +83,10 @@ public class ExcelController : ControllerBase
         var filtro = new FiltroVehiculos
         {
             Busqueda = busqueda,
-            Tipo = tipo,
+            // Tipos nuevos (Id > 15) también: por eso llegan como int (PRE-03)
+            Tipo = (TipoVehiculoEnum?)tipo,
             AreaId = areaId,
-            ExcluirTipo = excluirTipo,
+            ExcluirTipo = (TipoVehiculoEnum?)excluirTipo,
             Prefijo = prefijo,
             TiposPermitidos = tiposPermitidos
         };

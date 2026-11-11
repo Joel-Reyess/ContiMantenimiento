@@ -34,7 +34,7 @@ public class ExcelImportService
 
     // Encabezados de la plantilla. Al leer se ignoran mayúsculas, acentos y el "*" de obligatorio,
     // así que también se puede importar un archivo generado con "Exportar".
-    private static readonly string[] ColumnasVehiculos = { "Código *", "Tipo", "Área", "Marca", "Modelo", "Notas" };
+    private static readonly string[] ColumnasVehiculos = { "Código *", "Tipo", "Área", "Marca", "Modelo", "Número de serie", "Año", "Notas" };
     private static readonly string[] ColumnasInventario =
         { "Código *", "Nombre *", "Categoría", "Unidad", "Stock actual", "Stock mínimo", "Stock máximo", "Costo unitario" };
     // Sin columna Activa/Activo: "Desactivar" solo existe para usuarios (requerimiento 14.2 y estandarización de
@@ -81,7 +81,8 @@ public class ExcelImportService
         using var wb = new XLWorkbook();
         if (entidad == "vehiculos")
         {
-            var ws = HojaPlantilla(wb, ExcelExportService.Hojas["vehiculos"], ColumnasVehiculos);
+            // Número de serie como texto (ceros a la izquierda, números largos)
+            var ws = HojaPlantilla(wb, ExcelExportService.Hojas["vehiculos"], ColumnasVehiculos, 6);
             ListaDesplegable(wb, ws, 2, "Tipos", await NombresTiposActivosAsync());
             ListaDesplegable(wb, ws, 3, "Áreas", await NombresAreasActivasAsync());
 
@@ -95,7 +96,8 @@ public class ExcelImportService
                 "  Si lo dejas vacío se detecta con los prefijos configurados. Si ningún prefijo coincide, la fila marcará error.",
                 "• Área (opcional): debe ser un área activa del sistema (usa la lista desplegable). No importan mayúsculas, acentos ni espacios.",
                 "• Las columnas que no reconozca el sistema (por ejemplo \"Prefijo\") se ignoran.",
-                "• Marca, Modelo y Notas son opcionales.",
+                "• Marca, Modelo, Número de serie, Año y Notas son opcionales. Marca, Modelo, Número de serie y Año aplican a Tuggers y Montacargas.",
+                "• Año: número de 4 dígitos (por ejemplo 2021).",
                 "",
                 "Si el Código YA EXISTE, el vehículo se ACTUALIZA con los datos que escribas; las celdas vacías no cambian nada.",
                 "Si el Código NO existe, se da de alta.",
@@ -104,7 +106,7 @@ public class ExcelImportService
                 "Si hay al menos un error no se guarda nada; corrige y vuelve a intentar.",
                 $"Máximo {MaxFilas:N0} filas por archivo.",
                 "",
-                "También puedes usar un archivo generado con \"Exportar Excel\": se leen las columnas Código, Tipo, Área, Marca, Modelo y Notas y se ignoran las demás."
+                "También puedes usar un archivo generado con \"Exportar Excel\": se leen las columnas Código, Tipo, Área, Marca, Modelo, Número de serie, Año y Notas y se ignoran las demás."
             });
         }
         else if (entidad == "inventario")
@@ -364,8 +366,8 @@ public class ExcelImportService
         tabla.Requerir("Código");
         var errores = new Errores(resultado);
 
+        // Todos los tipos registrados, también los nuevos (PRE-03)
         var tipos = (await _db.TiposVehiculo.AsNoTracking().Select(t => new { t.Id, t.Nombre }).ToListAsync())
-            .Where(t => Enum.IsDefined(typeof(TipoVehiculoEnum), t.Id))
             .Select(t => (t.Nombre, (TipoVehiculoEnum)t.Id))
             .ToList();
         var areas = (await _db.Areas.AsNoTracking().Where(a => a.Activa).Select(a => new { a.Id, a.Nombre }).ToListAsync())
@@ -386,6 +388,8 @@ public class ExcelImportService
             var areaTexto = fila.Texto("Área");
             var marca = fila.Texto("Marca");
             var modelo = fila.Texto("Modelo");
+            var numeroSerie = fila.Texto("Número de serie");
+            var (anioValor, anioError) = fila.Decimal("Año");
             var notas = fila.Texto("Notas");
             var erroresAntes = resultado.TotalErrores;
 
@@ -408,7 +412,7 @@ public class ExcelImportService
             else if (existente == null)
             {
                 var detectado = VehiculoPrefijoConfigService.DetectarTipoVehiculoId(codigo, prefijos);
-                if (detectado.HasValue && Enum.IsDefined(typeof(TipoVehiculoEnum), detectado.Value))
+                if (detectado.HasValue && tipos.Any(t => (int)t.Item2 == detectado.Value))
                     tipo = (TipoVehiculoEnum)detectado.Value;
                 else
                     errores.Add(fila.Numero, "Tipo", "No se indicó el tipo y ningún prefijo configurado coincide con el código");
@@ -424,6 +428,16 @@ public class ExcelImportService
 
             if (marca?.Length > 100) errores.Add(fila.Numero, "Marca", "Máximo 100 caracteres");
             if (modelo?.Length > 100) errores.Add(fila.Numero, "Modelo", "Máximo 100 caracteres");
+            if (numeroSerie?.Length > 50) errores.Add(fila.Numero, "Número de serie", "Máximo 50 caracteres");
+            int? anio = null;
+            var anioMaximo = DateTime.Now.Year + 1;
+            if (anioError != null) errores.Add(fila.Numero, "Año", anioError);
+            else if (anioValor.HasValue)
+            {
+                if (anioValor.Value != decimal.Truncate(anioValor.Value) || anioValor.Value < 1950 || anioValor.Value > anioMaximo)
+                    errores.Add(fila.Numero, "Año", $"El año debe ser un número entre 1950 y {anioMaximo}");
+                else anio = (int)anioValor.Value;
+            }
             if (notas?.Length > 1000) errores.Add(fila.Numero, "Notas", "Máximo 1000 caracteres");
 
             if (resultado.TotalErrores > erroresAntes) continue;
@@ -437,6 +451,8 @@ public class ExcelImportService
                     AreaId = areaId,
                     Marca = marca,
                     Modelo = modelo,
+                    NumeroSerie = numeroSerie,
+                    Anio = anio,
                     Notas = notas,
                     Estado = EstadoVehiculoEnum.Operativo,
                     CreatedBy = userId,
@@ -451,6 +467,8 @@ public class ExcelImportService
                     if (areaId.HasValue) existente.AreaId = areaId;
                     if (marca != null) existente.Marca = marca;
                     if (modelo != null) existente.Modelo = modelo;
+                    if (numeroSerie != null) existente.NumeroSerie = numeroSerie;
+                    if (anio.HasValue) existente.Anio = anio;
                     if (notas != null) existente.Notas = notas;
                     existente.UpdatedAt = DateTime.UtcNow;
                     existente.UpdatedBy = userId;
