@@ -43,10 +43,11 @@ public class HistorialVehiculoService
     private static readonly EstadoOrdenTrabajoEnum[] Concluidas = { EstadoOrdenTrabajoEnum.Validada, EstadoOrdenTrabajoEnum.Entregado };
 
     /// <summary>
-    /// Empresa proveedora de una intervención. ÚNICO lugar donde se decide: hoy es la empresa con cuyas tarifas se
-    /// generó la orden de pago y, sin orden de pago, la empresa actual del técnico asignado.
+    /// Empresa proveedora de una intervención. ÚNICO lugar donde se decide: la empresa con cuyas tarifas se generó la
+    /// orden de pago; sin orden de pago, la que atiende la orden (etapa SELECCIÓN, Reporte 6); y en órdenes de antes,
+    /// la empresa actual del técnico asignado.
     /// </summary>
-    private static int? EmpresaDeIntervencion(int? empresaPago, int? empresaTecnico) => empresaPago ?? empresaTecnico;
+    private static int? EmpresaDeIntervencion(int? empresaPago, int? empresaOrden, int? empresaTecnico) => empresaPago ?? empresaOrden ?? empresaTecnico;
 
     /// <summary>Null si el vehículo no existe</summary>
     public async Task<HistorialVehiculoDto?> ObtenerAsync(int vehiculoId, HistorialVehiculoFiltros f, bool verCostos)
@@ -65,7 +66,7 @@ public class HistorialVehiculoService
             {
                 o.Id, o.Folio, o.ReporteFallaId, o.TipoMantenimiento, o.Descripcion, o.Estado,
                 o.FechaCreacion, o.FechaFinalizacion, o.FechaValidacion,
-                o.TecnicoAsignadoId,
+                o.TecnicoAsignadoId, o.EmpresaId,
                 Pago = o.RegistroPago == null ? null : new
                 {
                     o.RegistroPago.Id, o.RegistroPago.Estado, o.RegistroPago.MontoTotal, o.RegistroPago.EmpresaId, o.RegistroPago.TecnicoId
@@ -146,6 +147,7 @@ public class HistorialVehiculoService
             var tid = tecnicoDeOrden[o.Id];
             return EmpresaDeIntervencion(
                 pagosVigentes.TryGetValue(o.Id, out var p) ? p.EmpresaId : null,
+                o.EmpresaId,
                 tid.HasValue && tecnicos.TryGetValue(tid.Value, out var t) ? t.EmpresaId : null);
         });
         var empresaIds = empresaDeOrden.Values.Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToList();
