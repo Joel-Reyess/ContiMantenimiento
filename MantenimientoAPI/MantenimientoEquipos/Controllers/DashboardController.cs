@@ -15,12 +15,24 @@ public class DashboardController : ControllerBase
 {
     private readonly DashboardService _dashboardService;
     private readonly EmpresasService _empresas;
+    private readonly SeleccionService _seleccion;
 
-    public DashboardController(DashboardService dashboardService, EmpresasService empresas)
+    public DashboardController(DashboardService dashboardService, EmpresasService empresas, SeleccionService seleccion)
     {
         _dashboardService = dashboardService;
         _empresas = empresas;
+        _seleccion = seleccion;
     }
+
+    /// <summary>
+    /// Indicadores por empresa proveedora (Reporte 6, DSH-03): disponibilidad, órdenes atendidas, concluidas y
+    /// pendientes, órdenes activas con semáforo de capacidad, presupuesto asignado/utilizado/saldo, costo promedio
+    /// por reparación y gasto por tipo de vehículo; más las órdenes que esperan proveedor.
+    /// </summary>
+    [HttpGet("indicadores-proveedores")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
+    public async Task<IActionResult> GetIndicadoresProveedores() =>
+        Ok(ApiResponse<IndicadoresProveedoresDto>.Ok(await _seleccion.IndicadoresAsync()));
 
     /// <summary>
     /// Dashboard financiero por proveedor (PDF 06-nov, DSH-02): reparaciones, costo total y costo promedio por empresa,

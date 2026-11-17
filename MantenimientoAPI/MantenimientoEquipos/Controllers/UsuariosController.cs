@@ -16,9 +16,12 @@ public class UsuariosController : ControllerBase
 {
     private readonly MantenimientoDbContext _db;
     private readonly Services.EmpresasService _empresas;
+    // Reporte 6: un técnico activo con empresa puede recibir las órdenes que esperan proveedor
+    private readonly Services.SeleccionService _seleccion;
 
-    public UsuariosController(MantenimientoDbContext db, Services.EmpresasService empresas)
+    public UsuariosController(MantenimientoDbContext db, Services.EmpresasService empresas, Services.SeleccionService seleccion)
     {
+        _seleccion = seleccion;
         _db = db;
         _empresas = empresas;
     }
@@ -176,6 +179,7 @@ public class UsuariosController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+        await _seleccion.ReintentarAsync(User.UsuarioId());
 
         return Ok(ApiResponse<string>.Ok("Usuario actualizado correctamente"));
     }
@@ -189,6 +193,7 @@ public class UsuariosController : ControllerBase
 
         user.Status = UserStatusEnum.Activo;
         await _db.SaveChangesAsync();
+        await _seleccion.ReintentarAsync(User.UsuarioId());
         return Ok(ApiResponse<string>.Ok("Usuario activado"));
     }
 

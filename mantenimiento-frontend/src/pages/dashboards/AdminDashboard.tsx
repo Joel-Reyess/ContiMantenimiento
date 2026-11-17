@@ -18,6 +18,7 @@ import {
   RecurrentFailuresChart,
   LocationMatrix,
   GastoProveedores,
+  IndicadoresProveedores,
 } from '@/components/dashboard';
 import { WorkshopTab } from '@/components/dashboard/tabs/WorkshopTab';
 import { ReportsTab } from '@/components/dashboard/tabs/ReportsTab';
@@ -565,7 +566,13 @@ export function AdminDashboard() {
         
         {activeTab === 'mte' && <MTETab stats={stats} />}
 
-        {activeTab === 'proveedores' && <GastoProveedores />}
+        {activeTab === 'proveedores' && (
+          <div className="flex flex-col gap-6">
+            {/* Reporte 6 (DSH-03): indicadores por empresa proveedora */}
+            <IndicadoresProveedores />
+            <GastoProveedores />
+          </div>
+        )}
 
         {activeTab === 'reportes' && (
           <div className="space-y-6 animate-in fade-in duration-500">

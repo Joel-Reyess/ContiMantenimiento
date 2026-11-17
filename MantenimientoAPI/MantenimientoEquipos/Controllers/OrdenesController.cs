@@ -27,9 +27,14 @@ public class OrdenesController : ControllerBase
     private readonly EliminacionService _eliminacion;
     private readonly FlujoService _flujo;
     private readonly FlujoAvisos _avisos;
+    private readonly SeleccionService _seleccion;
+    private readonly MantenimientoDbContext _db;
 
-    public OrdenesController(OrdenTrabajoService ordenService, NotificacionService notificacionService, IWebHostEnvironment env, LiderTipoVehiculoAsignacionService asignacionService, EliminacionService eliminacion, FlujoService flujo, FlujoAvisos avisos)
+    public OrdenesController(OrdenTrabajoService ordenService, NotificacionService notificacionService, IWebHostEnvironment env, LiderTipoVehiculoAsignacionService asignacionService, EliminacionService eliminacion, FlujoService flujo, FlujoAvisos avisos,
+        SeleccionService seleccion, MantenimientoDbContext db)
     {
+        _seleccion = seleccion;
+        _db = db;
         _flujo = flujo;
         _avisos = avisos;
         _eliminacion = eliminacion;
@@ -102,18 +107,41 @@ public class OrdenesController : ControllerBase
     /// </summary>
     /// <summary>
     /// Elimina una orden de trabajo con su checklist, evidencias, refacciones, actividades y pagos.
-    /// Su reporte (si tiene) vuelve a quedar "sin orden". Solo administradores; queda en la bitácora.
+    /// Su reporte (si tiene) vuelve a quedar "sin orden". Queda en la bitácora.
+    /// Reporte 6 (PRS-03): una orden concluida (DISPONIBLE) la eliminan el Administrador y el Gerente de Mantenimiento
+    /// con motivo obligatorio; su orden de pago se elimina y el importe regresa al presupuesto de la empresa.
+    /// Las órdenes que no han concluido solo las elimina el Administrador.
     /// </summary>
     [HttpDelete("{id:int}")]
-    [RolesAllowed("SuperUsuario", "Administrador")]
-    public async Task<IActionResult> Delete(int id)
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
+    public async Task<IActionResult> Delete(int id, [FromQuery] string? motivo = null)
     {
+        var orden = await _db.OrdenesTrabajo.AsNoTracking().Where(o => o.Id == id)
+            .Select(o => new { o.Estado, o.EmpresaId, o.FechaAceptacion }).FirstOrDefaultAsync();
+        if (orden == null)
+            return NotFound(ApiResponse<string>.Error("Orden de trabajo no encontrada"));
+        var concluida = orden.Estado == EstadoOrdenTrabajoEnum.Validada || orden.Estado == EstadoOrdenTrabajoEnum.Entregado;
+        var esAdmin = User.IsInRole("SuperUsuario") || User.IsInRole("Administrador");
+        if (!concluida && !esAdmin)
+            return StatusCode(403, ApiResponse<string>.Error("Solo el Administrador puede eliminar órdenes que aún no concluyen."));
+        motivo = string.IsNullOrWhiteSpace(motivo) ? null : motivo.Trim();
+        if (concluida && motivo == null)
+            return BadRequest(ApiResponse<string>.Error("Escribe el motivo de la eliminación: la orden ya concluyó y su importe regresa al presupuesto de la empresa.", "MotivoObligatorio"));
+        if (motivo?.Length > 500) motivo = motivo[..500];
+
         var filasAntes = await _flujo.FilasBloqueadasAsync();
-        var r = await _eliminacion.EliminarOrdenConRegistroAsync(id, User.UsuarioId(), User.NombreUsuario());
+        var r = await _eliminacion.EliminarOrdenConRegistroAsync(id, User.UsuarioId(), User.NombreUsuario(), motivo);
         if (r.Ordenes == 0)
             return NotFound(ApiResponse<string>.Error("Orden de trabajo no encontrada"));
+        var reversiones = _eliminacion.ReversionesPendientes.ToList();
+        await _eliminacion.AvisarReversionesAsync(User.UsuarioId());
         await _flujo.AvisarCambiosEnFilasAsync(filasAntes, User.UsuarioId());
-        return Ok(ApiResponse<EliminacionResultadoDto>.Ok(r, $"Orden de trabajo {r.Folios[0]} eliminada"));
+        // Una orden activa que se elimina libera capacidad de su empresa
+        await _seleccion.CapacidadLiberadaAsync(orden.FechaAceptacion != null ? orden.EmpresaId : null, User.UsuarioId());
+        var mensaje = $"Orden de trabajo {r.Folios[0]} eliminada";
+        if (reversiones.Count > 0)
+            mensaje += $". Se restituyeron {PresupuestoService.Moneda(reversiones.Sum(x => x.Monto))} al presupuesto de {string.Join(", ", reversiones.Select(x => x.Empresa).Distinct())}";
+        return Ok(ApiResponse<EliminacionResultadoDto>.Ok(r, mensaje));
     }
 
     [HttpPost]
@@ -166,31 +194,31 @@ public class OrdenesController : ControllerBase
     }
 
     /// <summary>
-    /// Asigna un técnico a una orden de trabajo
+    /// Cambia el técnico de una orden. Reporte 6: la empresa y el técnico los asigna el sistema en la etapa SELECCIÓN;
+    /// el cambio manual es una reasignación (técnico de una empresa proveedora, antes de que el taller acepte la orden)
+    /// y queda en el historial con su motivo. Equivale a POST /api/flujo/ordenes/{id}/seleccion/reasignar.
     /// </summary>
     [HttpPost("{id}/asignar")]
     [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")] // El técnico no asigna: acepta la orden (flujo de 7 etapas)
     public async Task<IActionResult> AsignarTecnico(int id, [FromBody] AsignarTecnicoRequest request)
     {
-        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-        bool result;
+        var empresaId = await _db.Users.Where(u => u.Id == request.TecnicoId).Select(u => u.EmpresaId).FirstOrDefaultAsync();
+        if (empresaId == null)
+            return BadRequest(ApiResponse<string>.Error("El técnico no pertenece a ninguna empresa proveedora: asígnale su empresa en Usuarios."));
         try
         {
-            result = await _ordenService.AsignarTecnicoAsync(id, request.TecnicoId, userId, request.FirmaAsignacionTexto);
+            var r = await _seleccion.ReasignarAsync(id, new ReasignarProveedorRequest
+            {
+                EmpresaId = empresaId.Value,
+                TecnicoId = request.TecnicoId,
+                Motivo = string.IsNullOrWhiteSpace(request.Motivo) ? "Cambio de técnico desde Órdenes de trabajo" : request.Motivo
+            }, User.UsuarioFlujo());
+            return Ok(ApiResponse<string>.Ok(r.Mensaje, r.Mensaje));
         }
-        catch (InvalidOperationException ex)
+        catch (FlujoException ex)
         {
-            return BadRequest(ApiResponse<string>.Error(ex.Message));
+            return StatusCode(ex.Status == 409 ? 400 : ex.Status, ApiResponse<string>.Error(ex.Message));
         }
-
-        if (!result)
-            return NotFound(ApiResponse<string>.Error("Orden de trabajo no encontrada"));
-
-        // Obtener la orden para el folio
-        var orden = await _ordenService.GetByIdAsync(id);
-        await _notificacionService.NotificarOrdenAsignadaAsync(request.TecnicoId, orden!.Folio, id);
-
-        return Ok(ApiResponse<string>.Ok("Técnico asignado correctamente"));
     }
 
     /// <summary>

@@ -344,7 +344,8 @@ public class VehiculoService
         using var tx = await _db.Database.BeginTransactionAsync();
 
         // Órdenes (incluidas las que vienen de un reporte) y reportes, con todo lo que depende de ellos
-        var ordenesEliminadas = await _eliminacion.EliminarOrdenesAsync(ordenIds);
+        var ordenesEliminadas = await _eliminacion.EliminarOrdenesAsync(ordenIds,
+            new ContextoPresupuesto(usuarioId, nombreUsuario, "Se eliminó el vehículo con sus órdenes de trabajo"));
         var (reportesEliminados, _) = await _eliminacion.EliminarReportesAsync(reporteIds);
 
         await _db.HistorialMantenimiento.Where(h => vehiculoIds.Contains(h.VehiculoId)).ExecuteDeleteAsync();
@@ -368,6 +369,7 @@ public class VehiculoService
         await _db.SaveChangesAsync();
 
         await tx.CommitAsync();
+        await _eliminacion.AvisarReversionesAsync(usuarioId);
 
         foreach (var url in urlsFotos) _documentoService.EliminarArchivo(url);
 

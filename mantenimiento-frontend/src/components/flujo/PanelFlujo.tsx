@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Ban, CheckCircle, ClipboardCheck, History, Loader2, PlayCircle, Plus, Search, Truck, XCircle, Edit3, Info } from 'lucide-react';
+import { Ban, Building2, CheckCircle, ClipboardCheck, History, Loader2, PlayCircle, Plus, Search, Truck, XCircle, Edit3, Info } from 'lucide-react';
 import { Button, Modal, ModalFooter, Textarea, useConfirm, useToast } from '@/components/ui';
 import { formatDateTime } from '@/lib/utils';
 import { PrioridadNombres } from '@/interfaces/Api.interface';
@@ -16,6 +16,7 @@ import {
 import type { ApiResponse } from '@/interfaces';
 import { FlujoEtapas } from './FlujoEtapas';
 import { AlertaCapacidadModal } from './CapacidadZonas';
+import { SeleccionProveedor } from './SeleccionProveedor';
 import { useActualizacion } from '@/hooks/useActualizacion';
 
 interface PanelFlujoProps {
@@ -31,12 +32,13 @@ interface PanelFlujoProps {
   bloqueoTerminar?: string;
 }
 
-type Ventana = null | 'rechazarReporte' | 'cancelarReporte' | 'corregirReporte' | 'agregarHallazgo' | 'rechazarReparacion';
+type Ventana = null | 'rechazarReporte' | 'cancelarReporte' | 'corregirReporte' | 'agregarHallazgo' | 'rechazarReparacion' | 'seleccion';
 
 /** Historial con los nombres del documento (PDF 06-nov): "INSPECCIÓN – Rechazada", "TALLER – Hallazgo adicional"... */
 const ETAPA_HISTORIAL: Record<string, string> = {
   REPORTE: 'INSPECCIÓN',
   INSPECCION: 'INSPECCIÓN',
+  SELECCION: 'SELECCIÓN',
   TALLER: 'TALLER',
   VALIDACION: 'VALIDACIÓN FINAL',
   ORDEN: 'ORDEN DE TRABAJO'
@@ -48,7 +50,10 @@ const ACCION_HISTORIAL: Record<string, string> = {
   Corregido: 'Corrección del reporte',
   Reenviado: 'Corregido y reenviado',
   Hallazgo: 'Hallazgo adicional',
-  Validado: 'Validada con observaciones'
+  Validado: 'Validada con observaciones',
+  Reasignada: 'Reasignación de proveedor',
+  SinDisponibilidad: 'Sin empresas disponibles',
+  AceptacionBloqueada: 'Aceptación bloqueada por capacidad'
 };
 
 /**
@@ -276,7 +281,11 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version, 
 
   return (
     <div className="space-y-4" data-testid="panel-flujo">
-      <FlujoEtapas etapas={flujo.etapas} />
+      <FlujoEtapas
+        etapas={flujo.etapas}
+        abribles={puede('verSeleccion') ? ['SELECCION'] : []}
+        onAbrir={() => abrir('seleccion')}
+      />
 
       {flujo.bloqueo && (
         <div className="flex items-start gap-2 rounded-lg border px-4 py-3 text-sm" style={{ borderColor: '#004eaf', backgroundColor: '#eef4fc', color: '#00387d' }}>
@@ -365,6 +374,11 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version, 
               <Truck className="h-4 w-4" /> Confirmar entrega en Zona de Transición
             </Button>
           )}
+          {puede('verSeleccion') && (
+            <Button variant="outline" onClick={() => abrir('seleccion')} disabled={procesando} className="flex items-center gap-2" data-testid="ver-seleccion">
+              <Building2 className="h-4 w-4" /> {puede('reasignarProveedor') ? 'Empresa proveedora / reasignar' : 'Empresa proveedora'}
+            </Button>
+          )}
           {puede('aceptarOrden') && (
             <Button
               onClick={() => void confirmarSimple('Aceptar orden de trabajo',
@@ -435,6 +449,7 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version, 
             <ol className="mt-2 space-y-2 border-l-2 border-continental-gray-3 pl-4 text-sm" data-testid="historial-flujo">
               {[...flujo.historial].reverse().map((h, i) => {
                 const conObservacion = h.accion === 'Rechazado' || h.accion === 'Cancelado' || h.accion === 'Cancelada' || h.accion === 'Validado';
+                // Reasignaciones y "sin disponibilidad" ya traen su texto completo (empresas, técnico y motivo)
                 return (
                   <li key={i}>
                     <p className="font-medium text-continental-black">
@@ -527,6 +542,15 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version, 
       </Modal>
 
       <AlertaCapacidadModal alerta={alerta} onClose={() => { setAlerta(null); onCambio?.(); }} />
+
+      {idOrden && (
+        <SeleccionProveedor
+          ordenId={idOrden}
+          abierta={ventana === 'seleccion'}
+          onClose={() => setVentana(null)}
+          onReasignada={(m) => { toast.exito(m); setVentana(null); void cargar(); onCambio?.(); }}
+        />
+      )}
     </div>
   );
 }

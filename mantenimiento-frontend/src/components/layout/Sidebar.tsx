@@ -1,7 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
-import { LayoutDashboard, Truck, AlertTriangle, Wrench, DollarSign, Settings, FileText, Package, ClipboardList, CheckSquare, Building2 } from 'lucide-react';
+import { LayoutDashboard, Truck, AlertTriangle, Wrench, DollarSign, Settings, FileText, Package, ClipboardList, CheckSquare, Building2, Wallet } from 'lucide-react';
 
 interface NavItem {
   label: string;
@@ -24,6 +24,8 @@ const navItems: NavItem[] = [
   { label: 'Inventario y Materiales', href: '/materiales', icon: <Package className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico'] },
   { label: 'Archivo Técnico (Planos)', href: '/archivo', icon: <FileText className="h-6 w-6" />, roles: ['Supervisor', 'Tecnico'], ocultarPara: ['SuperUsuario', 'Administrador'] },
   { label: 'Control de Pagos', href: '/pagos', icon: <DollarSign className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor'] },
+  // Reporte 6 (PRS-01): módulo visible solo para el Administrador del Sistema y el Gerente de Mantenimiento
+  { label: 'Presupuesto de Empresas', href: '/presupuesto-empresas', icon: <Wallet className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor'] },
   { label: 'Empresas Proveedoras', href: '/empresas-proveedoras', icon: <Building2 className="h-6 w-6" />, roles: ['Supervisor'], ocultarPara: ['SuperUsuario', 'Administrador'] },
   { label: 'Flota de Contenedores', href: '/vehiculos', icon: <Truck className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Lider'] },
   { label: 'Reportes de Falla', href: '/reportes', icon: <AlertTriangle className="h-6 w-6" />, roles: ['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico', 'Operador', 'Lider'] },

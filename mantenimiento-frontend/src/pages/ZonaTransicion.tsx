@@ -84,10 +84,21 @@ export function ZonaTransicionPage() {
           {u.sinEspacio && (
             <span className="rounded-full px-2.5 py-0.5 text-xs font-semibold text-white" style={{ backgroundColor: '#004eaf' }}>Sin espacio</span>
           )}
+          {/* Reporte 6: SELECCIÓN sin empresas disponibles (morado oscuro) y empresa en su capacidad máxima (azul) */}
+          {u.sinProveedor && (
+            <span className="rounded-full text-xs font-semibold text-white" style={{ backgroundColor: '#4b1f6f', padding: '2px 10px' }} data-testid="sin-proveedor">Sin proveedor disponible</span>
+          )}
+          {u.capacidadLlena && (
+            <span className="rounded-full text-xs font-semibold text-white" style={{ backgroundColor: '#004eaf', padding: '2px 10px' }} data-testid="capacidad-llena">Empresa en capacidad máxima</span>
+          )}
         </div>
       </div>
       {u.descripcion && <p className="line-clamp-2 text-sm text-continental-gray-1">{u.descripcion}</p>}
-      {u.tecnico && <p className="text-xs text-continental-gray-1">Técnico: {u.tecnico}</p>}
+      {(u.empresa || u.tecnico) && (
+        <p className="text-xs text-continental-gray-1" data-testid="empresa-unidad">
+          {u.empresa ? `Empresa: ${u.empresa}` : ''}{u.empresa && u.tecnico ? ' · ' : ''}{u.tecnico ? `Técnico: ${u.tecnico}` : ''}
+        </p>
+      )}
       {extra}
     </div>
   );

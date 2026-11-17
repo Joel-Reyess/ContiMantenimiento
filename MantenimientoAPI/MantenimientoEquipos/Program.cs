@@ -85,6 +85,9 @@ builder.Services.AddScoped<FlujoAvisos>();
 builder.Services.AddScoped<MaterialesOrdenService>();
 builder.Services.AddScoped<OrdenPagoService>();
 builder.Services.AddScoped<EmpresasService>();
+// Reporte 6: selección automática de empresa proveedora y presupuesto de empresas
+builder.Services.AddScoped<PresupuestoService>();
+builder.Services.AddScoped<SeleccionService>();
 
 // Configuración CORS para permitir peticiones desde el frontend
 var allowedOrigins = new[] {

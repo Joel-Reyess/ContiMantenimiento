@@ -62,8 +62,10 @@ export const ordenesService = {
   },
 
   /** Elimina la orden con su checklist, evidencias, refacciones y pagos. Solo administradores. */
-  async delete(id: number): Promise<ApiResponse<{ reportes: number; ordenes: number; folios: string[] }>> {
-    return await httpClient.delete<{ reportes: number; ordenes: number; folios: string[] }>(`/ordenes/${id}`);
+  /** Reporte 6: una orden concluida (DISPONIBLE) se elimina con motivo y su importe regresa al presupuesto de la empresa */
+  async delete(id: number, motivo?: string): Promise<ApiResponse<{ reportes: number; ordenes: number; folios: string[] }>> {
+    return await httpClient.delete<{ reportes: number; ordenes: number; folios: string[] }>(
+      `/ordenes/${id}${motivo ? `?motivo=${encodeURIComponent(motivo)}` : ''}`);
   },
 
   async getById(id: number): Promise<ApiResponse<OrdenTrabajo>> {

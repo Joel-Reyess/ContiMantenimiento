@@ -27,6 +27,7 @@ import { GestionAsignacionLideresPage } from '@/pages/GestionAsignacionLideres';
 import { FallasImagenPage } from '@/pages/FallasImagen';
 import { ReportarReparacionPage } from '@/pages/ReportarReparacion';
 import { EmpresasProveedorasPage } from '@/pages/EmpresasProveedoras';
+import { PresupuestoEmpresasPage } from '@/pages/PresupuestoEmpresas';
 
 function App() {
   return (
@@ -229,6 +230,16 @@ function App() {
               element={
                 <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor']}>
                   <EmpresasProveedorasPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Presupuesto de Empresas (Reporte 6, PRS-01): Administrador y Gerente de Mantenimiento */}
+            <Route
+              path="presupuesto-empresas"
+              element={
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor']}>
+                  <PresupuestoEmpresasPage />
                 </ProtectedRoute>
               }
             />

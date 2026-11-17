@@ -46,9 +46,10 @@ public class ResultadoFlujoDto
 
 public class EtapaFlujoDto
 {
-    public required string Clave { get; set; }   // REPORTE, INSPECCION, TRASLADO, TALLER, TRASLADO_RETORNO, VALIDACION, DISPONIBLE
+    public required string Clave { get; set; }   // REPORTE, INSPECCION, TRASLADO, SELECCION, TALLER, TRASLADO_RETORNO, VALIDACION, DISPONIBLE
     public required string Nombre { get; set; }  // texto del ícono
-    /// <summary>completada (verde), pendiente (naranja parpadeante), rechazada (rojo), bloqueada (azul: sin espacio), inactiva (gris)</summary>
+    /// <summary>completada (verde), pendiente (naranja parpadeante), rechazada (rojo), bloqueada (azul: sin espacio o capacidad),
+    /// sinproveedor (morado oscuro: ninguna empresa disponible), inactiva (gris)</summary>
     public required string Estado { get; set; }
     /// <summary>Texto bajo el ícono: rol o usuario responsable, "En espera", "Sin espacio"...</summary>
     public string? Etiqueta { get; set; }
@@ -126,6 +127,13 @@ public class UnidadZonaDto
     /// <summary>Lugar en la fila de espera (1 = el siguiente en entrar)</summary>
     public int? PosicionFila { get; set; }
     public bool SinEspacio { get; set; }
+    /// <summary>Empresa proveedora asignada (Reporte 6)</summary>
+    public int? EmpresaId { get; set; }
+    public string? Empresa { get; set; }
+    /// <summary>En la zona de dañados sin empresa: espera en SELECCIÓN "Sin disponibilidad"</summary>
+    public bool SinProveedor { get; set; }
+    /// <summary>La empresa asignada está en su capacidad máxima: no se puede aceptar todavía</summary>
+    public bool CapacidadLlena { get; set; }
     public List<string> Acciones { get; set; } = new();
 }
 

@@ -92,6 +92,8 @@ public partial class MantenimientoDbContext : DbContext
     // Empresas proveedoras y sus tarifas (PDF 06-nov, CFG-07 y CFG-08)
     public virtual DbSet<Empresa> Empresas { get; set; }
     public virtual DbSet<TarifaEmpresa> TarifasEmpresa { get; set; }
+    // Presupuesto de empresas (Reporte 6, PRS-01 a PRS-03)
+    public virtual DbSet<MovimientoPresupuesto> MovimientosPresupuesto { get; set; }
     public virtual DbSet<RegistroPagoActividad> RegistroPagoActividades { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -708,6 +710,24 @@ public partial class MantenimientoDbContext : DbContext
             .WithMany(e => e.Tecnicos)
             .HasForeignKey(u => u.EmpresaId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        // Selección de empresa proveedora (Reporte 6): la orden guarda la empresa que la atiende
+        modelBuilder.Entity<OrdenTrabajo>(entity =>
+        {
+            entity.HasIndex(o => o.EmpresaId);
+            entity.HasOne(o => o.Empresa).WithMany().HasForeignKey(o => o.EmpresaId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<MovimientoPresupuesto>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.EmpresaId, e.Fecha });
+            entity.HasIndex(e => e.RegistroPagoId);
+            entity.Property(e => e.Tipo).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.Monto).HasColumnType("decimal(14,2)");
+            entity.Property(e => e.SaldoResultante).HasColumnType("decimal(14,2)");
+            entity.HasOne(e => e.Empresa).WithMany().HasForeignKey(e => e.EmpresaId).OnDelete(DeleteBehavior.Restrict);
+        });
 
         modelBuilder.Entity<RegistroPago>(entity =>
         {

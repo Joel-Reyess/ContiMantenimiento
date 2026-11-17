@@ -19,9 +19,12 @@ public class PagosController : ControllerBase
     private readonly EliminacionService _eliminacion;
     private readonly OrdenPagoService _ordenesPago;
     private readonly FlujoAvisos _avisos;
+    private readonly PresupuestoService _presupuesto;
 
-    public PagosController(MantenimientoDbContext db, EliminacionService eliminacion, OrdenPagoService ordenesPago, FlujoAvisos avisos)
+    public PagosController(MantenimientoDbContext db, EliminacionService eliminacion, OrdenPagoService ordenesPago, FlujoAvisos avisos,
+        PresupuestoService presupuesto)
     {
+        _presupuesto = presupuesto;
         _db = db;
         _eliminacion = eliminacion;
         _ordenesPago = ordenesPago;
@@ -71,6 +74,10 @@ public class PagosController : ControllerBase
         {
             var mensaje = await _eliminacion.EliminarPagoAsync(id, User.UsuarioId(), User.NombreUsuario());
             if (mensaje == null) return NotFound(ApiResponse<string>.Error("Pago no encontrado"));
+            var reversiones = _eliminacion.ReversionesPendientes.ToList();
+            await _eliminacion.AvisarReversionesAsync(User.UsuarioId());
+            if (reversiones.Count > 0)
+                mensaje += $". Se restituyeron {PresupuestoService.Moneda(reversiones.Sum(r => r.Monto))} al presupuesto de {reversiones[0].Empresa}";
             return Ok(ApiResponse<string>.Ok(mensaje, mensaje));
         }
         catch (InvalidOperationException ex)
@@ -213,8 +220,19 @@ public class PagosController : ControllerBase
             if (pago != null) generadas.Add((pago, o.Folio));
         }
         await _db.SaveChangesAsync();
+        // Reporte 6 (PRS-01): cada orden de pago generada descuenta el presupuesto de su empresa
+        var cambios = new List<CambioSaldo>();
+        var ctx = new ContextoPresupuesto(User.UsuarioId(), nombre, null);
+        foreach (var (pago, folio) in generadas)
+        {
+            var o = ordenes.First(x => x.Id == pago.OrdenTrabajoId);
+            var c = await _presupuesto.DescontarAsync(pago, folio, o.VehiculoId, o.Vehiculo.Codigo, ctx);
+            await _db.SaveChangesAsync();
+            if (c != null) cambios.Add(c);
+        }
         foreach (var (pago, folio) in generadas)
             await _avisos.OrdenPagoGeneradaAsync(pago.Id, folio, User.UsuarioId());
+        await _presupuesto.AvisarUmbralesAsync(cambios, User.UsuarioId());
         var resultado = new ResultadoGenerarPagosDto { Generadas = generadas.Count, Folios = generadas.Select(g => OrdenPagoService.Folio(g.Pago.Id)).ToList() };
         return Ok(ApiResponse<ResultadoGenerarPagosDto>.Ok(resultado,
             resultado.Generadas == 0 ? "No había órdenes pendientes de generar" : $"{resultado.Generadas} orden(es) de pago generada(s)"));
@@ -254,6 +272,7 @@ public class PagosController : ControllerBase
         pago.Estado = EstadoPagoEnum.Aprobado;
         pago.FechaAprobacion = DateTime.UtcNow;
         await _db.SaveChangesAsync();
+        await SincronizarPresupuestoAsync(id, null);
         return Ok(ApiResponse<object>.Ok(MapDto(pago), "Pago aprobado"));
     }
 
@@ -269,7 +288,11 @@ public class PagosController : ControllerBase
         var motivo = string.IsNullOrWhiteSpace(body?.Motivo) ? null : body!.Motivo!.Trim();
         if (motivo != null) pago.Notas = motivo.Length > 300 ? motivo[..300] : motivo;
         await _db.SaveChangesAsync();
-        return Ok(ApiResponse<object>.Ok(MapDto(pago), "Pago rechazado"));
+        // Reporte 6: una orden de pago cancelada devuelve su importe al presupuesto de la empresa
+        var devuelto = await SincronizarPresupuestoAsync(id, motivo == null ? null : $"Orden de pago {OrdenPagoService.Folio(id)} rechazada: {motivo}");
+        return Ok(ApiResponse<object>.Ok(MapDto(pago), devuelto > 0
+            ? $"Pago rechazado. Se restituyeron {PresupuestoService.Moneda(devuelto)} al presupuesto de la empresa"
+            : "Pago rechazado"));
     }
 
     [HttpPost("{id:int}/revertir")]
@@ -319,7 +342,17 @@ public class PagosController : ControllerBase
             pago.NumeroFactura = factura.Length > 50 ? factura[..50] : factura;
         }
         await _db.SaveChangesAsync();
+        await SincronizarPresupuestoAsync(id, null);
         return Ok(ApiResponse<object>.Ok(MapDto(pago), "Pago marcado como pagado"));
+    }
+
+    /// <summary>Ajusta el presupuesto de la empresa al estado del pago (cancelado = devuelto). Devuelve lo restituido.</summary>
+    private async Task<decimal> SincronizarPresupuestoAsync(int pagoId, string? motivo)
+    {
+        var reversiones = await _presupuesto.SincronizarPagosAsync(new[] { pagoId }, eliminadas: false, ordenEliminada: false,
+            new ContextoPresupuesto(User.UsuarioId(), User.NombreUsuario(), motivo));
+        await _presupuesto.AvisarReversionesAsync(reversiones, User.UsuarioId());
+        return reversiones.Sum(r => r.Monto);
     }
 
     [HttpGet("resumen-tecnicos")]

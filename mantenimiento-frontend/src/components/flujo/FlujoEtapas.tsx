@@ -1,13 +1,15 @@
-import { CheckCircle2, ClipboardList, FileText, ShieldCheck, Truck, Wrench, Search } from 'lucide-react';
+import { Building2, CheckCircle2, ClipboardList, FileText, ShieldCheck, Truck, Wrench, Search } from 'lucide-react';
 import type { EstadoEtapa, EtapaFlujo } from '@/services/flujoService';
 
-/** Colores del PDF: verde completada, naranja parpadeante pendiente, rojo rechazada, azul sin espacio */
+/** Colores del PDF: verde completada, naranja parpadeante pendiente, rojo rechazada, azul sin espacio o capacidad,
+ *  morado oscuro sin empresas proveedoras disponibles (Reporte 6) */
 // eslint-disable-next-line react-refresh/only-export-components
 export const COLOR_ETAPA: Record<EstadoEtapa, string> = {
   completada: '#2db928',
   pendiente: '#ff8c00',
   rechazada: '#ff2d37',
   bloqueada: '#004eaf',
+  sinproveedor: '#4b1f6f',
   inactiva: '#cdcdcd',
 };
 
@@ -15,7 +17,8 @@ const TEXTO_ESTADO: Record<EstadoEtapa, string> = {
   completada: 'Completada',
   pendiente: 'Pendiente',
   rechazada: 'Rechazada / devuelta',
-  bloqueada: 'Sin espacio en la Zona de Transición',
+  bloqueada: 'Sin espacio o sin capacidad',
+  sinproveedor: 'Sin empresas proveedoras disponibles',
   inactiva: 'Aún no inicia',
 };
 
@@ -23,6 +26,7 @@ const ICONO: Record<EtapaFlujo['clave'], typeof FileText> = {
   REPORTE: FileText,
   INSPECCION: Search,
   TRASLADO: Truck,
+  SELECCION: Building2,
   TALLER: Wrench,
   TRASLADO_RETORNO: Truck,
   VALIDACION: ShieldCheck,
@@ -33,18 +37,21 @@ interface FlujoEtapasProps {
   etapas: EtapaFlujo[];
   /** Muestra abajo el detalle de la etapa en curso (por defecto sí) */
   conDetalle?: boolean;
+  /** Etapas que se pueden abrir (p. ej. SELECCIÓN para Administrador y Gerente) */
+  abribles?: EtapaFlujo['clave'][];
+  onAbrir?: (clave: EtapaFlujo['clave']) => void;
 }
 
 /**
- * Seguimiento visual de la orden: REPORTE › INSPECCIÓN › TRASLADO › TALLER › TRASLADO › VALIDACIÓN › DISPONIBLE.
- * Bajo cada ícono va el rol o usuario responsable (o "En espera", "Sin espacio"...).
+ * Seguimiento visual de la orden: REPORTE › INSPECCIÓN › TRASLADO › SELECCIÓN › TALLER › TRASLADO › VALIDACIÓN › DISPONIBLE.
+ * Bajo cada ícono va el rol o usuario responsable (o "En espera", "Sin espacio", la empresa asignada...).
  */
-export function FlujoEtapas({ etapas, conDetalle = true }: FlujoEtapasProps) {
+export function FlujoEtapas({ etapas, conDetalle = true, abribles = [], onAbrir }: FlujoEtapasProps) {
   const actual = etapas.find((e) => e.estado !== 'completada' && e.estado !== 'inactiva');
   return (
     <div className="space-y-3" data-testid="flujo-etapas">
       <div className="overflow-x-auto pb-1">
-        <ol className="flex min-w-[640px] items-start">
+        <ol className="flex min-w-[720px] items-start">
           {etapas.map((e, i) => {
             const Icono = ICONO[e.clave] ?? ClipboardList;
             const color = COLOR_ETAPA[e.estado];
@@ -68,12 +75,25 @@ export function FlujoEtapas({ etapas, conDetalle = true }: FlujoEtapasProps) {
                     }}
                   />
                 )}
-                <span
-                  className={`relative z-10 flex h-12 w-12 items-center justify-center rounded-full text-white ${e.estado === 'pendiente' ? 'flujo-parpadeo' : ''}`}
-                  style={{ backgroundColor: color }}
-                >
-                  <Icono className="h-6 w-6" />
-                </span>
+                {onAbrir && abribles.includes(e.clave) ? (
+                  <button
+                    type="button"
+                    onClick={() => onAbrir(e.clave)}
+                    aria-label={`Ver ${e.nombre}`}
+                    data-testid={`abrir-etapa-${e.clave}`}
+                    className={`relative z-10 flex h-12 w-12 items-center justify-center rounded-full text-white ring-2 ring-offset-2 ring-continental-gray-3 transition hover:scale-105 ${e.estado === 'pendiente' ? 'flujo-parpadeo' : ''}`}
+                    style={{ backgroundColor: color }}
+                  >
+                    <Icono className="h-6 w-6" />
+                  </button>
+                ) : (
+                  <span
+                    className={`relative z-10 flex h-12 w-12 items-center justify-center rounded-full text-white ${e.estado === 'pendiente' ? 'flujo-parpadeo' : ''}`}
+                    style={{ backgroundColor: color }}
+                  >
+                    <Icono className="h-6 w-6" />
+                  </span>
+                )}
                 <span className="mt-2 text-[11px] font-bold tracking-wide text-continental-black">{e.nombre}</span>
                 <span
                   className="mt-0.5 max-w-[7.5rem] text-xs font-medium leading-tight"

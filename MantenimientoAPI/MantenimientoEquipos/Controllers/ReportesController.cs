@@ -129,6 +129,8 @@ public class ReportesController : ControllerBase
         var r = await _eliminacion.EliminarReportesConRegistroAsync(ids, User.UsuarioId(), User.NombreUsuario());
         if (r.Reportes == 0)
             return NotFound(ApiResponse<string>.Error("No se encontraron los reportes seleccionados"));
+        // Reporte 6: si se fue una orden concluida, su importe regresó al presupuesto de la empresa
+        await _eliminacion.AvisarReversionesAsync(User.UsuarioId());
 
         var mensaje = r.Reportes == 1 ? $"Reporte {r.Folios[0]} eliminado" : $"{r.Reportes} reportes eliminados";
         if (r.Ordenes > 0) mensaje += $", junto con {r.Ordenes} orden(es) de trabajo";

@@ -126,10 +126,13 @@ public class OrdenPagoService
         if (o.TecnicoAsignadoId == null) return null;
         if (await _db.RegistrosPago.AnyAsync(p => p.OrdenTrabajoId == o.Id)) return null;
 
-        var empresa = await _db.Users
-            .Where(u => u.Id == o.TecnicoAsignadoId.Value && u.Empresa != null)
-            .Select(u => new { u.Empresa!.Id, u.Empresa.Nombre })
-            .FirstOrDefaultAsync();
+        // Reporte 6: la empresa que atendió la orden (SELECCIÓN); las órdenes de antes usan la del técnico
+        var empresa = o.EmpresaId != null
+            ? await _db.Empresas.Where(e => e.Id == o.EmpresaId).Select(e => new { e.Id, e.Nombre }).FirstOrDefaultAsync()
+            : await _db.Users
+                .Where(u => u.Id == o.TecnicoAsignadoId.Value && u.Empresa != null)
+                .Select(u => new { u.Empresa!.Id, u.Empresa.Nombre })
+                .FirstOrDefaultAsync();
         var actividades = await ActividadesAsync(o.Id, empresa?.Id);
         var total = actividades.Sum(a => a.Subtotal);
         var pago = new RegistroPago
