@@ -9,6 +9,86 @@ import type {
   ApiResponse
 } from '@/interfaces';
 
+export interface HistorialVehiculoFiltros {
+  desde?: string;
+  hasta?: string;
+  tipoMantenimiento?: string;
+  componente?: string;
+  empresaId?: string;
+  tecnicoId?: string;
+  estado?: string;
+}
+
+export interface ConteoHistorial { id?: number | null; nombre: string; eventos: number; importe?: number | null }
+export interface PeriodoCosto { periodo: string; importe: number; intervenciones: number; promedio: number; variacionPct?: number | null }
+export interface OpcionFiltroHistorial { valor: string; nombre: string; activo: boolean }
+
+export interface IntervencionHistorial {
+  reporteId?: number | null;
+  reporteFolio?: string | null;
+  ordenId?: number | null;
+  ordenFolio?: string | null;
+  fecha: string;
+  fechaConclusion?: string | null;
+  tipoMantenimiento: string;
+  descripcionFalla?: string | null;
+  fallasReportadas: string[];
+  componentes: string[];
+  actividades: { nombre: string; cantidad: number; completada: boolean; hallazgo: boolean }[];
+  materiales: { nombre: string; cantidad: number }[];
+  tecnicoId?: number | null;
+  tecnico?: string | null;
+  tecnicoActivo: boolean;
+  empresaId?: number | null;
+  empresa?: string | null;
+  importe?: number | null;
+  pagoFolio?: string | null;
+  estado: string;
+  estadoNombre: string;
+}
+
+export interface HistorialVehiculo {
+  vehiculoId: number;
+  vehiculoCodigo: string;
+  vehiculoTipo?: string | null;
+  verCostos: boolean;
+  hayFiltros: boolean;
+  resumen: {
+    totalReportes: number;
+    totalOrdenes: number;
+    totalActividades: number;
+    importeAcumulado?: number | null;
+    fechaUltimoMantenimiento?: string | null;
+    fechaUltimoReporte?: string | null;
+    empresaMayorParticipacion?: ConteoHistorial | null;
+    costoPromedio?: number | null;
+  };
+  intervenciones: IntervencionHistorial[];
+  estadisticas: {
+    actividadesFrecuentes: ConteoHistorial[];
+    componentesFrecuentes: ConteoHistorial[];
+    fallasRecurrentes: ConteoHistorial[];
+    tiposMantenimiento: ConteoHistorial[];
+    tipoPredominante?: string | null;
+  };
+  economico?: {
+    total: number;
+    intervencionesConCosto: number;
+    promedio: number;
+    porActividad: ConteoHistorial[];
+    porProveedor: ConteoHistorial[];
+    porPeriodo: PeriodoCosto[];
+    comparativo: PeriodoCosto[];
+  } | null;
+  filtros: {
+    tiposMantenimiento: OpcionFiltroHistorial[];
+    componentes: OpcionFiltroHistorial[];
+    empresas: OpcionFiltroHistorial[];
+    tecnicos: OpcionFiltroHistorial[];
+    estados: OpcionFiltroHistorial[];
+  };
+}
+
 export interface VehiculoFilters {
   tipo?: number;
   estado?: number;
@@ -134,6 +214,16 @@ export const vehiculosService = {
 
   async getHistorial(id: number): Promise<ApiResponse<unknown[]>> {
     return await httpClient.get<unknown[]>(`/vehiculos/${id}/historial`);
+  },
+
+  /** Historial de mantenimiento individual con resumen, estadísticas y costos (Reporte 6, FLT-11 a FLT-16) */
+  async getHistorialMantenimiento(id: number, filtros: HistorialVehiculoFiltros = {}): Promise<ApiResponse<HistorialVehiculo>> {
+    const params = new URLSearchParams();
+    Object.entries(filtros).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') params.append(k, String(v));
+    });
+    const qs = params.toString();
+    return await httpClient.get<HistorialVehiculo>(`/vehiculos/${id}/historial-mantenimiento${qs ? `?${qs}` : ''}`);
   },
 
   async uploadFoto(id: number, file: File): Promise<ApiResponse<VehiculoFoto>> {

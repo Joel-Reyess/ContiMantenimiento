@@ -100,13 +100,17 @@ public class EmpresasService
 
         var tecnicos = await _db.Users.CountAsync(u => u.EmpresaId == id);
         var pagos = await _db.RegistrosPago.CountAsync(p => p.EmpresaId == id);
-        if (tecnicos > 0 || pagos > 0)
+        var ordenes = await _db.OrdenesTrabajo.CountAsync(o => o.EmpresaId == id);
+        var movimientos = await _db.MovimientosPresupuesto.CountAsync(m => m.EmpresaId == id);
+        if (tecnicos > 0 || pagos > 0 || ordenes > 0 || movimientos > 0)
         {
             var partes = new List<string>();
             if (tecnicos > 0) partes.Add($"{tecnicos} técnico(s)");
+            if (ordenes > 0) partes.Add($"{ordenes} orden(es) de trabajo");
             if (pagos > 0) partes.Add($"{pagos} orden(es) de pago");
+            if (movimientos > 0) partes.Add("movimientos de presupuesto");
             throw new InvalidOperationException(
-                $"{empresa.Nombre} tiene {string.Join(" y ", partes)}. Desactívala en lugar de eliminarla para conservar el historial.");
+                $"{empresa.Nombre} tiene {string.Join(", ", partes)}. Desactívala en lugar de eliminarla para conservar el historial.");
         }
 
         using var tx = await _db.Database.BeginTransactionAsync();

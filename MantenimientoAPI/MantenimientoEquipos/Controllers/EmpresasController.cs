@@ -19,10 +19,12 @@ namespace MantenimientoEquipos.Controllers;
 public class EmpresasController : ControllerBase
 {
     private readonly EmpresasService _empresas;
+    private readonly SeleccionService _seleccion;
 
-    public EmpresasController(EmpresasService empresas)
+    public EmpresasController(EmpresasService empresas, SeleccionService seleccion)
     {
         _empresas = empresas;
+        _seleccion = seleccion;
     }
 
     /// <summary>Lista de empresas; con <c>activas=true</c> solo las activas (para asignarlas a técnicos)</summary>
@@ -57,6 +59,8 @@ public class EmpresasController : ControllerBase
         {
             var empresa = await _empresas.ActualizarAsync(id, request);
             if (empresa == null) return NotFound(ApiResponse<string>.Error("Empresa no encontrada"));
+            // Reporte 6: una empresa que se vuelve a activar puede recibir las órdenes que esperan proveedor
+            if (empresa.Activo) await _seleccion.ReintentarAsync(User.UsuarioId());
             return Ok(ApiResponse<object>.Ok(new { empresa.Id, empresa.Nombre, empresa.Identificador, empresa.Activo }, $"Empresa {empresa.Nombre} actualizada"));
         }
         catch (ArgumentException ex)

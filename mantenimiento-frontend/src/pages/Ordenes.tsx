@@ -9,8 +9,6 @@ import {
   Card,
   Modal,
   ModalFooter,
-  SearchableSelect,
-  type SearchableSelectOption,
   Select,
   Spinner,
   useConfirm,
@@ -37,7 +35,6 @@ import {
 import { catalogosService, vehiculosService } from '@/services';
 import { UbicacionBadge } from '@/components/vehiculos/UbicacionLegend';
 import { ordenesService } from '@/services/ordenesService';
-import { usuariosService } from '@/services/usuariosService';
 import { reportesService } from '@/services/reportesService';
 import { checklistService } from '@/services/checklistService';
 import { ordenTrabajoChecklistItemService } from '@/services/ordenTrabajoChecklistItemService';
@@ -124,19 +121,50 @@ export function OrdenesPage() {
   const { id: ordenIdParam } = useParams();
   const ordenId = ordenIdParam ? Number(ordenIdParam) : undefined;
   const isMisOrdenes = location.pathname.includes('mis-ordenes');
-  const { hasRole, user } = useAuth();
+  const { hasRole } = useAuth();
   const canCreate = hasRole(['Administrador', 'Superusuario', 'Supervisor']);
   const canEliminar = hasRole(['Administrador', 'SuperUsuario']);
+  // Reporte 6 (PRS-03): el Gerente de Mantenimiento también elimina órdenes concluidas (DISPONIBLE), con motivo
+  const esGerente = hasRole(['Supervisor']);
   // Líder y Operador consultan las órdenes; el Líder además aprueba o rechaza reparaciones
   const puedeTrabajarOrden = hasRole(['SuperUsuario', 'Administrador', 'Supervisor', 'Tecnico']);
   // Asignar o cambiar técnico y cancelar: Supervisor (Gerente) y administración; el técnico acepta la orden
   const puedeAsignarYCancelar = hasRole(['SuperUsuario', 'Administrador', 'Supervisor']);
   const navigate = useNavigate();
   const [eliminandoOrden, setEliminandoOrden] = useState(false);
+  // Orden concluida: ventana con el motivo (obligatorio); null = cerrada
+  const [motivoEliminar, setMotivoEliminar] = useState<string | null>(null);
+  const [errorEliminar, setErrorEliminar] = useState('');
 
-  /** Eliminar orden (solo administradores): confirmación del sistema, aviso y regreso al listado */
+  const eliminar = async (motivo?: string) => {
+    if (!detalle) return;
+    setEliminandoOrden(true);
+    try {
+      const res = await ordenesService.delete(detalle.id, motivo);
+      if (!res.success) {
+        if (motivo !== undefined) setErrorEliminar(res.message || 'No se pudo eliminar la orden');
+        else toast.error(res.message || 'No se pudo eliminar la orden');
+        return;
+      }
+      setMotivoEliminar(null);
+      toast.exito(res.message || `Orden ${detalle.folio} eliminada`);
+      navigate(isMisOrdenes ? '/mis-ordenes' : '/ordenes');
+    } catch (err) {
+      console.error(err);
+      toast.error('Error al eliminar la orden');
+    } finally {
+      setEliminandoOrden(false);
+    }
+  };
+
+  /** Eliminar orden: confirmación del sistema, aviso y regreso al listado. Concluida: pide el motivo (Reporte 6) */
   const handleEliminarOrden = async () => {
     if (!detalle || eliminandoOrden) return;
+    if (detalle.estado === EstadoOrdenTrabajo.Validada || detalle.estado === EstadoOrdenTrabajo.Entregado) {
+      setErrorEliminar('');
+      setMotivoEliminar('');
+      return;
+    }
     const ok = await confirmar({
       titulo: `Eliminar orden ${detalle.folio}`,
       mensaje: (
@@ -154,28 +182,13 @@ export function OrdenesPage() {
       tono: 'peligro'
     });
     if (!ok) return;
-    setEliminandoOrden(true);
-    try {
-      const res = await ordenesService.delete(detalle.id);
-      if (!res.success) {
-        toast.error(res.message || 'No se pudo eliminar la orden');
-        return;
-      }
-      toast.exito(res.message || `Orden ${detalle.folio} eliminada`);
-      navigate(isMisOrdenes ? '/mis-ordenes' : '/ordenes');
-    } catch (err) {
-      console.error(err);
-      toast.error('Error al eliminar la orden');
-    } finally {
-      setEliminandoOrden(false);
-    }
+    await eliminar();
   };
 
   const [filters, setFilters] = useState<FiltersState>({ busqueda: '' });
   const [ordenes, setOrdenes] = useState<OrdenTrabajoList[]>([]);
   const [detalle, setDetalle] = useState<OrdenTrabajo | null>(null);
   const [vehicleImageUrl, setVehicleImageUrl] = useState<string | undefined>(undefined);
-  const [tecnicos, setTecnicos] = useState<{ id: number; nombre: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [imageOpen, setImageOpen] = useState(false);
@@ -189,11 +202,6 @@ export function OrdenesPage() {
   const [materialesAlTerminar, setMaterialesAlTerminar] = useState<MaterialOrden[] | null>(null);
   // Sube con cada acción del flujo para que la tarjeta de materiales se recargue (p. ej. al aceptar la orden)
   const [versionFlujo, setVersionFlujo] = useState(0);
-  const [asignandoTecnico, setAsignandoTecnico] = useState(false);
-  const [tecnicoAsignado, setTecnicoAsignado] = useState<SearchableSelectOption | null>(null);
-  const [firmaError, setFirmaError] = useState('');
-  // PDF 06-nov: ya asignado, el técnico solo se cambia a propósito (Gerente de Mantenimiento o administración)
-  const [cambiandoTecnico, setCambiandoTecnico] = useState(false);
   const [reporteDetalle, setReporteDetalle] = useState<ReporteFalla | null>(null);
   const [loadingChecklist, setLoadingChecklist] = useState(false);
   const [uploadingItemMap, setUploadingItemMap] = useState<Record<number, boolean>>({});
@@ -384,60 +392,6 @@ export function OrdenesPage() {
     }
   }, [detalle]);
 
-  const loadTecnicos = async () => {
-    try {
-      // Primer intento: usuariosService.getTecnicos
-      const res = await usuariosService.getTecnicos();
-      let lista: { id: number; nombre: string }[] = [];
-      if (res.success && res.data) {
-        const data: any = res.data;
-        const listaRaw: any[] =
-          (data.items as any[]) ||
-          (data.Items as any[]) ||
-          (Array.isArray(data) ? data : []);
-        lista = listaRaw.map((t) => ({ id: t.id, nombre: t.nombreCompleto || t.username || `Tecnico ${t.id}` }));
-      }
-
-      // Fallback: catalogosService.getTecnicos (incluye inactivos si viene vacio)
-      if (lista.length === 0) {
-        const fallback = await catalogosService.getTecnicos(false);
-        if (fallback.success && fallback.data) {
-          lista = fallback.data.map((t: any) => ({
-            id: t.id,
-            nombre: t.nombreCompleto || t.nombre || `Tecnico ${t.id}`
-          }));
-        }
-      }
-
-      setTecnicos(lista);
-      const currentTechId =
-        detalle?.tecnicoAsignadoId ??
-        detalle?.tecnicoId ??
-        detalle?.firmadoPorId ??
-        (detalle as any)?.asignadoAId ??
-        detalle?.tecnicoAsignado?.id;
-      
-      if (lista.length > 0) {
-        if (currentTechId) {
-          const found = lista.find((t) => t.id === currentTechId);
-          if (found) {
-            setTecnicoAsignado({ value: found.id, label: found.nombre });
-          }
-        } else if (detalle && (detalle as any).tecnicoAsignadoId) {
-           // Si el backend asignó uno automáticamente
-           const autoId = (detalle as any).tecnicoAsignadoId;
-           const found = lista.find((t) => t.id === autoId);
-           if (found) {
-             setTecnicoAsignado({ value: found.id, label: found.nombre });
-           }
-        }
-      }
-    } catch (err) {
-      console.error('No se pudieron cargar tecnicos', err);
-      setTecnicos([]);
-    }
-  };
-
   const loadOrdenes = async () => {
     setLoading(true);
     setError('');
@@ -512,11 +466,6 @@ export function OrdenesPage() {
   };
 
   useEffect(() => {
-    // La lista de técnicos solo se usa para asignar (Líder y Operador consultan)
-    if (puedeTrabajarOrden) loadTecnicos();
-  }, []);
-
-  useEffect(() => {
     loadOrdenes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ordenId, isMisOrdenes]);
@@ -530,7 +479,6 @@ export function OrdenesPage() {
       return;
     }
     loadChecklist();
-    setCambiandoTecnico(false);
     const key = resolveChecklistKey(detalle.vehiculoTipo || detalle.tipoMantenimiento || detalle.vehiculoCodigo);
     setDummyChecklistTipo(key);
     setDummyChecklist(buildDummyChecklist(key));
@@ -1027,10 +975,11 @@ export function OrdenesPage() {
             </div>
             <div className="flex flex-col items-end gap-2">
               <Badge variant="secondary">{detalle.estadoNombre || EstadoOrdenNombres[detalle.estado]}</Badge>
-              {canEliminar && (
+              {(canEliminar || (esGerente && (detalle.estado === EstadoOrdenTrabajo.Validada || detalle.estado === EstadoOrdenTrabajo.Entregado))) && (
                 <Button
                   size="sm"
                   variant="outline"
+                  data-testid="eliminar-orden"
                   onClick={handleEliminarOrden}
                   disabled={eliminandoOrden}
                   className="flex items-center gap-2 border-red-300 text-red-700 hover:bg-red-50 print:hidden"
@@ -1076,84 +1025,14 @@ export function OrdenesPage() {
                   ))}
                 </div>
               )}
-              {/* PDF 06-nov: solo se asigna con "Confirmar y asignar"; ya asignado, solo el Gerente de Mantenimiento
-                  (o administración) lo cambia, y a propósito ("Cambiar técnico") */}
+              {/* Reporte 6: la empresa y el técnico los asigna el sistema en la etapa SELECCIÓN; la reasignación (con motivo)
+                  se hace desde esa etapa del seguimiento, solo antes de que el taller acepte la orden */}
+              <p data-testid="empresa-orden">Empresa proveedora: {detalle.empresaNombre || 'Sin asignar'}</p>
               {puedeAsignarYCancelar && detalle.estado !== EstadoOrdenTrabajo.Completada && detalle.estado !== EstadoOrdenTrabajo.Validada
-                && detalle.estado !== EstadoOrdenTrabajo.Entregado && detalle.estado !== EstadoOrdenTrabajo.Cancelada
-                && detalle.tecnicoAsignadoId && !cambiandoTecnico && (
-                <Button size="sm" variant="outline" className="print:hidden" onClick={() => { setTecnicoAsignado(null); setFirmaError(''); setCambiandoTecnico(true); }}>
-                  Cambiar técnico
-                </Button>
-              )}
-              {puedeAsignarYCancelar && detalle.estado !== EstadoOrdenTrabajo.Completada && detalle.estado !== EstadoOrdenTrabajo.Validada
-                && detalle.estado !== EstadoOrdenTrabajo.Entregado && detalle.estado !== EstadoOrdenTrabajo.Cancelada
-                && (!detalle.tecnicoAsignadoId || cambiandoTecnico) && (
-                <div className="space-y-2 pt-2" data-testid="asignar-tecnico">
-                  <p className="font-semibold text-continental-black">
-                    {detalle.tecnicoAsignadoId ? 'Cambiar técnico' : 'Asignar técnico'}
-                  </p>
-                  <p className="text-xs text-continental-gray-2">
-                    {detalle.tecnicoAsignadoId
-                      ? 'Elige al nuevo técnico y confirma. El cambio queda registrado.'
-                      : 'Elige al técnico y confirma con "Confirmar y asignar". También puede aceptarla un técnico desde su lista.'}
-                  </p>
-                  <SearchableSelect
-                    placeholder="Buscar tecnico"
-                    selected={tecnicoAsignado}
-                    onSelect={(opt) => setTecnicoAsignado(opt)}
-                  fetchOptions={async (q) =>
-                    tecnicos
-                      .filter((t: any) => t.nombre.toLowerCase().includes((q || '').toLowerCase()))
-                      .map((t: any) => ({ value: t.id, label: t.nombre }))
-                  }
-                    noResultsText="Sin tecnicos"
-                  />
-                  <Button
-                    size="sm"
-                    onClick={async () => {
-                      if (!detalle || !tecnicoAsignado) return;
-                      
-                      setAsignandoTecnico(true);
-                      setFirmaError('');
-                      
-                      const targetTechId = Number(tecnicoAsignado.value);
-                      const nombreFirma = user?.nombreCompleto || user?.username || 'Sistema';
-
-                      try {
-                        const asignRes = await ordenesService.asignarTecnico(detalle.id, {
-                          tecnicoId: targetTechId,
-                          tecnicoAsignadoId: targetTechId,
-                          firmadoPorId: user?.id,
-                          firmaAsignacionTexto: nombreFirma
-                        });
-
-                        if (!asignRes?.success) {
-                          setFirmaError(asignRes?.message || 'No se pudo asignar el tecnico');
-                          return;
-                        }
-
-                        toast.exito(`Técnico asignado: ${tecnicoAsignado.label}`);
-                        setCambiandoTecnico(false);
-                        await loadOrdenes();
-                      } catch (err) {
-                        setFirmaError('Error de conexión');
-                      } finally {
-                        setAsignandoTecnico(false);
-                      }
-                    }}
-                    disabled={accionando || asignandoTecnico || !tecnicoAsignado}
-                    className="flex items-center gap-2 bg-continental-gradient text-white"
-                  >
-                    {asignandoTecnico ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                    Confirmar y Asignar
-                  </Button>
-                  {cambiandoTecnico && (
-                    <Button size="sm" variant="ghost" onClick={() => setCambiandoTecnico(false)} disabled={asignandoTecnico}>
-                      No cambiar
-                    </Button>
-                  )}
-                  {firmaError && <p className="text-xs text-red-600">{firmaError}</p>}
-                </div>
+                && detalle.estado !== EstadoOrdenTrabajo.Entregado && detalle.estado !== EstadoOrdenTrabajo.Cancelada && (
+                <p className="text-xs text-continental-gray-2 print:hidden" data-testid="nota-seleccion">
+                  La empresa y el técnico los asigna el sistema al entregar la unidad en la Zona de Transición. Para reasignarlos, abre la etapa SELECCIÓN del seguimiento (antes de que el taller acepte la orden).
+                </p>
               )}
             </div>
           </div>
@@ -1908,6 +1787,48 @@ export function OrdenesPage() {
         renderList()
       )}
 
+
+      {/* Reporte 6 (PRS-03): eliminar una orden concluida pide el motivo; su orden de pago se elimina y el importe
+          regresa al presupuesto de la empresa */}
+      <Modal
+        isOpen={motivoEliminar !== null}
+        onClose={() => setMotivoEliminar(null)}
+        title={`Eliminar orden ${detalle?.folio ?? ''}`}
+        description="La orden ya concluyó (DISPONIBLE)."
+        size="md"
+      >
+        <div className="flex flex-col" style={{ gap: 10 }} data-testid="eliminar-concluida">
+          <p className="text-sm text-continental-gray-1">
+            Se eliminará la orden con su orden de pago. El importe regresará al presupuesto de la empresa proveedora y el movimiento
+            (folio, empresa, importe, usuario, fecha y motivo) quedará registrado en Presupuesto de Empresas. El reporte se conserva como atendido.
+          </p>
+          <label className="flex flex-col text-sm font-medium text-continental-black" style={{ gap: 4 }}>
+            Motivo de la eliminación
+            <textarea
+              className="rounded-lg border border-continental-gray-3 text-sm font-normal"
+              style={{ padding: '8px 10px', minHeight: 80 }}
+              data-testid="motivo-eliminar"
+              value={motivoEliminar ?? ''}
+              onChange={(e) => { setMotivoEliminar(e.target.value); setErrorEliminar(''); }}
+            />
+          </label>
+          {errorEliminar && <p className="text-sm font-medium text-red-600">{errorEliminar}</p>}
+        </div>
+        <ModalFooter>
+          <Button variant="outline" onClick={() => setMotivoEliminar(null)} disabled={eliminandoOrden}>Cancelar</Button>
+          <Button
+            variant="destructive"
+            data-testid="confirmar-eliminar"
+            disabled={eliminandoOrden}
+            onClick={() => {
+              if (!motivoEliminar?.trim()) return setErrorEliminar('Escribe el motivo de la eliminación.');
+              void eliminar(motivoEliminar.trim());
+            }}
+          >
+            {eliminandoOrden ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Eliminar orden
+          </Button>
+        </ModalFooter>
+      </Modal>
 
       {/* Terminar reparación (PDF 06-nov): vista previa con folio, checklist completado y materiales utilizados */}
       <Modal

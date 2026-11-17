@@ -26,7 +26,8 @@ import {
   RecurrentFailuresChart, 
   LocationMatrix,
   FailuresByTypeChart,
-  GastoProveedores
+  GastoProveedores,
+  IndicadoresProveedores
 } from '@/components/dashboard';
 
 interface TeamMember {
@@ -351,6 +352,9 @@ export function SupervisorDashboard() {
             </div>
           </section>
         )}
+
+      {/* Reporte 6 (DSH-03): indicadores por empresa proveedora */}
+      <IndicadoresProveedores />
 
       {/* Dashboard financiero por proveedor (PDF 06-nov, DSH-02) */}
       <GastoProveedores />

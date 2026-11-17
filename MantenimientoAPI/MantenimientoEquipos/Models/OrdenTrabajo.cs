@@ -164,6 +164,17 @@ public class OrdenTrabajo
     public int? TrasladoRetornoPorId { get; set; }
     public virtual User? TrasladoRetornoPor { get; set; }
 
+    // ===== SELECCIÓN de empresa proveedora (Reporte 6, OT-28 a OT-34) =====
+    /// <summary>Empresa proveedora que atiende la orden (la elige el sistema por turnos o la reasigna el Gerente)</summary>
+    public int? EmpresaId { get; set; }
+    public virtual Empresa? Empresa { get; set; }
+    /// <summary>Cuándo quedó asignada la empresa (automática o manual)</summary>
+    public DateTime? FechaSeleccion { get; set; }
+    /// <summary>Desde cuándo espera en SELECCIÓN porque ninguna empresa es elegible (null = no está en ese estado)</summary>
+    public DateTime? FechaSinProveedor { get; set; }
+    /// <summary>Primer intento de aceptar con la empresa a su capacidad máxima (para avisar una sola vez)</summary>
+    public DateTime? FechaAceptacionBloqueada { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
 

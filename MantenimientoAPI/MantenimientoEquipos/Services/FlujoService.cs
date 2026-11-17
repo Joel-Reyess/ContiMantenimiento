@@ -100,15 +100,19 @@ public class FlujoService
     private readonly EliminacionService _eliminacion;
 
     private readonly OrdenPagoService _pagos;
+    private readonly SeleccionService _seleccion;
+    private readonly PresupuestoService _presupuesto;
 
     public FlujoService(MantenimientoDbContext db, OrdenTrabajoService ordenes, FlujoAvisos avisos, EliminacionService eliminacion,
-        OrdenPagoService pagos)
+        OrdenPagoService pagos, SeleccionService seleccion, PresupuestoService presupuesto)
     {
         _db = db;
         _ordenes = ordenes;
         _avisos = avisos;
         _eliminacion = eliminacion;
         _pagos = pagos;
+        _seleccion = seleccion;
+        _presupuesto = presupuesto;
     }
 
     /// <summary>Qué órdenes de cada fila no caben hoy; se compara antes y después de un movimiento para avisar</summary>
@@ -428,19 +432,50 @@ public class FlujoService
                 Mensaje = "La unidad puede trasladarse a la Zona de Transición; falta confirmar su entrega física." });
         }
 
-        // 4. TALLER
-        var tecnico = Nombre(o?.TecnicoAsignadoId);
+        // 4. SELECCIÓN de empresa proveedora (Reporte 6): automática al entregar la unidad en la zona de dañados
+        var empresaNombre = o?.EmpresaId == null ? null
+            : await _db.Empresas.Where(e => e.Id == o.EmpresaId).Select(e => e.Nombre).FirstOrDefaultAsync();
+        int activasEmpresa = 0, capacidadEmpresa = 0;
+        bool empresaLlena = false;
+        if (o?.EmpresaId != null && o.FechaAceptacion == null && AntesDeTaller.Contains(o.Estado))
+        {
+            (activasEmpresa, capacidadEmpresa) = await _seleccion.CapacidadAsync(o.EmpresaId.Value);
+            empresaLlena = activasEmpresa >= capacidadEmpresa;
+        }
         if (o == null || o.FechaTrasladoIngreso == null)
+            etapas.Add(new EtapaFlujoDto { Clave = "SELECCION", Nombre = "SELECCIÓN", Estado = "inactiva", Etiqueta = "Automático" });
+        else if (o.EmpresaId != null)
+            etapas.Add(new EtapaFlujoDto { Clave = "SELECCION", Nombre = "SELECCIÓN", Estado = "completada",
+                Etiqueta = empresaNombre, Responsable = Nombre(o.TecnicoAsignadoId), Fecha = o.FechaSeleccion,
+                Mensaje = $"Orden asignada a {empresaNombre}" + (o.TecnicoAsignadoId != null ? $" · técnico {Nombre(o.TecnicoAsignadoId)}." : ".") });
+        else if (o.FechaAceptacion != null || !AntesDeTaller.Contains(o.Estado))
+            etapas.Add(new EtapaFlujoDto { Clave = "SELECCION", Nombre = "SELECCIÓN", Estado = "completada", Etiqueta = "Sin empresa",
+                Responsable = Nombre(o.TecnicoAsignadoId), Mensaje = "La orden se atendió antes de la selección automática de empresa proveedora." });
+        else if (o.FechaSinProveedor != null)
+            etapas.Add(new EtapaFlujoDto { Clave = "SELECCION", Nombre = "SELECCIÓN", Estado = "sinproveedor", Etiqueta = "Sin disponibilidad",
+                Responsable = "Gerente de Mantenimiento", Fecha = o.FechaSinProveedor,
+                Mensaje = "No hay empresas proveedoras disponibles (inactivas, sin presupuesto o en su capacidad máxima). La asignación se reintentará automáticamente al agregar presupuesto, activar una empresa o liberarse capacidad." });
+        else
+            etapas.Add(new EtapaFlujoDto { Clave = "SELECCION", Nombre = "SELECCIÓN", Estado = "pendiente", Etiqueta = "Automático",
+                Responsable = "Sistema", Mensaje = "Asignando la orden a la siguiente empresa proveedora disponible." });
+
+        // 5. TALLER
+        var tecnico = Nombre(o?.TecnicoAsignadoId);
+        if (o == null || o.FechaTrasladoIngreso == null || (o.EmpresaId == null && o.FechaAceptacion == null && AntesDeTaller.Contains(o.Estado)))
             etapas.Add(new EtapaFlujoDto { Clave = "TALLER", Nombre = "TALLER", Estado = "inactiva", Etiqueta = "Técnico" });
         else if (o.Estado == EstadoOrdenTrabajoEnum.Completada || Liberada.Contains(o.Estado))
             etapas.Add(new EtapaFlujoDto { Clave = "TALLER", Nombre = "TALLER", Estado = "completada", Etiqueta = "Completado",
                 Responsable = tecnico, Fecha = o.FechaFinalizacion, Mensaje = $"Reparación concluida por {tecnico ?? "el taller"}." });
         else if (o.Estado == EstadoOrdenTrabajoEnum.Cancelada)
             etapas.Add(new EtapaFlujoDto { Clave = "TALLER", Nombre = "TALLER", Estado = "inactiva", Etiqueta = "Cancelada" });
+        else if (o.FechaAceptacion == null && empresaLlena)
+            etapas.Add(new EtapaFlujoDto { Clave = "TALLER", Nombre = "TALLER", Estado = "bloqueada", Etiqueta = "Capacidad llena",
+                Responsable = tecnico ?? "Técnico",
+                Mensaje = $"{empresaNombre} tiene {activasEmpresa} de {capacidadEmpresa} órdenes activas: la orden permanece en espera y podrá aceptarse cuando se libere capacidad." });
         else if (o.FechaAceptacion == null)
             etapas.Add(new EtapaFlujoDto { Clave = "TALLER", Nombre = "TALLER", Estado = "pendiente", Etiqueta = "En espera",
                 Responsable = tecnico ?? "Técnico",
-                Mensaje = tecnico != null ? $"Asignada a {tecnico}; pendiente de que la acepte." : "Disponible para que un técnico la acepte." });
+                Mensaje = tecnico != null ? $"Asignada a {tecnico}; pendiente de que la acepte." : "Pendiente de que el taller la acepte." });
         else if (o.Estado == EstadoOrdenTrabajoEnum.Asignada)
             etapas.Add(new EtapaFlujoDto { Clave = "TALLER", Nombre = "TALLER", Estado = "pendiente", Etiqueta = "En revisión",
                 Responsable = tecnico, Fecha = o.FechaAceptacion,
@@ -451,7 +486,7 @@ public class FlujoService
                 Mensaje = o.Estado == EstadoOrdenTrabajoEnum.EsperandoRefacciones ? "Reparación en espera de refacciones."
                     : validacionRechazada ? "Corrigiendo lo observado en la validación." : "Reparación en proceso." });
 
-        // 5. TRASLADO a zona de reparados
+        // 6. TRASLADO a zona de reparados
         if (o == null || !(o.Estado == EstadoOrdenTrabajoEnum.Completada || Liberada.Contains(o.Estado)))
             etapas.Add(new EtapaFlujoDto { Clave = "TRASLADO_RETORNO", Nombre = "TRASLADO", Estado = "inactiva", Etiqueta = "Taller" });
         else if (o.FechaTrasladoRetorno != null || Liberada.Contains(o.Estado))
@@ -469,7 +504,7 @@ public class FlujoService
                 Responsable = tecnico ?? "Taller",
                 Mensaje = "Reparación concluida; falta que el técnico entregue la unidad en la Zona de Transición." });
 
-        // 6. VALIDACIÓN
+        // 7. VALIDACIÓN
         if (o != null && Liberada.Contains(o.Estado))
             etapas.Add(new EtapaFlujoDto { Clave = "VALIDACION", Nombre = "VALIDACIÓN", Estado = "completada",
                 Etiqueta = Corto(Nombre(o.ValidadoPorId)) ?? "Validada", Responsable = Nombre(o.ValidadoPorId), Fecha = o.FechaValidacion,
@@ -485,7 +520,7 @@ public class FlujoService
         else
             etapas.Add(new EtapaFlujoDto { Clave = "VALIDACION", Nombre = "VALIDACIÓN", Estado = "inactiva", Etiqueta = "Líder" });
 
-        // 7. DISPONIBLE
+        // 8. DISPONIBLE
         if (o != null && Liberada.Contains(o.Estado))
             etapas.Add(new EtapaFlujoDto { Clave = "DISPONIBLE", Nombre = "DISPONIBLE", Estado = "completada", Etiqueta = "Disponible",
                 Fecha = o.FechaValidacion, Mensaje = "La unidad está lista para regresar a operación." });
@@ -551,9 +586,22 @@ public class FlujoService
                 if (sinEspacioIngreso) dto.Bloqueo = etapas.First(e => e.Clave == "TRASLADO").Mensaje;
                 else acciones.Add("confirmarTraslado");
             }
-            if (o.FechaTrasladoIngreso != null && o.FechaAceptacion == null && AntesDeTaller.Contains(o.Estado)
-                && ((u.Es("Tecnico") && (o.TecnicoAsignadoId == null || o.TecnicoAsignadoId == u.Id)) || (admin && o.TecnicoAsignadoId != null)))
-                acciones.Add("aceptarOrden");
+            var porAceptar = o.FechaTrasladoIngreso != null && o.FechaAceptacion == null && AntesDeTaller.Contains(o.Estado);
+            // Reporte 6: acepta el técnico asignado u otro técnico de la misma empresa; sin empresa no se puede aceptar
+            var empresaDelUsuario = u.Es("Tecnico") ? await _db.Users.Where(x => x.Id == u.Id).Select(x => x.EmpresaId).FirstOrDefaultAsync() : null;
+            var leToca = (u.Es("Tecnico") && (o.TecnicoAsignadoId == u.Id || (empresaDelUsuario != null && empresaDelUsuario == o.EmpresaId)))
+                         || (admin && o.TecnicoAsignadoId != null);
+            if (porAceptar && o.EmpresaId != null && leToca)
+            {
+                if (empresaLlena) dto.Bloqueo = etapas.First(e => e.Clave == "TALLER").Mensaje;
+                else acciones.Add("aceptarOrden");
+            }
+            // Vista previa de la SELECCIÓN y reasignación (solo Administrador y Gerente de Mantenimiento)
+            if (o.FechaTrasladoIngreso != null && (u.Es("Supervisor") || admin))
+            {
+                acciones.Add("verSeleccion");
+                if (porAceptar) acciones.Add("reasignarProveedor");
+            }
             bool trabaja = (u.Es("Tecnico") && o.TecnicoAsignadoId == u.Id) || u.Es("Supervisor") || admin;
             if (trabaja && o.FechaAceptacion != null && o.Estado == EstadoOrdenTrabajoEnum.Asignada)
                 acciones.Add("iniciarReparacion");
@@ -610,13 +658,14 @@ public class FlujoService
                 o.VehiculoId, o.Vehiculo.Codigo,
                 Tipo = _db.TiposVehiculo.Where(t => t.Id == (int)o.Vehiculo.Tipo).Select(t => t.Nombre).FirstOrDefault(),
                 o.Descripcion, Tecnico = o.TecnicoAsignado != null ? o.TecnicoAsignado.NombreCompleto : null, o.TecnicoAsignadoId,
-                o.Prioridad, o.FechaCreacion, o.FechaTrasladoIngreso, o.FechaFinalizacion, o.FechaTrasladoRetorno
+                o.Prioridad, o.FechaCreacion, o.FechaTrasladoIngreso, o.FechaFinalizacion, o.FechaTrasladoRetorno,
+                o.EmpresaId, Empresa = o.Empresa != null ? o.Empresa.Nombre : null
             }).ToListAsync();
             return datos.Select(d => new UnidadZonaDto
             {
                 OrdenId = d.Id, OrdenFolio = d.Folio, ReporteId = d.ReporteFallaId, ReporteFolio = d.ReporteFolio,
                 VehiculoId = d.VehiculoId, VehiculoCodigo = d.Codigo, VehiculoTipo = d.Tipo, Descripcion = d.Descripcion,
-                Tecnico = d.Tecnico, Prioridad = d.Prioridad,
+                Tecnico = d.Tecnico, Prioridad = d.Prioridad, EmpresaId = d.EmpresaId, Empresa = d.Empresa,
                 Desde = desde(d.FechaCreacion, d.FechaTrasladoIngreso, d.FechaFinalizacion, d.FechaTrasladoRetorno),
                 // el técnico asignado se usa abajo para las acciones
                 Acciones = d.TecnicoAsignadoId.HasValue ? new List<string> { $"tecnico:{d.TecnicoAsignadoId}" } : new List<string>()
@@ -649,10 +698,21 @@ public class FlujoService
             x.SinEspacio = i + 1 > libresD;
             if (!x.SinEspacio && (u.Es("Operador", "Lider") || admin)) x.Acciones.Add("confirmarTraslado");
         }
+        // Reporte 6: sin empresa la orden espera en SELECCIÓN; con la empresa llena no se puede aceptar
+        var empresaDelUsuario = u.Es("Tecnico") ? await _db.Users.Where(x => x.Id == u.Id).Select(x => x.EmpresaId).FirstOrDefaultAsync() : null;
+        var config = await _presupuesto.LeerConfigAsync();
+        var activasPorEmpresa = await _db.OrdenesTrabajo.AsNoTracking()
+            .Where(o => o.EmpresaId != null && o.FechaAceptacion != null && SeleccionService.EstadosActivos.Contains(o.Estado))
+            .GroupBy(o => o.EmpresaId!.Value).Select(g => new { g.Key, N = g.Count() })
+            .ToDictionaryAsync(g => g.Key, g => g.N);
         foreach (var x in dto.EnZonaDanados)
         {
             var t = TecnicoDe(x);
-            if ((u.Es("Tecnico") && (t == null || t == u.Id)) || (admin && t != null)) x.Acciones.Add("aceptarOrden");
+            x.SinProveedor = x.EmpresaId == null;
+            x.CapacidadLlena = x.EmpresaId != null && activasPorEmpresa.GetValueOrDefault(x.EmpresaId.Value) >= config.CapacidadMaxima;
+            if (x.SinProveedor || x.CapacidadLlena) continue;
+            if ((u.Es("Tecnico") && (t == u.Id || (empresaDelUsuario != null && empresaDelUsuario == x.EmpresaId))) || (admin && t != null))
+                x.Acciones.Add("aceptarOrden");
         }
         var libresR = capacidad.Reparados.Disponibles;
         for (var i = 0; i < dto.PorEntregar.Count; i++)
@@ -886,11 +946,19 @@ public class FlujoService
         Registrar(o.ReporteFallaId, o.Id, "TRASLADO", "Confirmado", u, "Unidad entregada en la zona de dañados");
         await _db.SaveChangesAsync();
         await tx.CommitAsync();
-        await _avisos.TrasladoConfirmadoAsync(o.Id, u.Id);
         await AvisarCambiosEnFilasAsync(filasAntes, u.Id);
+
+        // SELECCIÓN (Reporte 6): en cuanto la unidad queda en la zona, el sistema elige empresa y técnico por turnos
+        var asignada = await _seleccion.SeleccionarAsync(o.Id, u.Id);
+        var sel = await _db.OrdenesTrabajo.AsNoTracking().Where(x => x.Id == o.Id)
+            .Select(x => new { Empresa = x.Empresa != null ? x.Empresa.Nombre : null, Tecnico = x.TecnicoAsignado != null ? x.TecnicoAsignado.NombreCompleto : null })
+            .FirstAsync();
         return new ResultadoFlujoDto
         {
-            Mensaje = $"Entrega de {o.Vehiculo.Codigo} confirmada en la Zona de Transición. La orden {o.Folio} queda disponible para el taller.",
+            Mensaje = $"Entrega de {o.Vehiculo.Codigo} confirmada en la Zona de Transición. "
+                      + (asignada || sel.Empresa != null
+                          ? $"La orden {o.Folio} quedó asignada a {sel.Empresa}" + (sel.Tecnico != null ? $" (técnico {sel.Tecnico})." : ".")
+                          : $"No hay empresas proveedoras disponibles: la orden {o.Folio} queda en SELECCIÓN y se asignará automáticamente en cuanto haya una disponible."),
             OrdenId = o.Id, OrdenFolio = o.Folio,
             Alerta = Alerta("danados", ocupados + 1, capD)
         };
@@ -907,14 +975,37 @@ public class FlujoService
         if (o.Estado == EstadoOrdenTrabajoEnum.Cancelada) throw new FlujoException("La orden está cancelada.");
         if (o.FechaTrasladoIngreso == null) throw new FlujoException("La unidad aún no se entrega en la Zona de Transición.");
         if (o.FechaAceptacion != null || !AntesDeTaller.Contains(o.Estado)) throw new FlujoException("La orden ya fue aceptada.");
+        // Reporte 6: la orden se acepta cuando ya tiene empresa proveedora (etapa SELECCIÓN)
+        if (o.EmpresaId == null)
+            throw new FlujoException("La orden aún no tiene empresa proveedora asignada (etapa SELECCIÓN): no hay empresas disponibles por ahora.", 409, "SinProveedor");
+        string? cambioTecnico = null;
         if (u.Es("Tecnico") && !u.EsAdmin)
         {
-            if (o.TecnicoAsignadoId.HasValue && o.TecnicoAsignadoId != u.Id)
-                throw new FlujoException($"La orden está asignada a {o.TecnicoAsignado?.NombreCompleto ?? "otro técnico"}.", 403);
-            o.TecnicoAsignadoId = u.Id;
+            if (o.TecnicoAsignadoId != u.Id)
+            {
+                // Otro técnico de la misma empresa puede tomarla; de otra empresa, no
+                var empresaDelUsuario = await _db.Users.Where(x => x.Id == u.Id).Select(x => x.EmpresaId).FirstOrDefaultAsync();
+                if (empresaDelUsuario == null || empresaDelUsuario != o.EmpresaId)
+                    throw new FlujoException($"La orden está asignada a {o.TecnicoAsignado?.NombreCompleto ?? "otro técnico"} de otra empresa proveedora.", 403);
+                cambioTecnico = o.TecnicoAsignado?.NombreCompleto;
+                o.TecnicoAsignadoId = u.Id;
+            }
         }
         else if (!o.TecnicoAsignadoId.HasValue)
             throw new FlujoException("Asigna un técnico antes de aceptar la orden.", 400);
+
+        // Capacidad máxima de órdenes activas de la empresa (Reporte 6, OT-31): con 10 de 10 no se acepta
+        var (activas, capacidad) = await _seleccion.CapacidadAsync(o.EmpresaId.Value);
+        if (activas >= capacidad)
+        {
+            var empresa = await _db.Empresas.Where(e => e.Id == o.EmpresaId).Select(e => e.Nombre).FirstOrDefaultAsync();
+            await tx.RollbackAsync();
+            _db.ChangeTracker.Clear();
+            await _seleccion.AceptacionBloqueadaAsync(ordenId, activas, capacidad, u.Id);
+            throw new FlujoException($"{empresa} tiene {activas} de {capacidad} órdenes activas (capacidad máxima): la orden permanece en espera y podrá aceptarse cuando se libere capacidad.",
+                409, "CapacidadEmpresa");
+        }
+        o.FechaAceptacionBloqueada = null;
 
         o.FechaAceptacion = DateTime.UtcNow;
         o.FechaAsignacion ??= DateTime.UtcNow;
@@ -924,10 +1015,12 @@ public class FlujoService
         o.Vehiculo.Ubicacion = UbicacionVehiculoEnum.Taller;
         o.Vehiculo.Estado = EstadoVehiculoEnum.EnReparacion;
         o.Vehiculo.UpdatedAt = DateTime.UtcNow;
-        Registrar(o.ReporteFallaId, o.Id, "TALLER", "Aceptada", u, "Orden aceptada; inicia la revisión técnica de recepción");
+        Registrar(o.ReporteFallaId, o.Id, "TALLER", "Aceptada", u, "Orden aceptada; inicia la revisión técnica de recepción"
+            + (cambioTecnico != null ? $" (la tenía asignada {cambioTecnico}, de la misma empresa)" : ""));
         await _db.SaveChangesAsync();
         await tx.CommitAsync();
         await AvisarCambiosEnFilasAsync(filasAntes, u.Id);
+        await _seleccion.AvisarCapacidadAsync(o.EmpresaId.Value, u.Id);
         return new ResultadoFlujoDto { Mensaje = $"Orden {o.Folio} aceptada. La unidad pasa al taller para su revisión.", OrdenId = o.Id, OrdenFolio = o.Folio };
     }
 
@@ -1061,10 +1154,20 @@ public class FlujoService
             // Orden de pago automática con lo que trae la orden (PDF 29-oct, 6.1); una sola por orden
             var pago = await _pagos.GenerarAsync(o, u.Nombre);
             await _db.SaveChangesAsync();
+            // Reporte 6 (PRS-01): el total de la orden de pago se descuenta del presupuesto de la empresa
+            CambioSaldo? cambio = null;
+            if (pago != null)
+            {
+                cambio = await _presupuesto.DescontarAsync(pago, o.Folio, o.VehiculoId, o.Vehiculo.Codigo, new ContextoPresupuesto(u.Id, u.Nombre, null));
+                await _db.SaveChangesAsync();
+            }
             await tx.CommitAsync();
             await _avisos.UnidadDisponibleAsync(o.Id, u.Id);
             if (pago != null) await _avisos.OrdenPagoGeneradaAsync(pago.Id, o.Folio, u.Id);
+            if (cambio != null) await _presupuesto.AvisarUmbralesAsync(new[] { cambio }, u.Id);
             await AvisarCambiosEnFilasAsync(filasAntes, u.Id);
+            // DISPONIBLE libera un lugar de la capacidad de la empresa: reintenta las que esperan
+            await _seleccion.CapacidadLiberadaAsync(o.EmpresaId, u.Id);
             return new ResultadoFlujoDto { Mensaje = $"Reparación validada. La unidad {o.Vehiculo.Codigo} está disponible para operar.", OrdenId = o.Id, OrdenFolio = o.Folio };
         }
 
@@ -1131,6 +1234,9 @@ public class FlujoService
         ("TALLER", "Hallazgo") => true,
         ("VALIDACION", "Rechazado") => true,
         ("ORDEN", "Cancelada") => true,
+        // Reporte 6: reasignaciones de proveedor, órdenes sin empresas disponibles y aceptaciones bloqueadas por capacidad
+        ("SELECCION", "Reasignada") or ("SELECCION", "SinDisponibilidad") => true,
+        ("TALLER", "AceptacionBloqueada") => true,
         // Validaciones de antes con observaciones escritas (hoy ya no se piden)
         ("INSPECCION", "Validado") => !string.IsNullOrWhiteSpace(h.Detalle) && h.Detalle != "Reporte validado",
         ("VALIDACION", "Validado") => !string.IsNullOrWhiteSpace(h.Detalle) && h.Detalle != "Reparación validada",

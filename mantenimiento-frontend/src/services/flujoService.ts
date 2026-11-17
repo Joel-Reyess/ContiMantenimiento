@@ -3,10 +3,11 @@ import type { ApiResponse } from '@/interfaces';
 
 /** Flujo de 7 etapas y Zona de Transición (PDF 23-oct-2026) */
 
-export type EstadoEtapa = 'completada' | 'pendiente' | 'rechazada' | 'bloqueada' | 'inactiva';
+/** sinproveedor (Reporte 6): la orden espera en SELECCIÓN porque ninguna empresa está disponible (morado oscuro) */
+export type EstadoEtapa = 'completada' | 'pendiente' | 'rechazada' | 'bloqueada' | 'sinproveedor' | 'inactiva';
 
 export interface EtapaFlujo {
-  clave: 'REPORTE' | 'INSPECCION' | 'TRASLADO' | 'TALLER' | 'TRASLADO_RETORNO' | 'VALIDACION' | 'DISPONIBLE';
+  clave: 'REPORTE' | 'INSPECCION' | 'TRASLADO' | 'SELECCION' | 'TALLER' | 'TRASLADO_RETORNO' | 'VALIDACION' | 'DISPONIBLE';
   nombre: string;
   estado: EstadoEtapa;
   etiqueta?: string;
@@ -46,7 +47,10 @@ export type AccionFlujo =
   | 'agregarHallazgo'
   | 'terminarReparacion'
   | 'confirmarRetorno'
-  | 'validarReparacion';
+  | 'validarReparacion'
+  /** Reporte 6: vista previa de la etapa SELECCIÓN y reasignación (Administrador y Gerente) */
+  | 'verSeleccion'
+  | 'reasignarProveedor';
 
 export interface Flujo {
   reporteId?: number;
@@ -115,6 +119,13 @@ export interface UnidadZona {
   desde: string;
   posicionFila?: number;
   sinEspacio: boolean;
+  /** Empresa proveedora asignada (Reporte 6) */
+  empresaId?: number;
+  empresa?: string;
+  /** En la zona sin empresa: espera en SELECCIÓN */
+  sinProveedor?: boolean;
+  /** La empresa está en su capacidad máxima de órdenes activas */
+  capacidadLlena?: boolean;
   acciones: AccionFlujo[];
 }
 
@@ -189,6 +200,54 @@ export interface MaterialesOrden {
   total: number;
 }
 
+/** Situación de una empresa para la asignación automática (Reporte 6) */
+export interface EmpresaSeleccion {
+  id: number;
+  nombre: string;
+  identificador?: string;
+  activa: boolean;
+  tienePresupuesto: boolean;
+  asignado: number;
+  utilizado: number;
+  saldo: number;
+  /** Disponible, Preventivo, Agotado, Sin presupuesto */
+  estadoFinanciero: string;
+  activas: number;
+  capacidad: number;
+  semaforoCapacidad: 'verde' | 'amarillo' | 'rojo';
+  elegible: boolean;
+  motivo?: string;
+  /** Disponible, Inactiva, Sin presupuesto, Capacidad máxima, Sin técnicos */
+  disponibilidad: string;
+  tecnicos: { id: number; nombre: string; ordenes: number }[];
+}
+
+export interface ActividadCosto {
+  checklistItemId?: number;
+  descripcion: string;
+  cantidad: number;
+  costoUnitario: number;
+  subtotal: number;
+}
+
+/** Vista previa de la etapa SELECCIÓN de una orden */
+export interface SeleccionOrden {
+  ordenId: number;
+  ordenFolio: string;
+  vehiculoCodigo?: string;
+  estado: 'pendiente' | 'asignada' | 'sinDisponibilidad' | 'aceptada';
+  empresa?: EmpresaSeleccion;
+  tecnicoId?: number;
+  tecnico?: string;
+  fechaSeleccion?: string;
+  fechaSinProveedor?: string;
+  costosAplicables: ActividadCosto[];
+  costoEstimado: number;
+  puedeReasignar: boolean;
+  empresas: EmpresaSeleccion[];
+  historial: HistorialFlujo[];
+}
+
 export const flujoService = {
   capacidad: () => httpClient.get<CapacidadZonas>('/flujo/capacidad'),
   guardarCapacidad: (danados: number, reparados: number) =>
@@ -212,6 +271,9 @@ export const flujoService = {
   hallazgos: (ordenId: number, items: ItemReporte[]) =>
     httpClient.post<ResultadoFlujo>(`/flujo/ordenes/${ordenId}/hallazgos`, { items }),
   confirmarRetorno: (ordenId: number) => httpClient.post<ResultadoFlujo>(`/flujo/ordenes/${ordenId}/retorno`),
+  seleccion: (ordenId: number) => httpClient.get<SeleccionOrden>(`/flujo/ordenes/${ordenId}/seleccion`),
+  reasignar: (ordenId: number, empresaId: number, tecnicoId: number | undefined, motivo: string) =>
+    httpClient.post<ResultadoFlujo>(`/flujo/ordenes/${ordenId}/seleccion/reasignar`, { empresaId, tecnicoId, motivo }),
   validarReparacion: (ordenId: number, aprobado: boolean, motivos: MotivoRechazo[] = [], observacion?: string) =>
     httpClient.post<ResultadoFlujo>(`/flujo/ordenes/${ordenId}/validar`, { aprobado, motivos, observacion }),
 

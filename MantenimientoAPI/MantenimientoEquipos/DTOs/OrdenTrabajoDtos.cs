@@ -147,6 +147,9 @@ public class AsignarTecnicoRequest
     public int TecnicoId { get; set; }
     [MaxLength(300)]
     public string? FirmaAsignacionTexto { get; set; }
+    /// <summary>Motivo de la reasignación (Reporte 6: queda en el historial de la orden)</summary>
+    [MaxLength(500)]
+    public string? Motivo { get; set; }
 }
 
 public class IniciarTrabajoRequest

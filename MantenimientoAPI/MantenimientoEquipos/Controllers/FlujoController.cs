@@ -11,8 +11,8 @@ using MantenimientoEquipos.Utils;
 namespace MantenimientoEquipos.Controllers;
 
 /// <summary>
-/// Flujo de 7 etapas (REPORTE › INSPECCIÓN › TRASLADO › TALLER › TRASLADO › VALIDACIÓN › DISPONIBLE)
-/// y capacidad de la Zona de Transición (PDF 23-oct-2026)
+/// Flujo de etapas (REPORTE › INSPECCIÓN › TRASLADO › SELECCIÓN › TALLER › TRASLADO › VALIDACIÓN › DISPONIBLE)
+/// y capacidad de la Zona de Transición (PDF 23-oct-2026; SELECCIÓN del Reporte 6)
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
@@ -21,11 +21,13 @@ public class FlujoController : ControllerBase
 {
     private readonly FlujoService _flujo;
     private readonly MaterialesOrdenService _materiales;
+    private readonly SeleccionService _seleccion;
 
-    public FlujoController(FlujoService flujo, MaterialesOrdenService materiales)
+    public FlujoController(FlujoService flujo, MaterialesOrdenService materiales, SeleccionService seleccion)
     {
         _flujo = flujo;
         _materiales = materiales;
+        _seleccion = seleccion;
     }
 
     private async Task<IActionResult> Ejecutar<T>(Func<Task<T>> accion, Func<T, string?>? mensaje = null)
@@ -101,6 +103,17 @@ public class FlujoController : ControllerBase
     [RolesAllowed("SuperUsuario", "Administrador", "Lider", "Operador")]
     public Task<IActionResult> ConfirmarTraslado(int id) =>
         Accion(() => _flujo.ConfirmarTrasladoIngresoAsync(id, User.UsuarioFlujo()));
+
+    // ----- SELECCIÓN de empresa proveedora (Reporte 6): vista previa y reasignación, Administrador y Gerente -----
+
+    [HttpGet("ordenes/{id:int}/seleccion")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
+    public Task<IActionResult> Seleccion(int id) => Ejecutar(() => _seleccion.DetalleAsync(id));
+
+    [HttpPost("ordenes/{id:int}/seleccion/reasignar")]
+    [RolesAllowed("SuperUsuario", "Administrador", "Supervisor")]
+    public Task<IActionResult> Reasignar(int id, [FromBody] ReasignarProveedorRequest req) =>
+        Accion(() => _seleccion.ReasignarAsync(id, req, User.UsuarioFlujo()));
 
     // ----- TALLER (Técnico) -----
 

@@ -154,7 +154,9 @@ public class OrdenTrabajoService
                 ReporteFallaId = o.ReporteFallaId,
                 ReporteFallaFolio = o.ReporteFalla != null ? o.ReporteFalla.Folio : null,
                 ReporteFechaReporte = o.ReporteFalla != null ? o.ReporteFalla.FechaReporte : null,
-                EmpresaNombre = o.TecnicoAsignado != null && o.TecnicoAsignado.Empresa != null ? o.TecnicoAsignado.Empresa.Nombre : null,
+                // Reporte 6: la empresa que atiende la orden (SELECCIÓN); las de antes, la del técnico
+                EmpresaNombre = o.Empresa != null ? o.Empresa.Nombre
+                    : o.TecnicoAsignado != null && o.TecnicoAsignado.Empresa != null ? o.TecnicoAsignado.Empresa.Nombre : null,
                 VehiculoId = o.VehiculoId,
                 VehiculoCodigo = o.Vehiculo.Codigo,
                 VehiculoTipo = _db.TiposVehiculo.Where(t => t.Id == (int)o.Vehiculo.Tipo).Select(t => t.Nombre).FirstOrDefault() ?? o.Vehiculo.Tipo.ToString(),

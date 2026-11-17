@@ -248,6 +248,127 @@ public class FlujoAvisos
                     "La capacidad máxima de la Zona de Transición para unidades reparadas ha sido alcanzada. Existen unidades terminadas pendientes de entrega.", u);
         }
     });
+
+    // ===== SELECCIÓN de empresa proveedora, capacidad y presupuesto (Reporte 6) =====
+
+    private Task<List<int>> AdministradoresAsync() => _db.Users
+        .Where(u => u.Status == UserStatusEnum.Activo && u.Roles.Any(r => r.Nombre == "Administrador" || r.Nombre == "SuperUsuario"))
+        .Select(u => u.Id).ToListAsync();
+
+    /// <summary>Gerentes de Mantenimiento; si no hay, administradores (que el aviso no se pierda)</summary>
+    private async Task<List<int>> GerentesOAdminAsync()
+    {
+        var g = await GerentesAsync();
+        return g.Count > 0 ? g : await AdministradoresAsync();
+    }
+
+    private Task<List<int>> TecnicosDeEmpresaAsync(int empresaId) => _db.Users
+        .Where(u => u.EmpresaId == empresaId && u.Status == UserStatusEnum.Activo && u.Roles.Any(r => r.Nombre == "Tecnico"))
+        .Select(u => u.Id).ToListAsync();
+
+    private Task<string?> FolioAsync(int ordenId) => _db.OrdenesTrabajo.Where(o => o.Id == ordenId).Select(o => o.Folio).FirstOrDefaultAsync();
+
+    private async Task EnviarSimpleAsync(IEnumerable<int> destinatarios, int? actor, string titulo, string mensaje, string url, int? refId = null, string? refTipo = null)
+    {
+        var ids = destinatarios.Where(id => id != actor).Distinct().ToList();
+        if (ids.Count == 0) return;
+        await _notificaciones.CrearParaUsuariosAsync(ids, TipoNotificacionEnum.SistemaGeneral, titulo, mensaje, refId, refTipo, url);
+    }
+
+    /// <summary>La orden quedó asignada (automática o reasignada): aviso al técnico asignado</summary>
+    public Task OrdenAsignadaAEmpresaAsync(int ordenId, string empresa, int? actor) => SeguroAsync("orden asignada a empresa", async () =>
+    {
+        var u = await DeOrdenAsync(ordenId); if (u?.TecnicoId == null) return;
+        var folio = await FolioAsync(ordenId);
+        await EnviarAsync(new[] { u.TecnicoId.Value }, actor, TipoNotificacionEnum.OrdenAsignada, "Orden de trabajo asignada",
+            $"La orden de trabajo {folio} de {Frase(u)} fue asignada a {empresa} y está a tu cargo. La unidad se encuentra en Zona de Transición, disponible para ser aceptada.", u);
+    });
+
+    /// <summary>Al técnico que tenía la orden antes de una reasignación</summary>
+    public Task OrdenReasignadaAsync(int ordenId, int tecnicoAnteriorId, int? actor) => SeguroAsync("orden reasignada", async () =>
+    {
+        var u = await DeOrdenAsync(ordenId); if (u == null) return;
+        var folio = await FolioAsync(ordenId);
+        await EnviarAsync(new[] { tecnicoAnteriorId }, actor, TipoNotificacionEnum.OrdenActualizada, "Orden de trabajo reasignada",
+            $"La orden de trabajo {folio} de {Frase(u)} fue reasignada; ya no está a tu cargo.", u);
+    });
+
+    /// <summary>Ninguna empresa es elegible: aviso al Gerente de Mantenimiento (texto del Reporte 6)</summary>
+    public Task SinProveedorAsync(int ordenId, string folio, int? actor) => SeguroAsync("sin proveedor", async () =>
+    {
+        var u = await DeOrdenAsync(ordenId); if (u == null) return;
+        await EnviarAsync(await GerentesOAdminAsync(), null, TipoNotificacionEnum.SistemaGeneral, "Orden sin empresa proveedora",
+            $"No fue posible asignar la Orden de Trabajo {folio}, debido a que actualmente no existen empresas proveedoras disponibles.", u);
+    });
+
+    public Task AceptacionBloqueadaAsync(int ordenId, string empresa, int activas, int capacidad, int? actor) => SeguroAsync("aceptación bloqueada", async () =>
+    {
+        var u = await DeOrdenAsync(ordenId); if (u == null) return;
+        var folio = await FolioAsync(ordenId);
+        if (u.TecnicoId.HasValue)
+            await EnviarAsync(new[] { u.TecnicoId.Value }, null, TipoNotificacionEnum.SistemaGeneral, "Capacidad máxima alcanzada",
+                $"No es posible aceptar la orden {folio}: {empresa} tiene {activas} de {capacidad} órdenes activas. La orden permanece en espera hasta liberar capacidad.", u);
+        await EnviarAsync(await GerentesOAdminAsync(), actor, TipoNotificacionEnum.SistemaGeneral, "Aceptación bloqueada por capacidad",
+            $"La orden {folio} de {Frase(u)} no pudo ser aceptada: {empresa} tiene {activas} de {capacidad} órdenes activas. Permanece en espera hasta liberar capacidad.", u);
+    });
+
+    public Task CapacidadLiberadaAsync(int ordenId, int? actor) => SeguroAsync("capacidad liberada", async () =>
+    {
+        var u = await DeOrdenAsync(ordenId); if (u?.TecnicoId == null) return;
+        var folio = await FolioAsync(ordenId);
+        await EnviarAsync(new[] { u.TecnicoId.Value }, actor, TipoNotificacionEnum.SistemaGeneral, "Capacidad liberada",
+            $"Se liberó capacidad en tu empresa: ya puedes aceptar la orden {folio} de {Frase(u)}.", u);
+    });
+
+    /// <summary>80 % de la capacidad (p. ej. 8 de 10): aviso al Gerente</summary>
+    public Task CapacidadPreventivaEmpresaAsync(int empresaId, string empresa, int activas, int capacidad, int? actor) => SeguroAsync("capacidad 80%", async () =>
+    {
+        var pct = capacidad > 0 ? (int)Math.Round(activas * 100m / capacidad) : 100;
+        await EnviarSimpleAsync(await GerentesOAdminAsync(), actor, "Capacidad de empresa al " + pct + "%",
+            $"La empresa {empresa} ha alcanzado el {pct}% de su capacidad operativa disponible ({activas} de {capacidad} órdenes activas).",
+            "/presupuesto-empresas", empresaId, "Empresa");
+    });
+
+    /// <summary>Capacidad máxima: aviso a los técnicos de la empresa y al Gerente (textos del Reporte 6)</summary>
+    public Task CapacidadMaximaEmpresaAsync(int empresaId, string empresa, int activas, int capacidad, int? actor) => SeguroAsync("capacidad máxima", async () =>
+    {
+        await EnviarSimpleAsync(await TecnicosDeEmpresaAsync(empresaId), null, "Capacidad máxima alcanzada",
+            $"Has alcanzado tu capacidad máxima de {capacidad} órdenes activas y dejarás de recibir asignaciones automáticas hasta liberar capacidad.",
+            "/mis-ordenes", empresaId, "Empresa");
+        await EnviarSimpleAsync(await GerentesOAdminAsync(), actor, "Empresa en capacidad máxima",
+            $"La empresa {empresa} ha alcanzado su capacidad máxima de {capacidad} órdenes activas y dejará de recibir asignaciones automáticas hasta liberar capacidad.",
+            "/presupuesto-empresas", empresaId, "Empresa");
+    });
+
+    private Task<string?> NombreEmpresaAsync(int empresaId) => _db.Empresas.Where(e => e.Id == empresaId).Select(e => e.Nombre).FirstOrDefaultAsync();
+
+    public Task PresupuestoPreventivoAsync(int empresaId, int? actor) => SeguroAsync("presupuesto preventivo", async () =>
+    {
+        var nombre = await NombreEmpresaAsync(empresaId) ?? "La empresa";
+        await EnviarSimpleAsync(await GerentesOAdminAsync(), actor, "Presupuesto por agotarse",
+            $"La empresa {nombre} está próxima a agotar su presupuesto disponible.", "/presupuesto-empresas", empresaId, "Empresa");
+    });
+
+    public Task PresupuestoAgotadoAsync(int empresaId, int? actor) => SeguroAsync("presupuesto agotado", async () =>
+    {
+        var nombre = await NombreEmpresaAsync(empresaId) ?? "La empresa";
+        await EnviarSimpleAsync(await GerentesOAdminAsync(), actor, "Presupuesto agotado",
+            $"La empresa {nombre} ha agotado su presupuesto disponible y no podrá recibir nuevas órdenes de trabajo.", "/presupuesto-empresas", empresaId, "Empresa");
+    });
+
+    /// <summary>Importe devuelto al presupuesto por una orden eliminada o una orden de pago cancelada: Gerente y Administrador</summary>
+    public Task PresupuestoRestituidoAsync(List<ReversionPresupuesto> reversiones, int? actor) => SeguroAsync("presupuesto restituido", async () =>
+    {
+        if (reversiones.Count == 0) return;
+        var destinatarios = (await GerentesAsync()).Concat(await AdministradoresAsync()).ToList();
+        foreach (var r in reversiones)
+        {
+            var mensaje = r.OrdenEliminada
+                ? $"La Orden de Trabajo {r.FolioOrden} fue cancelada o eliminada. El importe asociado ({PresupuestoService.Moneda(r.Monto)}) ha sido restituido al presupuesto de la empresa {r.Empresa}."
+                : $"La orden de pago {r.FolioPago} de la Orden de Trabajo {r.FolioOrden} fue cancelada o eliminada. El importe asociado ({PresupuestoService.Moneda(r.Monto)}) ha sido restituido al presupuesto de la empresa {r.Empresa}.";
+            await EnviarSimpleAsync(destinatarios, actor, "Presupuesto restituido", mensaje, "/presupuesto-empresas", r.EmpresaId, "Empresa");
+        }
+    });
 }
 
 /// <summary>

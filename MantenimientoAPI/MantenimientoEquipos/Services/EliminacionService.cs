@@ -14,10 +14,26 @@ namespace MantenimientoEquipos.Services;
 public class EliminacionService
 {
     private readonly MantenimientoDbContext _db;
+    private readonly PresupuestoService _presupuesto;
 
-    public EliminacionService(MantenimientoDbContext db)
+    public EliminacionService(MantenimientoDbContext db, PresupuestoService presupuesto)
     {
         _db = db;
+        _presupuesto = presupuesto;
+    }
+
+    /// <summary>
+    /// Importes devueltos al presupuesto de las empresas por las órdenes de pago eliminadas en esta petición
+    /// (Reporte 6, PRS-03). Se avisan con <see cref="AvisarReversionesAsync"/> después de confirmar la transacción.
+    /// </summary>
+    public List<ReversionPresupuesto> ReversionesPendientes { get; } = new();
+
+    public async Task AvisarReversionesAsync(int? actor)
+    {
+        if (ReversionesPendientes.Count == 0) return;
+        var lista = ReversionesPendientes.ToList();
+        ReversionesPendientes.Clear();
+        await _presupuesto.AvisarReversionesAsync(lista, actor);
     }
 
     /// <summary>Órdenes ya terminadas: al borrarlas, su reporte se conserva como atendido (no vuelve a pendientes).</summary>
@@ -31,10 +47,16 @@ public class EliminacionService
     /// Borra las órdenes. Si la orden no estaba terminada, su reporte (si no se borra también) vuelve a quedar
     /// "sin orden" para poder crear otra; si ya estaba validada o entregada, el reporte se conserva como atendido.
     /// </summary>
-    public async Task<int> EliminarOrdenesAsync(IReadOnlyCollection<int> ordenIds)
+    public async Task<int> EliminarOrdenesAsync(IReadOnlyCollection<int> ordenIds, ContextoPresupuesto? contexto = null)
     {
         var ids = ordenIds.Distinct().ToList();
         if (ids.Count == 0) return 0;
+
+        // Reporte 6 (PRS-03): el importe de sus órdenes de pago regresa al presupuesto de la empresa, con el movimiento
+        // (folio, empresa, importe, usuario, fecha, motivo y saldo) guardado aunque la orden se elimine
+        var pagosDeOrdenes = await _db.RegistrosPago.Where(p => ids.Contains(p.OrdenTrabajoId)).Select(p => p.Id).ToListAsync();
+        ReversionesPendientes.AddRange(await _presupuesto.SincronizarPagosAsync(pagosDeOrdenes, eliminadas: true, ordenEliminada: true,
+            contexto ?? new ContextoPresupuesto(null, null, "Orden de trabajo eliminada")));
 
         var reportesAfectados = await _db.OrdenesTrabajo
             .Where(o => ids.Contains(o.Id) && o.ReporteFallaId.HasValue && !EstadosOrdenTerminada.Contains(o.Estado))
@@ -121,7 +143,7 @@ public class EliminacionService
     }
 
     /// <summary>Borra los reportes y, si tienen, sus órdenes de trabajo.</summary>
-    public async Task<(int Reportes, int Ordenes)> EliminarReportesAsync(IReadOnlyCollection<int> reporteIds)
+    public async Task<(int Reportes, int Ordenes)> EliminarReportesAsync(IReadOnlyCollection<int> reporteIds, ContextoPresupuesto? contexto = null)
     {
         var ids = reporteIds.Distinct().ToList();
         if (ids.Count == 0) return (0, 0);
@@ -141,7 +163,7 @@ public class EliminacionService
             .Select(r => r.VehiculoId)
             .Distinct()
             .ToListAsync();
-        var ordenes = await EliminarOrdenesAsync(ordenIds);
+        var ordenes = await EliminarOrdenesAsync(ordenIds, contexto);
 
         await _db.EvidenciasFotograficas
             .Where(e => e.ReporteFallaId.HasValue && ids.Contains(e.ReporteFallaId.Value))
@@ -175,7 +197,8 @@ public class EliminacionService
             .ToListAsync();
 
         using var tx = await _db.Database.BeginTransactionAsync();
-        var (nReportes, nOrdenes) = await EliminarReportesAsync(idsExistentes);
+        var (nReportes, nOrdenes) = await EliminarReportesAsync(idsExistentes,
+            new ContextoPresupuesto(usuarioId, nombreUsuario, $"Se eliminó el reporte {string.Join(", ", reportes.Select(r => r.Folio))} con su orden de trabajo"));
         foreach (var r in reportes)
         {
             var folioOrdenes = ordenes.Where(o => o.ReporteId == r.Id).Select(o => o.Folio).ToList();
@@ -190,7 +213,7 @@ public class EliminacionService
     }
 
     /// <summary>Elimina una orden de trabajo en una transacción y lo deja en la bitácora.</summary>
-    public async Task<EliminacionResultadoDto> EliminarOrdenConRegistroAsync(int ordenId, int? usuarioId, string? nombreUsuario)
+    public async Task<EliminacionResultadoDto> EliminarOrdenConRegistroAsync(int ordenId, int? usuarioId, string? nombreUsuario, string? motivo = null)
     {
         var orden = await _db.OrdenesTrabajo
             .Where(o => o.Id == ordenId)
@@ -199,11 +222,12 @@ public class EliminacionService
         if (orden == null) return new EliminacionResultadoDto();
 
         using var tx = await _db.Database.BeginTransactionAsync();
-        var n = await EliminarOrdenesAsync(new[] { orden.Id });
+        var n = await EliminarOrdenesAsync(new[] { orden.Id },
+            new ContextoPresupuesto(usuarioId, nombreUsuario, motivo == null ? $"Se eliminó la orden de trabajo {orden.Folio}" : $"Orden {orden.Folio} eliminada: {motivo}"));
         Registrar(usuarioId, nombreUsuario, "OrdenTrabajo", orden.Id,
             $"Orden {orden.Folio} del vehículo {orden.Vehiculo}" + (orden.Reporte == null ? ""
                 : EstadosOrdenTerminada.Contains(orden.Estado) ? $" (el reporte {orden.Reporte} se conserva como atendido)"
-                : $" (el reporte {orden.Reporte} quedó sin orden)"));
+                : $" (el reporte {orden.Reporte} quedó sin orden)") + (motivo == null ? "" : $". Motivo: {motivo}"));
         await _db.SaveChangesAsync();
         await tx.CommitAsync();
 
@@ -237,6 +261,9 @@ public class EliminacionService
                 $"El pago está en la orden de compra {folioOc ?? $"#{pago.OrdenCompraId}"}. Elimina primero esa orden de compra (sus pagos vuelven a quedar aprobados).");
         }
 
+        // Reporte 6 (PRS-03): su importe regresa al presupuesto de la empresa
+        ReversionesPendientes.AddRange(await _presupuesto.SincronizarPagosAsync(new[] { id }, eliminadas: true, ordenEliminada: false,
+            new ContextoPresupuesto(usuarioId, nombreUsuario, $"Se eliminó la orden de pago {OrdenPagoService.Folio(id)} de {pago.Orden}")));
         await _db.RegistrosPago.Where(p => p.Id == id).ExecuteDeleteAsync();
         Registrar(usuarioId, nombreUsuario, "RegistroPago", id,
             $"Pago de {pago.Tecnico} por {Moneda(pago.MontoTotal)} de la orden {pago.Orden} (estaba {pago.Estado})");
