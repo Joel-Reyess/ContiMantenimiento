@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Truck, Plus, Loader2, RefreshCw, Info, Package, Trash2, CheckCircle2, Download, Upload } from 'lucide-react';
+import { Truck, Plus, Loader2, RefreshCw, Info, Package, Trash2, CheckCircle2, Download, Upload, History } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { formatDate, getFullImageUrl } from '@/lib/utils';
-import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, Input, Modal, ModalFooter, Select, Spinner, Textarea, SearchInput, useToast } from '@/components/ui';
+import { Alert, AlertDescription, AlertTitle, Badge, Button, buttonVariants, Card, Input, Modal, ModalFooter, Select, Spinner, Textarea, SearchInput, useToast } from '@/components/ui';
 import { vehiculosService, type VistaPreviaEliminacionVehiculos } from '@/services/vehiculosService';
 import { vehiculoPrefijoConfigsService } from '@/services/vehiculoPrefijoConfigsService';
 import { catalogosService } from '@/services/catalogosService';
@@ -897,27 +898,47 @@ export function VehiculosPage() {
                   </Badge>
                 </div>
                 <p>Area: {v.areaNombre || 'No asignada'}</p>
-                <p>Reportes: {v.totalReportes ?? 0}</p>
+                <p>
+                  Reportes:{' '}
+                  {/* Reporte 6 (FLT-11): el contador lleva al historial de mantenimiento del vehículo */}
+                  <Link
+                    to={`/vehiculos/${v.id}#historial`}
+                    className="font-semibold text-continental-blue underline"
+                    data-testid="contador-reportes"
+                    aria-label={`Ver el historial de mantenimiento de ${v.codigo}`}
+                  >
+                    {v.totalReportes ?? 0}
+                  </Link>
+                </p>
                 {v.notas && typeof v.notas === 'string' && <p>Notas: {v.notas}</p>}
               </div>
-              {puedeEditar && (
-                <div className="pt-3 flex gap-2">
+              <div style={{ paddingTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <Link
+                  to={`/vehiculos/${v.id}#historial`}
+                  data-testid="ver-historial"
+                  className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', textDecoration: 'none' }}
+                >
+                  <History className="h-4 w-4" />
+                  Historial
+                </Link>
+                {puedeEditar && (
                   <Button size="sm" variant="outline" onClick={() => openEdit(v.id)}>
                     Editar
                   </Button>
-                  {canDelete && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="flex items-center gap-2 border-red-300 text-red-700 hover:bg-red-50"
-                      onClick={() => openDeleteModal([v])}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Eliminar
-                    </Button>
-                  )}
-                </div>
-              )}
+                )}
+                {puedeEditar && canDelete && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex items-center gap-2 border-red-300 text-red-700 hover:bg-red-50"
+                    onClick={() => openDeleteModal([v])}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Eliminar
+                  </Button>
+                )}
+              </div>
             </Card>
             );
           })}
