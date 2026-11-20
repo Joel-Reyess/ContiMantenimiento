@@ -1352,8 +1352,10 @@ const checklistReqSeqRef = useRef(0);
                                   const detalle = point.imageFaultDescription || (actividad && actividad.pregunta !== point.imageFaultName ? actividad.pregunta : '');
                                   if (!actividad)
                                     return (
-                                      <span className="block text-xs text-amber-700" data-testid="sin-actividad">
-                                        Sin actividad ligada: se registra como componente, sin trabajo con costo
+                                      // Punto aún sin ligar a una actividad: se ofrece igual (antes "se perdían" componentes),
+                                      // sin el aviso que el 06-nov pidieron quitar (FV-03)
+                                      <span className="block text-xs text-gray-500" data-testid="sin-actividad">
+                                        {point.imageFaultDescription || ''}
                                       </span>
                                     );
                                   return detalle ? <span className="block text-xs text-gray-500">{detalle}</span> : null;

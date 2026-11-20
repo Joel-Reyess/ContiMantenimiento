@@ -148,7 +148,7 @@ public class VehiculosController : ControllerBase
             var errorElectrico = await _vehiculoService.ValidarEquipoElectricoAsync((int)(request.Tipo ?? actual.Tipo),
                 Final(request.Marca, actual.Marca), Final(request.Modelo, actual.Modelo), Final(request.NumeroSerie, actual.NumeroSerie),
                 request.Anio ?? actual.Anio, Final(request.NumeroEconomico, actual.NumeroEconomico),
-                request.AreaId ?? actual.AreaId, id);
+                request.AreaId ?? actual.AreaId, id, actual);
             if (errorElectrico != null) return BadRequest(ApiResponse<string>.Error(errorElectrico));
         }
         var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);

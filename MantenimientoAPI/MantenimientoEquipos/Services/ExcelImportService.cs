@@ -460,7 +460,11 @@ public class ExcelImportService
 
             // Equipos eléctricos: con los valores como quedarían (lo vacío conserva lo que ya tenía)
             var tipoFinal = tipo ?? existente?.Tipo;
-            if (tipoFinal.HasValue && tiposElectricos.Contains(tipoFinal.Value))
+            // Un equipo que ya era eléctrico y se registró sin sus datos no bloquea el archivo (se completan desde Flota);
+            // altas y cambios a un tipo eléctrico sí los exigen
+            var legado = existente != null && tiposElectricos.Contains(existente.Tipo) && !VehiculoService.DatosElectricosCompletos(
+                existente.Marca, existente.Modelo, existente.NumeroSerie, existente.Anio, existente.NumeroEconomico, existente.AreaId);
+            if (tipoFinal.HasValue && tiposElectricos.Contains(tipoFinal.Value) && !legado)
             {
                 var faltan = new List<string>();
                 if (string.IsNullOrEmpty(marca ?? existente?.Marca)) faltan.Add("Marca");

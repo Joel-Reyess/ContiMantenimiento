@@ -271,27 +271,43 @@ public class VehiculoService
     /// número de serie y número económico no se repiten. Recibe los valores finales (lo que quedará guardado).
     /// Null si todo está bien o si el tipo no es eléctrico.
     /// </summary>
+    /// <param name="antes">
+    /// Al editar: el equipo como está. Uno que ya era eléctrico y se registró antes del flujo eléctrico (sin sus datos
+    /// completos) no se bloquea: solo no se puede borrar lo que ya tiene. Altas y cambios a un tipo eléctrico exigen todo.
+    /// </param>
     public async Task<string?> ValidarEquipoElectricoAsync(int tipoId, string? marca, string? modelo, string? serie, int? anio,
-        string? numeroEconomico, int? areaId, int? excluirId)
+        string? numeroEconomico, int? areaId, int? excluirId, VehiculoDto? antes = null)
     {
-        if (!await _db.TiposVehiculo.AnyAsync(t => t.Id == tipoId && t.FlujoMantenimiento == EquiposElectricosService.Electrico)) return null;
+        var electricos = await _db.TiposVehiculo.Where(t => t.FlujoMantenimiento == EquiposElectricosService.Electrico).Select(t => t.Id).ToListAsync();
+        if (!electricos.Contains(tipoId)) return null;
+        var legado = antes != null && electricos.Contains((int)antes.Tipo) && !DatosElectricosCompletos(antes.Marca, antes.Modelo,
+            antes.NumeroSerie, antes.Anio, antes.NumeroEconomico, antes.AreaId);
         var faltan = new List<string>();
-        if (Limpio(marca) == null) faltan.Add("marca");
-        if (Limpio(modelo) == null) faltan.Add("modelo");
-        if (Limpio(serie) == null) faltan.Add("número de serie");
-        if (anio is null or <= 0) faltan.Add("año");
-        if (Limpio(numeroEconomico) == null) faltan.Add("número económico");
-        if (areaId is null or <= 0) faltan.Add("área");
+        void Revisar(bool falta, bool teniaValor, string nombre) { if (falta && (!legado || teniaValor)) faltan.Add(nombre); }
+        Revisar(Limpio(marca) == null, Limpio(antes?.Marca) != null, "marca");
+        Revisar(Limpio(modelo) == null, Limpio(antes?.Modelo) != null, "modelo");
+        Revisar(Limpio(serie) == null, Limpio(antes?.NumeroSerie) != null, "número de serie");
+        Revisar(anio is null or <= 0, antes?.Anio is > 0, "año");
+        Revisar(Limpio(numeroEconomico) == null, Limpio(antes?.NumeroEconomico) != null, "número económico");
+        Revisar(areaId is null or <= 0, antes?.AreaId is > 0, "área");
         if (faltan.Count > 0) return $"Para un equipo eléctrico captura: {string.Join(", ", faltan)}.";
-        if (numeroEconomico!.Trim().Length > 30) return "El número económico admite máximo 30 caracteres";
-        var eco = numeroEconomico.Trim().ToUpperInvariant();
-        var dupEco = await _db.Vehiculos.Where(v => v.NumeroEconomico == eco && v.Id != (excluirId ?? 0)).Select(v => v.Codigo).FirstOrDefaultAsync();
-        if (dupEco != null) return $"El número económico {eco} ya lo tiene el equipo {dupEco}.";
-        var s = serie!.Trim();
-        var dupSerie = await _db.Vehiculos.Where(v => v.NumeroSerie == s && v.Id != (excluirId ?? 0)).Select(v => v.Codigo).FirstOrDefaultAsync();
-        if (dupSerie != null) return $"El número de serie {s} ya lo tiene el equipo {dupSerie}.";
+        if (Limpio(numeroEconomico) is { } ecoTexto)
+        {
+            if (ecoTexto.Length > 30) return "El número económico admite máximo 30 caracteres";
+            var eco = ecoTexto.ToUpperInvariant();
+            var dupEco = await _db.Vehiculos.Where(v => v.NumeroEconomico == eco && v.Id != (excluirId ?? 0)).Select(v => v.Codigo).FirstOrDefaultAsync();
+            if (dupEco != null) return $"El número económico {eco} ya lo tiene el equipo {dupEco}.";
+        }
+        if (Limpio(serie) is { } s)
+        {
+            var dupSerie = await _db.Vehiculos.Where(v => v.NumeroSerie == s && v.Id != (excluirId ?? 0)).Select(v => v.Codigo).FirstOrDefaultAsync();
+            if (dupSerie != null) return $"El número de serie {s} ya lo tiene el equipo {dupSerie}.";
+        }
         return null;
     }
+
+    public static bool DatosElectricosCompletos(string? marca, string? modelo, string? serie, int? anio, string? numeroEconomico, int? areaId) =>
+        Limpio(marca) != null && Limpio(modelo) != null && Limpio(serie) != null && anio is > 0 && Limpio(numeroEconomico) != null && areaId is > 0;
 
     /// <summary>Marca, Modelo, Número de serie y Año (datos del equipo de Tuggers y Montacargas). Null si todo está bien.</summary>
     public static string? ValidarDatosEquipo(string? marca, string? modelo, string? numeroSerie, int? anio)
