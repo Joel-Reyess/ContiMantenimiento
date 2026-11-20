@@ -58,14 +58,19 @@ public class EmpresasService
             Nombre = datos.Nombre,
             Identificador = datos.Identificador,
             Activo = request.Activo,
+            // EQE-04: se registra ya como proveedor eléctrico (y la anterior deja de serlo) en la misma transacción
+            ProveedorElectrico = request.ProveedorElectrico == true,
             Contacto = datos.Contacto,
             Telefono = datos.Telefono,
             Email = datos.Email,
             CreatedAt = DateTime.UtcNow
         };
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        if (empresa.ProveedorElectrico)
+            await _db.Empresas.Where(e => e.ProveedorElectrico).ExecuteUpdateAsync(s => s.SetProperty(e => e.ProveedorElectrico, false));
         _db.Empresas.Add(empresa);
         await _db.SaveChangesAsync();
-        if (request.ProveedorElectrico == true) await MarcarProveedorElectricoAsync(empresa.Id);
+        await tx.CommitAsync();
         return empresa;
     }
 

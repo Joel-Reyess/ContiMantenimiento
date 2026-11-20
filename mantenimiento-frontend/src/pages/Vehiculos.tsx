@@ -29,6 +29,8 @@ interface CrearVehiculoForm {
   modelo: string;
   numeroSerie: string;
   anio: string;
+  /** Equipos eléctricos (EQE-03) */
+  numeroEconomico: string;
   notas: string;
   documentacionDibujos: string;
   documentacionEspecificaciones: string;
@@ -45,6 +47,7 @@ const FORM_VACIO: CrearVehiculoForm = {
   modelo: '',
   numeroSerie: '',
   anio: '',
+  numeroEconomico: '',
   notas: '',
   documentacionDibujos: '',
   documentacionEspecificaciones: '',
@@ -53,8 +56,19 @@ const FORM_VACIO: CrearVehiculoForm = {
   areaId: ''
 };
 
-/** Año de 4 dígitos entre 1950 y el próximo año (igual que el backend) */
-function errorDatosEquipo(form: CrearVehiculoForm): string | null {
+/** Año de 4 dígitos entre 1950 y el próximo año (igual que el backend); en equipos eléctricos todo es obligatorio */
+function errorDatosEquipo(form: CrearVehiculoForm, electrico = false): string | null {
+  if (electrico) {
+    const faltan = [
+      !form.marca.trim() && 'marca',
+      !form.modelo.trim() && 'modelo',
+      !form.numeroSerie.trim() && 'número de serie',
+      !form.anio.trim() && 'año',
+      !form.numeroEconomico.trim() && 'número económico',
+      !form.areaId && 'área'
+    ].filter(Boolean);
+    if (faltan.length > 0) return `Para un equipo eléctrico captura: ${faltan.join(', ')}.`;
+  }
   const anio = form.anio.trim();
   if (!anio) return null;
   const maximo = new Date().getFullYear() + 1;
@@ -87,6 +101,8 @@ export function VehiculosPage() {
   const [validando, setValidando] = useState(false);
 
   const [tiposVehiculo, setTiposVehiculo] = useState<{ value: string; label: string }[]>([]);
+  // Tipos con flujo de equipos eléctricos: datos del equipo, número económico y área obligatorios (EQE-03)
+  const [tiposElectricos, setTiposElectricos] = useState<Set<string>>(new Set());
   // Tipos que piden Marca, Modelo, Año y Número de serie (Tuggers y Montacargas; se configura en Tipos de vehículo)
   const [tiposConDatosEquipo, setTiposConDatosEquipo] = useState<Set<string>>(new Set());
   const [loadingTipos, setLoadingTipos] = useState(true);
@@ -166,6 +182,7 @@ export function VehiculosPage() {
           }));
           setTiposVehiculo(options);
           setTiposConDatosEquipo(new Set(res.data.filter((t) => t.pideDatosEquipo).map((t) => String(t.id))));
+          setTiposElectricos(new Set(res.data.filter((t) => t.flujoMantenimiento === 'Electrico').map((t) => String(t.id))));
         }
         setLoadingTipos(false);
       } catch (error) {
@@ -397,6 +414,7 @@ export function VehiculosPage() {
           modelo: data.modelo || '',
           numeroSerie: data.numeroSerie || '',
           anio: data.anio ? String(data.anio) : '',
+          numeroEconomico: data.numeroEconomico || '',
           notas: data.notas || '',
           documentacionDibujos: data.documentacionDibujos || '',
           documentacionEspecificaciones: data.documentacionEspecificaciones || '',
@@ -438,52 +456,70 @@ export function VehiculosPage() {
     loadVehiculos(pagination.page, filtrosAplicados.current, true);
   };
 
-  // Marca, Modelo, Año y Número de serie: solo para los tipos que los piden (o si el vehículo ya los tiene capturados)
-  const pideDatosEquipo = tiposConDatosEquipo.has(form.tipo);
+  // Marca, Modelo, Año y Número de serie: solo para los tipos que los piden (o si el vehículo ya los tiene capturados).
+  // Equipos eléctricos: además número económico, y todo obligatorio (con el área)
+  const esElectrico = tiposElectricos.has(form.tipo);
+  const pideDatosEquipo = tiposConDatosEquipo.has(form.tipo) || esElectrico;
   const mostrarDatosEquipoEdicion =
-    pideDatosEquipo || Boolean(form.marca.trim() || form.modelo.trim() || form.numeroSerie.trim() || form.anio.trim());
+    pideDatosEquipo || Boolean(form.marca.trim() || form.modelo.trim() || form.numeroSerie.trim() || form.anio.trim() || form.numeroEconomico.trim());
+  const obligatorio = esElectrico ? ' *' : '';
 
   const datosEquipoCampos = (
     <div className="rounded-lg border border-continental-gray-3 bg-continental-gray-4/40" style={{ padding: 12 }} data-testid="datos-equipo">
       <p className="text-sm font-semibold text-continental-black" style={{ marginBottom: 8 }}>
         Datos del equipo
       </p>
+      {esElectrico && (
+        <p className="text-xs text-continental-gray-1" style={{ marginBottom: 8 }} data-testid="aviso-equipo-electrico">
+          Equipo eléctrico: marca, modelo, número de serie, año, número económico y área son obligatorios. Serie y número económico no se repiten.
+        </p>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         <Input
-          label="Marca"
+          label={`Marca${obligatorio}`}
           placeholder="Ej. Toyota"
           value={form.marca}
           maxLength={100}
           onChange={(e) => setForm((prev) => ({ ...prev, marca: e.target.value }))}
         />
         <Input
-          label="Modelo"
+          label={`Modelo${obligatorio}`}
           placeholder="Ej. 8FGU25"
           value={form.modelo}
           maxLength={100}
           onChange={(e) => setForm((prev) => ({ ...prev, modelo: e.target.value }))}
         />
         <Input
-          label="Número de serie"
+          label={`Número de serie${obligatorio}`}
           placeholder="Número de serie del fabricante"
           value={form.numeroSerie}
           maxLength={50}
           onChange={(e) => setForm((prev) => ({ ...prev, numeroSerie: e.target.value }))}
         />
         <Input
-          label="Año"
+          label={`Año${obligatorio}`}
           placeholder={`Ej. ${new Date().getFullYear()}`}
           inputMode="numeric"
           maxLength={4}
           value={form.anio}
           onChange={(e) => setForm((prev) => ({ ...prev, anio: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
         />
+        {esElectrico && (
+          <Input
+            label="Número económico *"
+            placeholder="Ej. ME-0012"
+            value={form.numeroEconomico}
+            maxLength={30}
+            data-testid="numero-economico"
+            onChange={(e) => setForm((prev) => ({ ...prev, numeroEconomico: e.target.value.toUpperCase() }))}
+          />
+        )}
       </div>
     </div>
   );
 
   const handleCreate = async () => {
-    const errorDatos = pideDatosEquipo ? errorDatosEquipo(form) : null;
+    const errorDatos = pideDatosEquipo ? errorDatosEquipo(form, esElectrico) : null;
     if (errorDatos) {
       setFormError(errorDatos);
       return;
@@ -501,7 +537,8 @@ export function VehiculosPage() {
               marca: form.marca.trim() || undefined,
               modelo: form.modelo.trim() || undefined,
               numeroSerie: form.numeroSerie.trim() || undefined,
-              anio: form.anio.trim() ? Number(form.anio) : undefined
+              anio: form.anio.trim() ? Number(form.anio) : undefined,
+              numeroEconomico: esElectrico ? form.numeroEconomico.trim() || undefined : undefined
             }
           : {})
       });
@@ -525,7 +562,7 @@ export function VehiculosPage() {
 
   const handleEdit = async () => {
     if (!form.id) return;
-    const errorDatos = mostrarDatosEquipoEdicion ? errorDatosEquipo(form) : null;
+    const errorDatos = mostrarDatosEquipoEdicion ? errorDatosEquipo(form, esElectrico) : null;
     if (errorDatos) {
       setFormError(errorDatos);
       return;
@@ -541,7 +578,8 @@ export function VehiculosPage() {
               marca: form.marca.trim(),
               modelo: form.modelo.trim(),
               numeroSerie: form.numeroSerie.trim(),
-              anio: form.anio.trim() ? Number(form.anio) : 0
+              anio: form.anio.trim() ? Number(form.anio) : 0,
+              numeroEconomico: form.numeroEconomico.trim()
             }
           : {}),
         notas: form.notas.trim() || undefined,
@@ -897,6 +935,9 @@ export function VehiculosPage() {
                     {v.estadoNombre || EstadoVehiculoNombres[v.estado]}
                   </Badge>
                 </div>
+                {(v.esElectrico || v.numeroEconomico) && (
+                  <p data-testid="numero-economico-tarjeta">No. económico: <strong className="text-continental-black">{v.numeroEconomico || 'sin capturar'}</strong></p>
+                )}
                 <p>Area: {v.areaNombre || 'No asignada'}</p>
                 <p>
                   Reportes:{' '}
@@ -913,14 +954,17 @@ export function VehiculosPage() {
                 {v.notas && typeof v.notas === 'string' && <p>Notas: {v.notas}</p>}
               </div>
               <div style={{ paddingTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {/* Solo ícono para que Historial, Editar y Eliminar quepan en un renglón (auditoría visual A6) */}
                 <Link
                   to={`/vehiculos/${v.id}#historial`}
                   data-testid="ver-historial"
+                  title={`Historial de mantenimiento de ${v.codigo}`}
+                  aria-label={`Historial de mantenimiento de ${v.codigo}`}
                   className={buttonVariants({ variant: 'outline', size: 'sm' })}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', textDecoration: 'none' }}
+                  style={{ display: 'inline-flex', alignItems: 'center', padding: '10px 12px', textDecoration: 'none' }}
                 >
                   <History className="h-4 w-4" />
-                  Historial
+                  <span className="sr-only">Historial</span>
                 </Link>
                 {puedeEditar && (
                   <Button size="sm" variant="outline" onClick={() => openEdit(v.id)}>

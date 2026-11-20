@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Building2, Loader2, Pencil, Plus, Power, RefreshCcw, Save, Trash2 } from 'lucide-react';
+import { Building2, Loader2, Pencil, Plus, Power, RefreshCcw, Save, Trash2, Zap } from 'lucide-react';
 import {
   Alert,
   AlertDescription,
@@ -20,7 +20,7 @@ import { VolverConfiguracion } from '@/components/configuracion/VolverConfigurac
 
 type CampoError = 'nombre' | 'identificador' | 'email' | 'general';
 
-const FORM_VACIO: EmpresaRequest = { nombre: '', identificador: '', activo: true, contacto: '', telefono: '', email: '' };
+const FORM_VACIO: EmpresaRequest = { nombre: '', identificador: '', activo: true, proveedorElectrico: false, contacto: '', telefono: '', email: '' };
 
 const estadoOpciones = [
   { value: '', label: 'Todas' },
@@ -93,6 +93,7 @@ export function EmpresasProveedorasPage() {
       nombre: e.nombre,
       identificador: e.identificador,
       activo: e.activo,
+      proveedorElectrico: !!e.proveedorElectrico,
       contacto: e.contacto || '',
       telefono: e.telefono || '',
       email: e.email || ''
@@ -115,6 +116,7 @@ export function EmpresasProveedorasPage() {
         nombre: form.nombre.trim(),
         identificador: form.identificador.trim(),
         activo: form.activo,
+        proveedorElectrico: !!form.proveedorElectrico,
         contacto: form.contacto?.trim() || undefined,
         telefono: form.telefono?.trim() || undefined,
         email: form.email?.trim() || undefined
@@ -282,7 +284,15 @@ export function EmpresasProveedorasPage() {
                   </div>
                   <p className="text-sm text-continental-gray-1">RFC / ID: {e.identificador}</p>
                 </div>
-                <Badge variant={e.activo ? 'success' : 'cancelada'}>{e.activo ? 'Activa' : 'Inactiva'}</Badge>
+                <div className="flex flex-col items-end" style={{ gap: 4 }}>
+                  <Badge variant={e.activo ? 'success' : 'cancelada'}>{e.activo ? 'Activa' : 'Inactiva'}</Badge>
+                  {e.proveedorElectrico && (
+                    <span className="inline-flex items-center rounded-full text-xs font-semibold text-white" style={{ backgroundColor: '#ff8c00', padding: '2px 10px', gap: 4 }}
+                      data-testid="proveedor-electrico">
+                      <Zap className="h-3 w-3" /> Equipos eléctricos
+                    </span>
+                  )}
+                </div>
               </div>
               {(e.contacto || e.telefono || e.email) && (
                 <p className="text-sm text-continental-gray-1 break-words">
@@ -356,6 +366,24 @@ export function EmpresasProveedorasPage() {
               { value: 'inactiva', label: 'Inactiva (no se asigna a técnicos nuevos)' }
             ]}
           />
+          {/* EQE-04: proveedor único de los equipos eléctricos; no entra a la rotación de contenedores */}
+          <label className="cursor-pointer rounded-lg border border-continental-gray-3"
+            style={{ padding: 12, display: 'flex', alignItems: 'flex-start', gap: 12, fontWeight: 400, marginBottom: 0 }}>
+            <input
+              type="checkbox"
+              style={{ width: 16, height: 16, minHeight: 0, padding: 0, flexShrink: 0, marginTop: 3 }}
+              className="accent-continental-yellow"
+              checked={!!form.proveedorElectrico}
+              onChange={(ev) => campo('general', { proveedorElectrico: ev.target.checked })}
+              data-testid="empresa-proveedor-electrico"
+            />
+            <span>
+              <span className="block text-sm font-semibold text-continental-black">Proveedor de equipos eléctricos</span>
+              <span className="block text-xs text-continental-gray-1">
+                Atiende montacargas, tuggers y traspaletas (todas sus órdenes). Solo una empresa lo es; ya no recibe órdenes de contenedores.
+              </span>
+            </span>
+          </label>
           <p className="text-sm font-semibold text-continental-black">Contacto (opcional)</p>
           <Input label="Nombre del contacto" value={form.contacto || ''} onChange={(e) => campo('general', { contacto: e.target.value })} maxLength={100} />
           <div className="grid gap-3 sm:grid-cols-2">

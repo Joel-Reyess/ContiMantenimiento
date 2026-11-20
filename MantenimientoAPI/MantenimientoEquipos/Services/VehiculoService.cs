@@ -248,18 +248,23 @@ public class VehiculoService
             CreatedAt = DateTime.UtcNow
         };
 
-        // EQE (preventivo programado): primera fecha = alta + periodicidad del tipo; el Administrador puede ajustarla
-        var tipoElectrico = await _db.TiposVehiculo.Where(t => t.Id == (int)vehiculo.Tipo && t.FlujoMantenimiento == EquiposElectricosService.Electrico)
-            .Select(t => new { t.FrecuenciaMantenimientoDias }).FirstOrDefaultAsync();
-        if (tipoElectrico != null)
-            vehiculo.ProximoMantenimiento = DateTime.SpecifyKind(HoraLocal.Ahora.Date.AddDays(tipoElectrico.FrecuenciaMantenimientoDias ?? 30), DateTimeKind.Unspecified);
-
+        // Equipos eléctricos (EQE-09): primer preventivo = fecha de alta + periodicidad del tipo (el Administrador la ajusta)
+        vehiculo.ProximoMantenimiento ??= await PrimerPreventivoAsync((int)vehiculo.Tipo);
         _db.Vehiculos.Add(vehiculo);
         await _db.SaveChangesAsync();
         return vehiculo;
     }
 
     private static string? Limpio(string? texto) => string.IsNullOrWhiteSpace(texto) ? null : texto.Trim();
+
+    /// <summary>Fecha del primer preventivo de un equipo eléctrico nuevo (hoy + periodicidad del tipo); null si no es eléctrico</summary>
+    public async Task<DateTime?> PrimerPreventivoAsync(int tipoId)
+    {
+        var tipo = await _db.TiposVehiculo.AsNoTracking().Where(t => t.Id == tipoId && t.FlujoMantenimiento == EquiposElectricosService.Electrico)
+            .Select(t => new { t.FrecuenciaMantenimientoDias }).FirstOrDefaultAsync();
+        if (tipo == null) return null;
+        return DateTime.SpecifyKind(Utils.HoraLocal.Ahora.Date.AddDays(tipo.FrecuenciaMantenimientoDias is > 0 ? tipo.FrecuenciaMantenimientoDias.Value : 30), DateTimeKind.Unspecified);
+    }
 
     /// <summary>
     /// EQE-03: un equipo eléctrico lleva marca, modelo, número de serie, año, número económico y área (obligatorios);

@@ -29,6 +29,7 @@ import { ReportarReparacionPage } from '@/pages/ReportarReparacion';
 import { EmpresasProveedorasPage } from '@/pages/EmpresasProveedoras';
 import { PresupuestoEmpresasPage } from '@/pages/PresupuestoEmpresas';
 import { FormatoEntregaPage } from '@/pages/FormatoEntrega';
+import { EquiposElectricosPage } from '@/pages/EquiposElectricos';
 
 function App() {
   return (
@@ -241,6 +242,16 @@ function App() {
               element={
                 <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor']}>
                   <EmpresasProveedorasPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Equipos eléctricos (flujo de montacargas, tuggers y traspaletas): todos los roles; el Operador solo consulta */}
+            <Route
+              path="equipos-electricos"
+              element={
+                <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Lider', 'Tecnico', 'Operador']}>
+                  <EquiposElectricosPage />
                 </ProtectedRoute>
               }
             />

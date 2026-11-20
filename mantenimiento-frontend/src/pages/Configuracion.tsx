@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState, type ReactNode } from 'react';
-import { Settings, Plus, Loader2, RefreshCcw, ListChecks, Trash2, Package, Users, AlertTriangle, Calendar, FileText, Upload, FileSpreadsheet, MapPin, Truck, Tag, UserCheck, Database, ArrowLeft, History, Warehouse, Building2 } from 'lucide-react';
+import { Settings, Plus, Loader2, RefreshCcw, ListChecks, Trash2, Package, Users, AlertTriangle, Calendar, FileText, Upload, FileSpreadsheet, MapPin, Truck, Tag, UserCheck, Database, ArrowLeft, History, Warehouse, Building2, Zap, ClipboardCheck } from 'lucide-react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getFullImageUrl } from '@/lib/utils';
 import {
@@ -22,6 +22,7 @@ import { catalogosService, usuariosService, adminService, dashboardService } fro
 import type { Area } from '@/interfaces';
 import type { TipoVehiculoItem } from '@/services/catalogosService';
 import { ChecklistsPorTipo } from '@/components/configuracion/ChecklistsPorTipo';
+import { ChecklistPreventivo } from '@/components/configuracion/ChecklistPreventivo';
 import { Bitacora } from '@/components/configuracion/Bitacora';
 import { ExcelCatalogoBotones } from '@/components/excel/ExcelCatalogoBotones';
 import { BotonExportar } from '@/components/excel/BotonExportar';
@@ -50,13 +51,14 @@ interface ProgramacionPreventiva {
   estado: string;
 }
 
-type Seccion = 'areas' | 'checklists' | 'tipos' | 'preventivos' | 'zona' | 'datos' | 'bitacora';
-const SECCIONES_INTERNAS: Seccion[] = ['areas', 'checklists', 'tipos', 'preventivos', 'zona', 'datos', 'bitacora'];
+type Seccion = 'areas' | 'checklists' | 'tipos' | 'preventivos' | 'zona' | 'datos' | 'bitacora' | 'checklist-preventivo';
+const SECCIONES_INTERNAS: Seccion[] = ['areas', 'checklists', 'tipos', 'preventivos', 'zona', 'datos', 'bitacora', 'checklist-preventivo'];
 
 const MODULOS: { titulo: string; descripcion: string; ruta: string; icono: ReactNode; soloReset?: boolean }[] = [
   { titulo: 'Gestión de usuarios', descripcion: 'Usuarios, roles, contraseñas y acceso.', ruta: '/usuarios', icono: <Users className="h-7 w-7" /> },
   { titulo: 'Catálogo de áreas', descripcion: 'Áreas o ubicaciones y su supervisor.', ruta: '/configuracion/areas', icono: <MapPin className="h-7 w-7" /> },
   { titulo: 'Checklists', descripcion: 'Un checklist por tipo de vehículo: sus actividades (título, descripción y costo base) y tarifas por empresa.', ruta: '/configuracion/checklists', icono: <ListChecks className="h-7 w-7" /> },
+  { titulo: 'Checklist preventivo (equipos eléctricos)', descripcion: 'Categorías y actividades del preventivo de montacargas, tuggers y traspaletas (Buen estado / Mal estado).', ruta: '/configuracion/checklist-preventivo', icono: <ClipboardCheck className="h-7 w-7" /> },
   { titulo: 'Empresas proveedoras', descripcion: 'Empresas que hacen las reparaciones; cada una con sus tarifas.', ruta: '/empresas-proveedoras', icono: <Building2 className="h-7 w-7" /> },
   { titulo: 'Tipos de vehículo', descripcion: 'Tipos de contenedor, imágenes y capacidad del taller.', ruta: '/configuracion/tipos', icono: <Truck className="h-7 w-7" /> },
   { titulo: 'Prefijos de vehículos', descripcion: 'Prefijos del código para detectar el tipo automáticamente.', ruta: '/gestion-prefijos', icono: <Tag className="h-7 w-7" /> },
@@ -601,8 +603,9 @@ export function ConfiguracionPage() {
         <p className="text-sm uppercase tracking-[0.3em] text-continental-gray-1">Configuración del sistema</p>
         {activeTab ? (
           <div>
-            <Button variant="ghost" onClick={() => navigate('/configuracion')} className="flex items-center gap-2">
-              <ArrowLeft className="h-4 w-4" />
+            {/* En celular el texto se parte en dos renglones (antes se salía de la pantalla a 375 px) */}
+            <Button variant="ghost" onClick={() => navigate('/configuracion')} className="flex items-center gap-2" style={{ whiteSpace: 'normal', textAlign: 'left' }}>
+              <ArrowLeft className="h-4 w-4 flex-shrink-0" />
               Volver a Configuración del sistema
             </Button>
           </div>
@@ -780,8 +783,23 @@ export function ConfiguracionPage() {
                             Técnico: {tipo.proveedorNombre || 'Asignado'}
                           </p>
                         )}
+                        {tipo.flujoMantenimiento === 'Electrico' ? (
+                          <p className="flex items-center text-xs font-semibold" style={{ gap: 4, color: '#c26a00' }} data-testid="tipo-flujo-electrico">
+                            <Zap className="h-3 w-3" /> Equipo eléctrico
+                            {tipo.horasPreventivo ? ` · preventivo cada ${tipo.frecuenciaMantenimientoDias || 30} días o ${tipo.horasPreventivo} h` : ''}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-continental-gray-1" data-testid="tipo-flujo-contenedor">Flujo de contenedores</p>
+                        )}
                         {tipo.pideDatosEquipo && (
                           <p className="text-xs text-continental-gray-1">Pide marca, modelo, año y número de serie</p>
+                        )}
+                        {tipo.flujoMantenimiento === 'Electrico' && (
+                          <button type="button" className="text-xs font-medium text-continental-blue-dark underline" data-icon="true"
+                            style={{ padding: 0, minHeight: 0 }} data-testid={`checklist-preventivo-${tipo.id}`}
+                            onClick={() => navigate(`/configuracion/checklist-preventivo?tipo=${tipo.id}`)}>
+                            Checklist preventivo
+                          </button>
                         )}
                       </div>
                     </div>
@@ -987,6 +1005,8 @@ export function ConfiguracionPage() {
       )}
 
       {activeTab === 'checklists' && <ChecklistsPorTipo />}
+
+      {activeTab === 'checklist-preventivo' && <ChecklistPreventivo />}
 
       {activeTab === 'bitacora' && <Bitacora />}
 
@@ -1245,11 +1265,15 @@ export function ConfiguracionPage() {
           />
 
           {/* Marca, Modelo, Año y Número de serie solo para equipos como Tuggers y Montacargas */}
-          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-continental-gray-3" style={{ padding: 12 }}>
+          {/* label {display:block} de index.css anula "flex": el acomodo va en línea */}
+          <label className="cursor-pointer rounded-lg border border-continental-gray-3"
+            style={{ padding: 12, display: 'flex', alignItems: 'flex-start', gap: 12, fontWeight: 400, marginBottom: 0 }}>
             <input
               type="checkbox"
               className="mt-0.5 h-4 w-4 accent-continental-yellow"
-              checked={!!editingTipo?.pideDatosEquipo}
+              style={{ width: 16, height: 16, minHeight: 0, padding: 0, flexShrink: 0, marginTop: 3 }}
+              disabled={editingTipo?.flujoMantenimiento === 'Electrico'}
+              checked={!!editingTipo?.pideDatosEquipo || editingTipo?.flujoMantenimiento === 'Electrico'}
               onChange={(e) => setEditingTipo(prev => prev ? { ...prev, pideDatosEquipo: e.target.checked } : null)}
               data-testid="tipo-pide-datos-equipo"
             />
@@ -1261,17 +1285,57 @@ export function ConfiguracionPage() {
             </span>
           </label>
 
+          {/* EQE-02: el flujo se define en el tipo; todos sus prefijos lo heredan */}
+          <div className="rounded-lg border border-continental-gray-3 flex flex-col" style={{ padding: 12, gap: 10 }} data-testid="tipo-flujo">
+            <Select
+              label="Flujo de mantenimiento"
+              value={editingTipo?.flujoMantenimiento === 'Electrico' ? 'Electrico' : 'Contenedor'}
+              onChange={(v) => setEditingTipo(prev => prev ? {
+                ...prev,
+                flujoMantenimiento: v,
+                ...(v === 'Electrico' ? {
+                  pideDatosEquipo: true,
+                  frecuenciaMantenimientoDias: prev.frecuenciaMantenimientoDias || 30,
+                  horasPreventivo: prev.horasPreventivo || 5000
+                } : {})
+              } : null)}
+              data-testid="tipo-flujo-select"
+              options={[
+                { value: 'Contenedor', label: 'Contenedor (Zona de Transición y selección de empresa)' },
+                { value: 'Electrico', label: 'Equipo eléctrico (montacargas, tuggers, traspaletas)' }
+              ]}
+            />
+            <p className="text-xs text-continental-gray-1" style={{ marginBottom: 0 }}>
+              {editingTipo?.flujoMantenimiento === 'Electrico'
+                ? 'Proveedor único, sin Zona de Transición; correctivo y preventivo programado. Pide marca, modelo, serie, año, número económico y área al registrar.'
+                : 'Flujo de 8 etapas con Zona de Transición y selección automática de empresa.'}
+              {!isCreatingTipo ? ' No se puede cambiar mientras haya órdenes abiertas de este tipo.' : ''}
+            </p>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input
-              label="Frecuencia Mantenimiento (Días)"
+              label={editingTipo?.flujoMantenimiento === 'Electrico' ? 'Preventivo cada (días)' : 'Frecuencia Mantenimiento (Días)'}
               type="number"
               placeholder="Ej: 30"
               value={editingTipo?.frecuenciaMantenimientoDias || ''}
+              data-testid="tipo-frecuencia-dias"
               onChange={(e) => setEditingTipo(prev => prev ? { ...prev, frecuenciaMantenimientoDias: e.target.value ? Number(e.target.value) : undefined } : null)}
             />
-            <div className="flex flex-col justify-end">
-               <p className="text-xs text-continental-gray-1 italic">Define cada cuántos días se recomienda realizar mantenimiento preventivo.</p>
-            </div>
+            {editingTipo?.flujoMantenimiento === 'Electrico' ? (
+              <Input
+                label="O cada (horas de uso)"
+                type="number"
+                placeholder="Ej: 5000"
+                value={editingTipo?.horasPreventivo || ''}
+                data-testid="tipo-horas-preventivo"
+                onChange={(e) => setEditingTipo(prev => prev ? { ...prev, horasPreventivo: e.target.value ? Number(e.target.value) : 0 } : null)}
+              />
+            ) : (
+              <div className="flex flex-col justify-end">
+                 <p className="text-xs text-continental-gray-1 italic">Define cada cuántos días se recomienda realizar mantenimiento preventivo.</p>
+              </div>
+            )}
           </div>
 
           <Select
