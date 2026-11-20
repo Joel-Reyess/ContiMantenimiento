@@ -49,12 +49,20 @@ type VehiculoOption = SearchableSelectOption<{
 interface ReportFailureModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  /** Recibe el id del reporte creado (OT-36: Órdenes lleva al usuario al reporte recién creado) */
+  onSuccess?: (reporteId?: number) => void;
   initialVehiculoId?: number | null;
   initialVehiculoCodigo?: string | null;
   initialTipoMantenimiento?: 'Preventivo' | 'Correctivo';
   forceFormStep?: boolean;
 }
+
+
+// RPF-11 (Reporte 7): index.css trae reglas globales sin capa (`label { display: block }` e `input { padding; min-height: 48px }`)
+// que ganan a las clases de Tailwind; por eso el renglón y el campo de cantidad llevan su estilo en línea:
+// casilla › número del punto › título (con la descripción debajo) › cantidad a la derecha
+const filaRenglon: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 0, fontWeight: 400 };
+const campoCantidad: React.CSSProperties = { width: 64, minHeight: 0, height: 32, padding: '2px 6px', borderRadius: 8 };
 
 export function ReportFailureModal({
   isOpen,
@@ -750,7 +758,7 @@ const checklistReqSeqRef = useRef(0);
           showGlobalToast(`Reporte ${folio ?? ''} creado con éxito`);
         }
         window.dispatchEvent(new CustomEvent('notifications:refresh'));
-        onSuccess?.();
+        onSuccess?.(reporteId);
         onClose();
         return;
       }
@@ -1258,7 +1266,7 @@ const checklistReqSeqRef = useRef(0);
                             data-testid={`componente-${point.id}`}
                             className={`flex flex-row items-center justify-between gap-2 p-2 rounded-lg border ${checked ? 'border-yellow-300 bg-yellow-50/60' : 'border-gray-200'}`}
                           >
-                            <label className="flex flex-1 min-w-0 cursor-pointer items-center gap-2">
+                            <label className="flex flex-1 min-w-0 cursor-pointer items-center gap-2" style={filaRenglon}>
                               <input
                                 type="checkbox"
                                 checked={checked}
@@ -1270,7 +1278,7 @@ const checklistReqSeqRef = useRef(0);
                               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-red-600 text-xs font-bold tabular-nums text-white">
                                 {imagePointNumbers[point.id]}
                               </span>
-                              <span className="min-w-0 text-sm text-gray-800">
+                              <span className="min-w-0 text-sm text-gray-800" style={{ fontWeight: 400 }}>
                                 <span className="block font-medium uppercase">{point.imageFaultName || `Componente #${point.imageFaultId}`}</span>
                                 {(() => {
                                   // Descripción de la actividad (FV-03); en puntos anteriores, la del componente
@@ -1286,6 +1294,7 @@ const checklistReqSeqRef = useRef(0);
                                 min="1"
                                 disabled={!checked}
                                 aria-label={`Cantidad de ${point.imageFaultName || 'componente'}`}
+                                style={campoCantidad}
                                 className={`w-14 p-1 text-sm border rounded focus:outline-none text-center ${checked ? 'border-gray-300 bg-white' : 'border-gray-200 bg-gray-100 text-gray-400'}`}
                                 value={checked ? cantidadesComponente[point.id] ?? 1 : ''}
                                 onChange={(e) => {
@@ -1319,7 +1328,7 @@ const checklistReqSeqRef = useRef(0);
                                 data-testid={`actividad-${item.id}`}
                                 className={`flex flex-row items-center justify-between gap-2 p-2 rounded-lg border ${isSelected ? 'border-yellow-300 bg-yellow-50/60' : 'border-gray-200'}`}
                               >
-                                <label className="flex flex-1 min-w-0 cursor-pointer items-center gap-2">
+                                <label className="flex flex-1 min-w-0 cursor-pointer items-center gap-2" style={filaRenglon}>
                                   <input
                                     type="checkbox"
                                     checked={isSelected}
@@ -1328,13 +1337,14 @@ const checklistReqSeqRef = useRef(0);
                                     style={{ width: '1rem', height: '1rem' }}
                                     aria-label={item.pregunta}
                                   />
-                                  <span className="text-sm text-gray-700">
+                                  <span className="min-w-0 text-sm text-gray-800" style={{ fontWeight: 400 }}>
                                     {item.titulo ? (
                                       <>
-                                        <strong>{item.titulo}</strong> · {item.pregunta}
+                                        <span className="block font-medium">{item.titulo}</span>
+                                        {item.pregunta !== item.titulo && <span className="block text-xs text-gray-500">{item.pregunta}</span>}
                                       </>
                                     ) : (
-                                      item.pregunta
+                                      <span className="block font-medium">{item.pregunta}</span>
                                     )}
                                   </span>
                                 </label>
@@ -1345,6 +1355,7 @@ const checklistReqSeqRef = useRef(0);
                                     min="1"
                                     disabled={!isSelected}
                                     aria-label={`Cantidad de ${item.pregunta}`}
+                                    style={campoCantidad}
                                     className={`w-14 p-1 text-sm border rounded focus:outline-none text-center ${isSelected ? 'border-gray-300 bg-white' : 'border-gray-200 bg-gray-100 text-gray-400'}`}
                                     value={isSelected ? checklistQuantities[item.id] || '' : ''}
                                     onChange={(e) => {

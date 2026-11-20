@@ -56,6 +56,8 @@ public class ReporteFallaCreateRequest
     
     public List<ChecklistItemSelectionDto> ChecklistItems { get; set; } = new();
     public List<ReportImageFaultCreateDto> ImageFaults { get; set; } = new();
+    /// <summary>Horómetro actual: obligatorio en equipos eléctricos (EQE)</summary>
+    public decimal? Horometro { get; set; }
 }
 
 public class ChecklistItemSelectionDto

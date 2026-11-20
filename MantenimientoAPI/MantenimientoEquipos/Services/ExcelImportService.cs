@@ -54,6 +54,14 @@ public class ExcelImportService
     private static readonly string[] RolesAdministrador = { "SuperUsuario", "Administrador" };
     private static readonly string[] RolesSupervisor = { "SuperUsuario", "Administrador", "Supervisor" };
 
+    /// <summary>USR-03 (Reporte 7): los roles fusionados se importan como Administrador (archivos de antes del cambio)</summary>
+    private static string RolFusionado(string rol)
+    {
+        var r = rol.Trim().ToLowerInvariant().Normalize(System.Text.NormalizationForm.FormD);
+        r = new string(r.Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark).ToArray());
+        return r is "supervisor" or "superusuario" or "super usuario" or "gerente" or "gerente de mantenimiento" ? "Administrador" : rol;
+    }
+
     private static readonly string[] ReglasValidacion =
     {
         "Antes de importar, el sistema valida todo el archivo y muestra los errores por fila.",
@@ -805,9 +813,11 @@ public class ExcelImportService
             if (rolTexto != null)
             {
                 rolesFila = new List<Rol>();
-                foreach (var parte in rolTexto.Split(new[] { ',', ';', '/' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                foreach (var parteOriginal in rolTexto.Split(new[] { ',', ';', '/' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                 {
-                    var (id, error) = BuscarPorNombre(parte, opcionesRol, "roles", $"El rol '{parte}' no existe");
+                    // USR-03 (Reporte 7): Supervisor, Gerente de Mantenimiento y SuperUsuario ahora son Administrador
+                    var parte = RolFusionado(parteOriginal);
+                    var (id, error) = BuscarPorNombre(parte, opcionesRol, "roles", $"El rol '{parteOriginal}' no existe");
                     if (error != null) errores.Add(fila.Numero, "Rol", error);
                     else if (rolesFila.All(r => r.Id != id)) rolesFila.Add(roles.First(r => r.Id == id));
                 }

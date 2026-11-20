@@ -171,7 +171,7 @@ export function SeleccionProveedor({ ordenId, abierta, onClose, onReasignada }: 
             <div className="flex flex-col rounded-lg border border-continental-gray-3" style={{ padding: 14, gap: 10 }} data-testid="reasignar-proveedor">
               <p className="flex items-center text-sm font-semibold text-continental-black" style={{ gap: 6 }}><RefreshCcw className="h-4 w-4" /> Reasignar manualmente</p>
               <div className="grid md:grid-cols-2" style={{ gap: 10 }}>
-                <label className="flex flex-col text-sm" style={{ gap: 4 }}>
+                <label className="text-sm" style={{ display: 'flex', flexDirection: 'column', gap: 4, fontWeight: 600 }}>
                   Empresa
                   <select className="rounded-lg border border-continental-gray-3" style={{ padding: '8px 10px' }} value={empresaId}
                     data-testid="reasignar-empresa"
@@ -182,7 +182,7 @@ export function SeleccionProveedor({ ordenId, abierta, onClose, onReasignada }: 
                     ))}
                   </select>
                 </label>
-                <label className="flex flex-col text-sm" style={{ gap: 4 }}>
+                <label className="text-sm" style={{ display: 'flex', flexDirection: 'column', gap: 4, fontWeight: 600 }}>
                   Técnico
                   <select className="rounded-lg border border-continental-gray-3" style={{ padding: '8px 10px' }} value={tecnicoId}
                     data-testid="reasignar-tecnico" disabled={!destino}

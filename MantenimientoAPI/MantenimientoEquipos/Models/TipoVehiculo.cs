@@ -36,6 +36,16 @@ namespace MantenimientoEquipos.Models
         /// (Tuggers y Montacargas; los contenedores no los llevan). Script 20.
         /// </summary>
         public bool PideDatosEquipo { get; set; }
+
+        /// <summary>
+        /// Flujo de mantenimiento del tipo (EQE-02, flujo de equipos eléctricos): "Contenedor" (flujo de 8 etapas con Zona de
+        /// Transición y selección de empresa) o "Electrico" (montacargas, tuggers, traspaletas: proveedor único, sin zona,
+        /// correctivo y preventivo programado). Los prefijos del tipo heredan su flujo.
+        /// </summary>
+        public string FlujoMantenimiento { get; set; } = "Contenedor";
+
+        /// <summary>Preventivo por horas de uso (equipos eléctricos): se habilita al llegar a estas horas desde el último</summary>
+        public int? HorasPreventivo { get; set; }
         
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         

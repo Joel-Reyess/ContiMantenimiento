@@ -19,6 +19,8 @@ public class NotificacionService
         if (roles == null || roles.Length == 0) return new List<int>();
 
         var lower = roles.Select(r => r.ToLower()).ToList();
+        // USR-03 (Reporte 7): lo que iba al Supervisor o al SuperUsuario ahora le llega al Administrador
+        if (lower.Any(r => r == "supervisor" || r == "superusuario") && !lower.Contains("administrador")) lower.Add("administrador");
         return await _db.Users
             .Include(u => u.Roles)
             .Where(u => u.Roles.Any(r => lower.Any(l => r.Nombre.ToLower().Contains(l))))

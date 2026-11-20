@@ -85,6 +85,10 @@ public class HistorialFlujoDto
 
 public class FlujoDto
 {
+    /// <summary>Contenedor (flujo de 8 etapas) o Electrico (flujo de equipos eléctricos)</summary>
+    public string Flujo { get; set; } = "Contenedor";
+    /// <summary>Datos del flujo eléctrico (solo en órdenes de equipos eléctricos)</summary>
+    public ElectricoInfoDto? Electrico { get; set; }
     public int? ReporteId { get; set; }
     public string? ReporteFolio { get; set; }
     public int? OrdenId { get; set; }

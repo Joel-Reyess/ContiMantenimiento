@@ -300,13 +300,14 @@ public class ReporteFallaService
             throw new DuplicateActiveReportException(reportePendiente.Folio, reportePendiente.Id, reportePendiente.FechaReporte);
     }
 
-    public async Task<ReporteFalla> CreateWithAutoChecklistAsync(ReporteFallaCreateRequest request, int userId, bool force = false)
+    public async Task<ReporteFalla> CreateWithAutoChecklistAsync(ReporteFallaCreateRequest request, int userId, bool force = false, bool electrico = false)
     {
         // Antes de tocar nada (incluso antes de dar de alta un vehículo nuevo): el reporte debe
         // traer al menos un trabajo del checklist o un componente con falla (requerimiento 9.1.2).
+        // En equipos eléctricos basta la falla y el horómetro (el diagnóstico lo hace el taller en la inspección previa).
         var traeTrabajos = (request.ChecklistItems?.Any() ?? false) || (request.ChecklistItemIds?.Any() ?? false);
         var traeComponentes = request.ImageFaults?.Any() ?? false;
-        if (!traeTrabajos && !traeComponentes)
+        if (!traeTrabajos && !traeComponentes && !electrico)
             throw new ArgumentException("Selecciona al menos un trabajo del checklist o un componente con falla.");
 
         var vehiculo = await ObtenerVehiculoRegistradoAsync(request.CodigoVehiculo);

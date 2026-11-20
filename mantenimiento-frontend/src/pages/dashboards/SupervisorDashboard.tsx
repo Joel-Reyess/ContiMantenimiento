@@ -64,7 +64,8 @@ interface PendingApproval {
   costoEstimado?: string;
 }
 
-export function SupervisorDashboard() {
+/** embebido: dentro del dashboard del Administrador (USR-03, Reporte 7: el Supervisor se fusionó con el Administrador) */
+export function SupervisorDashboard({ embebido = false }: { embebido?: boolean } = {}) {
   const { pedirTexto } = useConfirm();
   const toast = useToast();
   const navigate = useNavigate();
@@ -220,8 +221,8 @@ export function SupervisorDashboard() {
   const todayLabel = new Intl.DateTimeFormat('es-MX', { dateStyle: 'full' }).format(new Date());
 
   return (
-    <div className="dashboard-wrapper mt-16">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <div className={embebido ? 'flex flex-col gap-6' : 'dashboard-wrapper mt-16'}>
+      {!embebido && <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-sm uppercase tracking-[0.3em] text-continental-gray-1">Portal de Supervisor</p>
           <h1 className="text-3xl font-semibold text-continental-black">Area Produccion B</h1>
@@ -232,7 +233,7 @@ export function SupervisorDashboard() {
         <div className="rounded-full bg-white px-5 py-2 text-sm font-semibold text-continental-gray-1 shadow">
           {todayLabel}
         </div>
-      </div>
+      </div>}
 
       {/* Ocupación de la Zona de Transición con semáforo (PDF 23-oct-2026) */}
       <CapacidadZonas />

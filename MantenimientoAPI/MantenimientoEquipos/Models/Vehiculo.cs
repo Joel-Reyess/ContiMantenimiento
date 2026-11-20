@@ -36,6 +36,19 @@ public class Vehiculo
     /// </summary>
     public int? Anio { get; set; }
 
+    // ===== Equipos eléctricos (EQE-03) =====
+    /// <summary>Número económico de planta (obligatorio y único en equipos eléctricos)</summary>
+    [MaxLength(30)]
+    public string? NumeroEconomico { get; set; }
+    /// <summary>Último horómetro capturado (reporte o preventivo); no se pide en el alta</summary>
+    public decimal? Horometro { get; set; }
+    /// <summary>Horómetro con el que se completó el último preventivo (el conteo de horas se reinicia)</summary>
+    public decimal? HorometroUltimoPreventivo { get; set; }
+    /// <summary>Último recordatorio de preventivo enviado (para no repetirlo): Ventana, 3Dias, 1Dia, Vencido</summary>
+    public DateTime? UltimoAvisoPreventivo { get; set; }
+    [MaxLength(20)]
+    public string? UltimoAvisoPreventivoTipo { get; set; }
+
     [Required]
     public EstadoVehiculoEnum Estado { get; set; } = EstadoVehiculoEnum.Operativo;
 

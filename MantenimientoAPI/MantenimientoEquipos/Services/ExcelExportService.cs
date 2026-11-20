@@ -1,3 +1,4 @@
+using MantenimientoEquipos.Utils;
 using System.Text.RegularExpressions;
 using ClosedXML.Excel;
 using Microsoft.EntityFrameworkCore;
@@ -72,7 +73,7 @@ public class ExcelExportService
 
         resumen.Cell(1, 1).Value = "Exportación completa - Sistema de Mantenimiento Continental";
         resumen.Cell(1, 1).Style.Font.SetBold().Font.SetFontSize(14);
-        resumen.Cell(2, 1).Value = $"Generado: {DateTime.Now:dd/MM/yyyy HH:mm}" + (generadoPor != null ? $" por {generadoPor}" : "");
+        resumen.Cell(2, 1).Value = $"Generado: {HoraLocal.Ahora:dd/MM/yyyy HH:mm}" + (generadoPor != null ? $" por {generadoPor}" : "");
         resumen.Cell(4, 1).Value = "Hoja";
         resumen.Cell(4, 2).Value = "Contenido";
         EstiloEncabezado(resumen.Range(4, 1, 4, 2));
@@ -335,7 +336,7 @@ public class ExcelExportService
         var ws = wb.Worksheets.Add("Filtros");
         ws.Cell(1, 1).Value = "Flota filtrada - Sistema de Mantenimiento Continental";
         ws.Cell(1, 1).Style.Font.SetBold().Font.SetFontSize(14);
-        ws.Cell(2, 1).Value = $"Generado: {DateTime.Now:dd/MM/yyyy HH:mm}" + (generadoPor != null ? $" por {generadoPor}" : "");
+        ws.Cell(2, 1).Value = $"Generado: {HoraLocal.Ahora:dd/MM/yyyy HH:mm}" + (generadoPor != null ? $" por {generadoPor}" : "");
         ws.Cell(4, 1).Value = "Filtro";
         ws.Cell(4, 2).Value = "Valor";
         EstiloEncabezado(ws.Range(4, 1, 4, 2));
@@ -372,6 +373,8 @@ public class ExcelExportService
                         cell.Value = b ? "Sí" : "No";
                         break;
                     case DateTime d:
+                        // GEN-07: la base guarda UTC; el archivo va en la hora de la operación
+                        d = HoraLocal.DeUtc(d);
                         cell.Value = d;
                         cell.Style.DateFormat.Format = d.TimeOfDay == TimeSpan.Zero ? "dd/mm/yyyy" : "dd/mm/yyyy hh:mm";
                         break;

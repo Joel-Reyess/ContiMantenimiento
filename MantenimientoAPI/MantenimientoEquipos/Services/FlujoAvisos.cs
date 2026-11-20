@@ -55,7 +55,10 @@ public class FlujoAvisos
     }
 
     private static List<int> Operador(Unidad u) => u.ReportadoPorId.HasValue ? new List<int> { u.ReportadoPorId.Value } : new List<int>();
-    private Task<List<int>> GerentesAsync() => ActivosConRol("Supervisor");
+    // USR-03 (Reporte 7): el Gerente de Mantenimiento es ahora el Administrador
+    private Task<List<int>> GerentesAsync() => _db.Users
+        .Where(u => u.Status == UserStatusEnum.Activo && u.Roles.Any(r => r.Nombre == "Administrador" || r.Nombre == "Supervisor" || r.Nombre == "SuperUsuario"))
+        .Select(u => u.Id).ToListAsync();
     private async Task<List<int>> TecnicosAsync(Unidad u) =>
         u.TecnicoId.HasValue ? new List<int> { u.TecnicoId.Value } : await ActivosConRol("Tecnico");
 

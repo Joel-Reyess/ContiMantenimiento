@@ -23,7 +23,10 @@ builder.Services.AddControllers()
     {
         options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
         options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+        // GEN-07 (Reporte 7): las fechas viajan en UTC con "Z" para que el navegador las muestre en hora local
+        options.JsonSerializerOptions.Converters.Add(new MantenimientoEquipos.Utils.FechaUtcJsonConverter());
     });
+MantenimientoEquipos.Utils.HoraLocal.Configurar(builder.Configuration["ZonaHoraria"]);
 
 // Swagger/OpenAPI
 builder.Services.AddEndpointsApiExplorer();
@@ -87,7 +90,14 @@ builder.Services.AddScoped<OrdenPagoService>();
 builder.Services.AddScoped<EmpresasService>();
 // Reporte 6: selección automática de empresa proveedora y presupuesto de empresas
 builder.Services.AddScoped<PresupuestoService>();
+// USR-03 (Reporte 7): Supervisor y SuperUsuario fusionados en Administrador
+builder.Services.AddTransient<Microsoft.AspNetCore.Authentication.IClaimsTransformation, MantenimientoEquipos.Middlewares.RolesFusionados>();
 builder.Services.AddScoped<SeleccionService>();
+// Flujo de mantenimiento para equipos eléctricos (EQE) y sus recordatorios cada 10 minutos
+builder.Services.AddScoped<ElectricoAvisos>();
+builder.Services.AddScoped<EquiposElectricosService>();
+if (!string.Equals(builder.Configuration["Electrico:RecordatoriosAutomaticos"], "false", StringComparison.OrdinalIgnoreCase))
+    builder.Services.AddHostedService<AvisosElectricosHostedService>();
 
 // Configuración CORS para permitir peticiones desde el frontend
 var allowedOrigins = new[] {
@@ -212,9 +222,8 @@ static async Task SeedDataAsync(MantenimientoDbContext db)
     {
         var roles = new[]
         {
-            new Rol { Nombre = "SuperUsuario", Descripcion = "Acceso total al sistema" },
-            new Rol { Nombre = "Administrador", Descripcion = "Administrador del sistema" },
-            new Rol { Nombre = "Supervisor", Descripcion = "Supervisor de área" },
+            // USR-03 (Reporte 7): sin SuperUsuario ni Supervisor (el Gerente de Mantenimiento es el Administrador)
+            new Rol { Nombre = "Administrador", Descripcion = "Administrador del sistema y Gerente de Mantenimiento" },
             new Rol { Nombre = "Tecnico", Descripcion = "Técnico de mantenimiento" },
             new Rol { Nombre = "Operador", Descripcion = "Operador de vehículos" },
             new Rol { Nombre = "Lider", Descripcion = "Líder de producción - Reporte rápido de fallas" }
@@ -226,7 +235,7 @@ static async Task SeedDataAsync(MantenimientoDbContext db)
     // Crear usuarios si no existen
     if (!db.Users.Any())
     {
-        var adminRole = db.Roles.First(r => r.Nombre == "SuperUsuario");
+        var adminRole = db.Roles.First(r => r.Nombre == "Administrador");
         var operadorRole = db.Roles.First(r => r.Nombre == "Operador");
         var tecnicoRole = db.Roles.First(r => r.Nombre == "Tecnico");
 

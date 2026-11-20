@@ -442,19 +442,10 @@ public class OrdenTrabajoService
 
         await _db.SaveChangesAsync();
 
-        // Notificar si es preventivo
-        if (orden.TipoMantenimiento == "Preventivo")
-        {
-            await _notificacionService.CrearNotificacionRolesAsync(
-                TipoNotificacionEnum.OrdenActualizada,
-                "Mantenimiento Preventivo Programado",
-                $"Se ha generado la orden de mantenimiento preventivo {orden.Folio} para el vehículo {vehiculo?.Codigo ?? ""}",
-                new[] { "Administrador", "Supervisor", "Lider" },
-                orden.Id,
-                "OrdenTrabajo",
-                $"/ordenes/{orden.Id}"
-            );
-        }
+        // GEN-08 (Reporte 7): aquí se enviaba "Mantenimiento Preventivo Programado" a Administrador, Supervisor y Líder
+        // cada vez que nacía una orden de tipo Preventivo. Venía de la programación preventiva anterior, pero con el flujo
+        // actual la orden nace al validar un reporte marcado como "Preventivo" (el vehículo puede seguir operando), así que
+        // el aviso no correspondía a ninguna acción. Se quitó: esos avisos ya los manda FlujoAvisos (reporte validado, etc.).
 
         return orden;
     }
@@ -492,6 +483,8 @@ public class OrdenTrabajoService
             .Include(o => o.Vehiculo)
             .FirstOrDefaultAsync(o => o.Id == ordenId);
         if (orden == null) return false;
+        if (orden.Flujo == EquiposElectricosService.Electrico)
+            throw new InvalidOperationException("Esta orden es de un equipo eléctrico: la reparación inicia con la inspección previa.");
         if (orden.FechaAceptacion == null)
             throw new InvalidOperationException("El técnico debe aceptar la orden antes de iniciar la reparación.");
         if (orden.Estado != EstadoOrdenTrabajoEnum.Asignada && orden.Estado != EstadoOrdenTrabajoEnum.EsperandoRefacciones)
@@ -520,6 +513,8 @@ public class OrdenTrabajoService
             .Include(o => o.Vehiculo)
             .FirstOrDefaultAsync(o => o.Id == ordenId);
         if (orden == null) return false;
+        if (orden.Flujo == EquiposElectricosService.Electrico)
+            throw new InvalidOperationException("Esta orden es de un equipo eléctrico: se termina al aprobar las pruebas operativas (o el checklist del preventivo).");
         if (orden.FechaAceptacion == null
             || (orden.Estado != EstadoOrdenTrabajoEnum.EnProceso && orden.Estado != EstadoOrdenTrabajoEnum.EsperandoRefacciones))
             throw new InvalidOperationException("Solo se puede terminar una orden en reparación: primero inicia la reparación.");

@@ -89,7 +89,13 @@ public class HistorialVehiculoService
         var componentesPorReporte = (await _db.ReportImageFaults.AsNoTracking()
                 .Where(x => reporteIds.Contains(x.ReporteFallaId))
                 .OrderBy(x => x.Id)
-                .Select(x => new { x.ReporteFallaId, x.ImageFault.Name })
+                // FLT-17 (Reporte 7): el punto de la foto se nombra con el título de su actividad (FV-03), no con dos textos distintos
+                .Select(x => new
+                {
+                    x.ReporteFallaId,
+                    Name = _db.ChecklistItems.Where(c => c.Id == x.ImageFault.ChecklistItemId && c.Titulo != null && c.Titulo != "")
+                        .Select(c => c.Titulo).FirstOrDefault() ?? x.ImageFault.Name
+                })
                 .ToListAsync())
             .GroupBy(x => x.ReporteFallaId)
             .ToDictionary(g => g.Key, g => Distintos(g.Select(x => x.Name)));
@@ -97,7 +103,7 @@ public class HistorialVehiculoService
         var trabajosPorReporte = (await _db.ReportesFallaChecklistItems.AsNoTracking()
                 .Where(x => reporteIds.Contains(x.ReporteFallaId))
                 .OrderBy(x => x.Id)
-                .Select(x => new { x.ReporteFallaId, x.ChecklistItem.Pregunta })
+                .Select(x => new { x.ReporteFallaId, Pregunta = x.ChecklistItem.Titulo != null && x.ChecklistItem.Titulo != "" ? x.ChecklistItem.Titulo : x.ChecklistItem.Pregunta })
                 .ToListAsync())
             .GroupBy(x => x.ReporteFallaId)
             .ToDictionary(g => g.Key, g => Distintos(g.Select(x => x.Pregunta)));
@@ -105,7 +111,7 @@ public class HistorialVehiculoService
         var actividadesPorOrden = (await _db.OrdenesTrabajoChecklistItems.AsNoTracking()
                 .Where(x => ordenIds.Contains(x.OrdenTrabajoId))
                 .OrderBy(x => x.Id)
-                .Select(x => new { x.OrdenTrabajoId, x.ChecklistItem.Pregunta, x.Estado, x.Cantidad, x.ReportadoPorTaller })
+                .Select(x => new { x.OrdenTrabajoId, Pregunta = x.ChecklistItem.Titulo != null && x.ChecklistItem.Titulo != "" ? x.ChecklistItem.Titulo : x.ChecklistItem.Pregunta, x.Estado, x.Cantidad, x.ReportadoPorTaller })
                 .ToListAsync())
             .GroupBy(x => x.OrdenTrabajoId)
             .ToDictionary(g => g.Key, g => g.Select(x => new ActividadIntervencionDto
@@ -119,7 +125,14 @@ public class HistorialVehiculoService
         var renglonesPago = (await _db.RegistroPagoActividades.AsNoTracking()
                 .Where(a => pagoIds.Contains(a.RegistroPagoId))
                 .OrderBy(a => a.Orden).ThenBy(a => a.Id)
-                .Select(a => new { a.RegistroPagoId, a.Descripcion, a.Cantidad, a.Subtotal })
+                .Select(a => new
+                {
+                    a.RegistroPagoId,
+                    // Título de la actividad si sigue existiendo; si no, el texto con el que se cobró
+                    Descripcion = _db.ChecklistItems.Where(c => c.Id == a.ChecklistItemId && c.Titulo != null && c.Titulo != "")
+                        .Select(c => c.Titulo).FirstOrDefault() ?? a.Descripcion,
+                    a.Cantidad, a.Subtotal
+                })
                 .ToListAsync())
             .GroupBy(a => a.RegistroPagoId)
             .ToDictionary(g => g.Key, g => g.ToList());

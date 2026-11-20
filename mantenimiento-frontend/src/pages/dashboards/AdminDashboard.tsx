@@ -26,9 +26,10 @@ import { HistoryTab } from '@/components/dashboard/tabs/HistoryTab';
 import { TechniciansTab } from '@/components/dashboard/tabs/TechniciansTab';
 import { ProductionTab } from '@/components/dashboard/tabs/ProductionTab';
 import { MTETab } from '@/components/dashboard/tabs/MTETab';
+import { SupervisorDashboard } from './SupervisorDashboard';
 import { consumiblesService } from '@/services';
 
-type Tab = 'resumen' | 'produccion' | 'taller' | 'mte' | 'proveedores' | 'reportes' | 'pagos' | 'historial' | 'tecnicos';
+type Tab = 'resumen' | 'gerencia' | 'produccion' | 'taller' | 'mte' | 'proveedores' | 'reportes' | 'pagos' | 'historial' | 'tecnicos';
 
 export function AdminDashboard() {
   const navigate = useNavigate();
@@ -366,6 +367,19 @@ export function AdminDashboard() {
           <Package className="h-4 w-4" />
           MTE (Pagos/Ref)
         </button>
+        {/* USR-03 (Reporte 7): lo que veía el Supervisor (Gerente de Mantenimiento) ahora está en el Administrador */}
+        <button
+          onClick={() => setActiveTab('gerencia')}
+          data-testid="tab-gerencia"
+          className={`flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-medium transition-all ${
+            activeTab === 'gerencia'
+              ? 'bg-white text-continental-black shadow-sm'
+              : 'text-continental-gray-1 hover:text-continental-black hover:bg-white/50'
+          }`}
+        >
+          <Users className="h-4 w-4" />
+          Gerencia de Mantenimiento
+        </button>
         {/* Dashboard financiero por proveedor (PDF 06-nov, DSH-02) */}
         <button
           onClick={() => setActiveTab('proveedores')}
@@ -596,6 +610,7 @@ export function AdminDashboard() {
         )}
 
         {activeTab === 'historial' && <HistoryTab equipos={equipos} isLoading={historyLoading} />}
+        {activeTab === 'gerencia' && <SupervisorDashboard embebido />}
 
         {activeTab === 'tecnicos' && <TechniciansTab />}
       </div>

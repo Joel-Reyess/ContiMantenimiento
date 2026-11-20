@@ -15,6 +15,10 @@ namespace MantenimientoEquipos.DTOs
         public bool Activo { get; set; }
         /// <summary>Pide Marca, Modelo, Año y Número de serie al registrar vehículos de este tipo. Null en un PUT = no cambia.</summary>
         public bool? PideDatosEquipo { get; set; }
+        /// <summary>Contenedor o Electrico (EQE-02). Null en un PUT = no cambia.</summary>
+        public string? FlujoMantenimiento { get; set; }
+        /// <summary>Preventivo por horas de uso (equipos eléctricos)</summary>
+        public int? HorasPreventivo { get; set; }
         public int? ProveedorId { get; set; }
         public string? ProveedorNombre { get; set; }
         public int TotalVehiculos { get; set; }
