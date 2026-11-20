@@ -516,7 +516,9 @@ const checklistReqSeqRef = useRef(0);
       if (autoSelect) setSelectedChecklistItems(items.map((i) => i.id));
       else setSelectedChecklistItems([]);
       setChecklistQuantities({});
-      setError(items.length === 0 ? 'No hay checklist configurado para este tipo de vehículo.' : '');
+      // Equipos eléctricos: el reporte no necesita actividades (basta la falla y el horómetro)
+      const tipoElectrico = tiposVehiculoCatalogo.find((t) => t.id === tipoNum)?.flujoMantenimiento === 'Electrico';
+      setError(items.length === 0 && !tipoElectrico ? 'No hay checklist configurado para este tipo de vehículo.' : '');
     } catch (err) {
       console.error('Error al cargar los items del checklist:', err);
       setChecklistItems([]);
@@ -1293,7 +1295,7 @@ const checklistReqSeqRef = useRef(0);
 
                 <div className="space-y-2" data-testid="componentes-falla">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <label className="block text-sm font-medium text-gray-700">Componentes con falla *</label>
+                    <label className="block text-sm font-medium text-gray-700">{esElectrico ? 'Componentes con falla (opcional)' : 'Componentes con falla *'}</label>
                     <Button
                       type="button"
                       variant="outline"
@@ -1443,7 +1445,9 @@ const checklistReqSeqRef = useRef(0);
                     </div>
                   ) : (
                     <p className="text-sm text-gray-500 italic">
-                      {vehiculoSeleccionado || codigoVehiculo.trim()
+                      {esElectrico
+                        ? 'Opcional: este equipo no tiene componentes en la foto; basta con describir la falla.'
+                        : vehiculoSeleccionado || codigoVehiculo.trim()
                         ? 'No hay componentes ni checklist configurados para este tipo de vehículo.'
                         : 'Selecciona el vehículo para ver sus componentes.'}
                     </p>
