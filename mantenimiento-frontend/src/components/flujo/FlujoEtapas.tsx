@@ -1,4 +1,4 @@
-import { Building2, CheckCircle2, ClipboardList, FileText, ShieldCheck, Truck, Wrench, Search } from 'lucide-react';
+import { Building2, CheckCircle2, ClipboardCheck, ClipboardList, FileSignature, FileText, Gauge, PlayCircle, ShieldCheck, Stethoscope, Truck, Wrench, Search } from 'lucide-react';
 import type { EstadoEtapa, EtapaFlujo } from '@/services/flujoService';
 
 /** Colores del PDF: verde completada, naranja parpadeante pendiente, rojo rechazada, azul sin espacio o capacidad,
@@ -31,6 +31,17 @@ const ICONO: Record<EtapaFlujo['clave'], typeof FileText> = {
   TRASLADO_RETORNO: Truck,
   VALIDACION: ShieldCheck,
   DISPONIBLE: CheckCircle2,
+  // Flujo de equipos eléctricos
+  ACEPTACION: ClipboardCheck,
+  INSPECCION_PREVIA: Stethoscope,
+  REPARACION: Wrench,
+  PRUEBAS: Gauge,
+  TRASLADO_AREA: Truck,
+  ENTREGA: FileSignature,
+  INICIO: PlayCircle,
+  TRASLADO_TALLER: Truck,
+  CHECKLIST: ClipboardList,
+  COMPLETADO: CheckCircle2,
 };
 
 interface FlujoEtapasProps {
@@ -78,6 +89,7 @@ export function FlujoEtapas({ etapas, conDetalle = true, abribles = [], onAbrir 
                 {onAbrir && abribles.includes(e.clave) ? (
                   <button
                     type="button"
+                    data-icon="true"
                     onClick={() => onAbrir(e.clave)}
                     aria-label={`Ver ${e.nombre}`}
                     data-testid={`abrir-etapa-${e.clave}`}

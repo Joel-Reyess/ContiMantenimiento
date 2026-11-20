@@ -94,6 +94,11 @@ public partial class MantenimientoDbContext : DbContext
     public virtual DbSet<TarifaEmpresa> TarifasEmpresa { get; set; }
     // Presupuesto de empresas (Reporte 6, PRS-01 a PRS-03)
     public virtual DbSet<MovimientoPresupuesto> MovimientosPresupuesto { get; set; }
+    // Flujo de equipos eléctricos (EQE)
+    public virtual DbSet<ChecklistPreventivoCategoria> ChecklistPreventivoCategorias { get; set; }
+    public virtual DbSet<ChecklistPreventivoActividad> ChecklistPreventivoActividades { get; set; }
+    public virtual DbSet<PreventivoResultado> PreventivoResultados { get; set; }
+    public virtual DbSet<DocumentoEntrega> DocumentosEntrega { get; set; }
     public virtual DbSet<RegistroPagoActividad> RegistroPagoActividades { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -717,6 +722,28 @@ public partial class MantenimientoDbContext : DbContext
             entity.HasIndex(o => o.EmpresaId);
             entity.HasOne(o => o.Empresa).WithMany().HasForeignKey(o => o.EmpresaId).OnDelete(DeleteBehavior.Restrict);
         });
+
+        // ===== Flujo de equipos eléctricos (EQE) =====
+        modelBuilder.Entity<ChecklistPreventivoCategoria>(entity =>
+        {
+            entity.ToTable("ChecklistPreventivoCategorias");
+            entity.HasIndex(e => new { e.TipoVehiculoId, e.Numero });
+            entity.HasMany(e => e.Actividades).WithOne(a => a.Categoria).HasForeignKey(a => a.CategoriaId).OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<ChecklistPreventivoActividad>(entity => entity.ToTable("ChecklistPreventivoActividades"));
+        modelBuilder.Entity<PreventivoResultado>(entity =>
+        {
+            entity.ToTable("PreventivoResultados");
+            entity.HasIndex(e => e.OrdenTrabajoId);
+        });
+        modelBuilder.Entity<DocumentoEntrega>(entity =>
+        {
+            entity.ToTable("DocumentosEntrega");
+            entity.HasIndex(e => e.OrdenTrabajoId);
+        });
+        modelBuilder.Entity<Vehiculo>().Property(v => v.Horometro).HasColumnType("decimal(10,1)");
+        modelBuilder.Entity<Vehiculo>().Property(v => v.HorometroUltimoPreventivo).HasColumnType("decimal(10,1)");
+        modelBuilder.Entity<OrdenTrabajo>().Property(o => o.Horometro).HasColumnType("decimal(10,1)");
 
         modelBuilder.Entity<MovimientoPresupuesto>(entity =>
         {

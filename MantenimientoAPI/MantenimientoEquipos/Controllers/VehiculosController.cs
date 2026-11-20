@@ -117,6 +117,10 @@ public class VehiculosController : ControllerBase
         if (request.Tipo == null)
             return BadRequest(ApiResponse<string>.Error(
                 $"No hay un prefijo configurado para el código {request.Codigo}. Selecciona el tipo de vehículo manualmente."));
+        // EQE-03: datos obligatorios y sin duplicados en equipos eléctricos
+        var errorElectrico = await _vehiculoService.ValidarEquipoElectricoAsync((int)request.Tipo.Value, request.Marca, request.Modelo,
+            request.NumeroSerie, request.Anio, request.NumeroEconomico, request.AreaId, null);
+        if (errorElectrico != null) return BadRequest(ApiResponse<string>.Error(errorElectrico));
 
         var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
         var vehiculo = await _vehiculoService.CreateAsync(request, userId);
@@ -136,6 +140,17 @@ public class VehiculosController : ControllerBase
     {
         var errorDatos = VehiculoService.ValidarDatosEquipo(request.Marca, request.Modelo, request.NumeroSerie, request.Anio);
         if (errorDatos != null) return BadRequest(ApiResponse<string>.Error(errorDatos));
+        // EQE-03: con los valores como quedarían, si el equipo es (o pasa a ser) eléctrico
+        var actual = await _vehiculoService.GetByIdAsync(id);
+        if (actual != null)
+        {
+            string? Final(string? nuevo, string? antes) => nuevo == null ? antes : nuevo;
+            var errorElectrico = await _vehiculoService.ValidarEquipoElectricoAsync((int)(request.Tipo ?? actual.Tipo),
+                Final(request.Marca, actual.Marca), Final(request.Modelo, actual.Modelo), Final(request.NumeroSerie, actual.NumeroSerie),
+                request.Anio ?? actual.Anio, Final(request.NumeroEconomico, actual.NumeroEconomico),
+                request.AreaId ?? actual.AreaId, id, actual);
+            if (errorElectrico != null) return BadRequest(ApiResponse<string>.Error(errorElectrico));
+        }
         var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
         var result = await _vehiculoService.UpdateAsync(id, request, userId);
 

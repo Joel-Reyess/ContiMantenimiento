@@ -45,6 +45,8 @@ export interface IntervencionHistorial {
   pagoFolio?: string | null;
   estado: string;
   estadoNombre: string;
+  /** Fecha de cada etapa del proceso (línea de tiempo) */
+  lineaTiempo?: { etapa: string; fecha: string; detalle?: string | null }[];
 }
 
 export interface HistorialVehiculo {

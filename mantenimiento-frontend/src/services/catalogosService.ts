@@ -18,6 +18,10 @@ export interface TipoVehiculoItem {
   totalVehiculos?: number;
   /** Pide Marca, Modelo, Año y Número de serie al registrar vehículos de este tipo (Tuggers y Montacargas) */
   pideDatosEquipo?: boolean;
+  /** Contenedor o Electrico (montacargas, tuggers, traspaletas: flujo de equipos eléctricos) */
+  flujoMantenimiento?: string;
+  /** Preventivo por horas de uso (equipos eléctricos) */
+  horasPreventivo?: number;
 }
 
 export interface EstadoItem {

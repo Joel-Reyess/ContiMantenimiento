@@ -17,6 +17,7 @@ import type { ApiResponse } from '@/interfaces';
 import { FlujoEtapas } from './FlujoEtapas';
 import { AlertaCapacidadModal } from './CapacidadZonas';
 import { SeleccionProveedor } from './SeleccionProveedor';
+import { PanelElectrico } from './PanelElectrico';
 import { useActualizacion } from '@/hooks/useActualizacion';
 
 interface PanelFlujoProps {
@@ -33,6 +34,10 @@ interface PanelFlujoProps {
 }
 
 type Ventana = null | 'rechazarReporte' | 'cancelarReporte' | 'corregirReporte' | 'agregarHallazgo' | 'rechazarReparacion' | 'seleccion';
+
+// index.css anula p-*/space-y-* (reglas sin capa) y continental-gray-3/60 no existe: cajas con estilo en línea
+const caja: React.CSSProperties = { padding: 12, border: '1px solid #cdcdcd' };
+const cajaLista: React.CSSProperties = { ...caja, display: 'flex', flexDirection: 'column', gap: 6 };
 
 /** Historial con los nombres del documento (PDF 06-nov): "INSPECCIÓN – Rechazada", "TALLER – Hallazgo adicional"... */
 const ETAPA_HISTORIAL: Record<string, string> = {
@@ -97,6 +102,37 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version, 
 
   if (error) return <p className="text-sm text-red-600">{error}</p>;
   if (!flujo) return <p className="text-sm text-continental-gray-1">Cargando seguimiento...</p>;
+
+  // Flujo de equipos eléctricos: mismas etapas visuales e historial, acciones propias
+  if (flujo.flujo === 'Electrico' && flujo.electrico && flujo.ordenId)
+    return (
+      <div className="flex flex-col" style={{ gap: 16 }} data-testid="panel-flujo">
+        <FlujoEtapas etapas={flujo.etapas} />
+        {flujo.bloqueo && (
+          <div className="flex items-start gap-2 rounded-lg border text-sm" style={{ padding: '12px 16px', borderColor: '#004eaf', backgroundColor: '#eef4fc', color: '#00387d' }}>
+            <Info className="mt-0.5 h-4 w-4 flex-shrink-0" />
+            <span>{flujo.bloqueo}</span>
+          </div>
+        )}
+        <PanelElectrico flujo={flujo} onCambio={async () => { await cargar(); onCambio?.(); }} />
+        {flujo.historial.length > 0 && (
+          <details className="text-sm">
+            <summary className="flex cursor-pointer items-center gap-1 font-medium text-continental-blue-dark"><History className="h-4 w-4" /> Historial ({flujo.historial.length})</summary>
+            <ol className="flex flex-col border-l-2 border-continental-gray-3" style={{ gap: 6, marginTop: 8, paddingLeft: 12 }} data-testid="historial-flujo">
+              {[...flujo.historial].reverse().map((h, i) => (
+                <li key={i}>
+                  <p className="font-medium text-continental-black" style={{ marginBottom: 0 }}>
+                    {h.etapa.replace('_', ' ')} – {h.accion}
+                    <span className="font-normal text-continental-gray-1"> · {h.usuario}{h.rol ? ` (${h.rol})` : ''}, {formatDateTime(h.fecha)}</span>
+                  </p>
+                  {h.detalle && <p className="text-continental-gray-1" style={{ marginBottom: 0 }}>{h.detalle}</p>}
+                </li>
+              ))}
+            </ol>
+          </details>
+        )}
+      </div>
+    );
 
   const puede = (a: Flujo['acciones'][number]) => flujo.acciones.includes(a);
   const idOrden = flujo.ordenId;
@@ -215,7 +251,7 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version, 
   const rechazado = flujo.etapas.find((e) => e.clave === 'INSPECCION')?.estado === 'rechazada';
 
   const listaMarcable = (
-    <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-continental-gray-3/60 p-3" data-testid="motivos-rechazo">
+    <div className="max-h-64 overflow-y-auto rounded-lg" style={cajaLista} data-testid="motivos-rechazo">
       {flujo.items.map((i) => {
         const clave = `${i.tipo}:${i.id}`;
         return (
@@ -245,7 +281,7 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version, 
     ) : plantilla.every((p) => excluir?.has(p.id)) ? (
       <p className="text-sm text-continental-gray-1">Todos los trabajos del checklist de este vehículo ya están en la orden.</p>
     ) : (
-      <div className="max-h-72 space-y-1 overflow-y-auto rounded-lg border border-continental-gray-3/60 p-3" data-testid="selector-trabajos">
+      <div className="max-h-72 overflow-y-auto rounded-lg" style={cajaLista} data-testid="selector-trabajos">
         {plantilla.filter((p) => !excluir?.has(p.id)).map((p) => (
           <div key={p.id} className="flex items-center gap-2 text-sm">
             <label className="flex flex-1 cursor-pointer items-center gap-2">
@@ -311,7 +347,7 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version, 
 
       {flujo.items.length > 0 && (
         <div className="grid gap-3 md:grid-cols-2" data-testid="items-flujo">
-          <div className="rounded-lg border border-continental-gray-3/60 p-3">
+          <div className="rounded-lg" style={caja}>
             <p className="mb-2 text-sm font-semibold text-continental-black">Reportado por {flujo.reportadoPorNombre || 'el usuario'}</p>
             <ul className="space-y-1 text-sm">
               {delUsuario.map((i) => (
@@ -320,7 +356,7 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version, 
               {delUsuario.length === 0 && <li className="text-continental-gray-2">Sin trabajos</li>}
             </ul>
           </div>
-          <div className="rounded-lg border border-continental-gray-3/60 p-3" data-testid="reportado-por-taller">
+          <div className="rounded-lg" style={caja} data-testid="reportado-por-taller">
             <p className="mb-2 text-sm font-semibold text-continental-black">Reportado por Taller</p>
             <ul className="space-y-1 text-sm">
               {delTaller.map((i) => (
@@ -376,7 +412,7 @@ export function PanelFlujo({ ordenId, reporteId, onTerminar, onCambio, version, 
           )}
           {puede('verSeleccion') && (
             <Button variant="outline" onClick={() => abrir('seleccion')} disabled={procesando} className="flex items-center gap-2" data-testid="ver-seleccion">
-              <Building2 className="h-4 w-4" /> {puede('reasignarProveedor') ? 'Empresa proveedora / reasignar' : 'Empresa proveedora'}
+              <Building2 className="h-4 w-4" /> Empresa proveedora
             </Button>
           )}
           {puede('aceptarOrden') && (

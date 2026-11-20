@@ -23,6 +23,9 @@ public class Empresa
     /// <summary>Inactiva: ya no se puede asignar a técnicos nuevos; se conserva para el historial de pagos</summary>
     public bool Activo { get; set; } = true;
 
+    /// <summary>Proveedor único de los equipos eléctricos (EQE-04): todas sus órdenes se asocian a esta empresa</summary>
+    public bool ProveedorElectrico { get; set; }
+
     // Datos de contacto (opcionales)
     [MaxLength(100)]
     public string? Contacto { get; set; }

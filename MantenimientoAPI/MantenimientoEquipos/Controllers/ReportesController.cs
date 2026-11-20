@@ -23,9 +23,12 @@ public class ReportesController : ControllerBase
 
     private readonly EliminacionService _eliminacion;
     private readonly FlujoAvisos _avisos;
+    private readonly EquiposElectricosService _electricos;
 
-    public ReportesController(ReporteFallaService reporteService, NotificacionService notificacionService, IWebHostEnvironment env, LiderTipoVehiculoAsignacionService asignacionService, EliminacionService eliminacion, FlujoAvisos avisos)
+    public ReportesController(ReporteFallaService reporteService, NotificacionService notificacionService, IWebHostEnvironment env, LiderTipoVehiculoAsignacionService asignacionService, EliminacionService eliminacion, FlujoAvisos avisos,
+        EquiposElectricosService electricos)
     {
+        _electricos = electricos;
         _avisos = avisos;
         _eliminacion = eliminacion;
         _reporteService = reporteService;
@@ -154,13 +157,27 @@ public class ReportesController : ControllerBase
         try
         {
             var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-            var reporte = await _reporteService.CreateWithAutoChecklistAsync(request, userId, force);
+            // Equipos eléctricos (EQE): el Operador no reporta, se pide el horómetro y la orden nace sola (sin inspección)
+            var usuario = User.UsuarioFlujo();
+            var electrico = await _electricos.ValidarReporteAsync(request.CodigoVehiculo, request.Horometro, usuario);
+            var reporte = await _reporteService.CreateWithAutoChecklistAsync(request, userId, force && !electrico, electrico);
+            if (electrico)
+            {
+                var orden = await _electricos.ActivarCorrectivoAsync(reporte.Id, request.Horometro!.Value, usuario);
+                return CreatedAtAction(nameof(GetById), new { id = reporte.Id },
+                    ApiResponse<object>.Ok(new { reporte.Id, reporte.Folio, OrdenId = orden.Id, OrdenFolio = orden.Folio },
+                        $"Reporte {reporte.Folio} creado: se generó la orden {orden.Folio} para el proveedor de equipos eléctricos"));
+            }
 
             // Aviso al Líder del tipo de vehículo para que haga la inspección (flujo de 7 etapas)
             await _avisos.NuevoReporteAsync(reporte.Id, userId);
 
             return CreatedAtAction(nameof(GetById), new { id = reporte.Id },
                 ApiResponse<object>.Ok(new { reporte.Id, reporte.Folio }, "Reporte creado exitosamente con checklist automatico"));
+        }
+        catch (FlujoException ex)
+        {
+            return StatusCode(ex.Status, ex.Codigo == null ? ApiResponse<string>.Error(ex.Message) : ApiResponse<string>.Error(ex.Message, ex.Codigo));
         }
         catch (DuplicateActiveOrderException ex)
         {

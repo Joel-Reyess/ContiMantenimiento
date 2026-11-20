@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { CapacidadZonas } from '@/components/flujo';
 import { Link, useNavigate } from 'react-router-dom';
 import { LoadingCard, Alert, AlertTitle, AlertDescription, Card } from '@/components/ui';
-import { Info, Truck, Wrench, Clock, CheckCircle, AlertTriangle, Activity, Users, LayoutDashboard, FileText, History, Package, Box, Calendar, Building2 } from 'lucide-react';
+import { Info, Truck, Wrench, Clock, CheckCircle, AlertTriangle, Activity, Users, LayoutDashboard, FileText, History, Package, Box, Calendar, Building2, Zap } from 'lucide-react';
 import { dashboardService } from '@/services';
 import { catalogosService } from '@/services/catalogosService';
 import type { DashboardStats, KPIs, DashboardVehiculoResumen } from '@/interfaces';
@@ -19,6 +19,7 @@ import {
   LocationMatrix,
   GastoProveedores,
   IndicadoresProveedores,
+  IndicadoresElectricos,
 } from '@/components/dashboard';
 import { WorkshopTab } from '@/components/dashboard/tabs/WorkshopTab';
 import { ReportsTab } from '@/components/dashboard/tabs/ReportsTab';
@@ -26,9 +27,10 @@ import { HistoryTab } from '@/components/dashboard/tabs/HistoryTab';
 import { TechniciansTab } from '@/components/dashboard/tabs/TechniciansTab';
 import { ProductionTab } from '@/components/dashboard/tabs/ProductionTab';
 import { MTETab } from '@/components/dashboard/tabs/MTETab';
+import { SupervisorDashboard } from './SupervisorDashboard';
 import { consumiblesService } from '@/services';
 
-type Tab = 'resumen' | 'produccion' | 'taller' | 'mte' | 'proveedores' | 'reportes' | 'pagos' | 'historial' | 'tecnicos';
+type Tab = 'resumen' | 'gerencia' | 'electricos' | 'produccion' | 'taller' | 'mte' | 'proveedores' | 'reportes' | 'pagos' | 'historial' | 'tecnicos';
 
 export function AdminDashboard() {
   const navigate = useNavigate();
@@ -366,6 +368,32 @@ export function AdminDashboard() {
           <Package className="h-4 w-4" />
           MTE (Pagos/Ref)
         </button>
+        {/* USR-03 (Reporte 7): lo que veía el Supervisor (Gerente de Mantenimiento) ahora está en el Administrador */}
+        <button
+          onClick={() => setActiveTab('gerencia')}
+          data-testid="tab-gerencia"
+          className={`flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-medium transition-all ${
+            activeTab === 'gerencia'
+              ? 'bg-white text-continental-black shadow-sm'
+              : 'text-continental-gray-1 hover:text-continental-black hover:bg-white/50'
+          }`}
+        >
+          <Users className="h-4 w-4" />
+          Gerencia de Mantenimiento
+        </button>
+        {/* EQE-12: indicadores del flujo de equipos eléctricos */}
+        <button
+          onClick={() => setActiveTab('electricos')}
+          data-testid="tab-electricos"
+          className={`flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-medium transition-all ${
+            activeTab === 'electricos'
+              ? 'bg-white text-continental-black shadow-sm'
+              : 'text-continental-gray-1 hover:text-continental-black hover:bg-white/50'
+          }`}
+        >
+          <Zap className="h-4 w-4" />
+          Equipos eléctricos
+        </button>
         {/* Dashboard financiero por proveedor (PDF 06-nov, DSH-02) */}
         <button
           onClick={() => setActiveTab('proveedores')}
@@ -596,6 +624,8 @@ export function AdminDashboard() {
         )}
 
         {activeTab === 'historial' && <HistoryTab equipos={equipos} isLoading={historyLoading} />}
+        {activeTab === 'gerencia' && <SupervisorDashboard embebido />}
+        {activeTab === 'electricos' && <IndicadoresElectricos />}
 
         {activeTab === 'tecnicos' && <TechniciansTab />}
       </div>

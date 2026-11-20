@@ -622,7 +622,7 @@ export function ReportesPage() {
           <p className="text-continental-gray-1">Seguimiento de incidencias y solicitudes de validacion.</p>
         </div>
         {!reporteId && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Link
               to="/reportar-reparacion"
               className="inline-flex items-center gap-2 rounded-md border border-continental-gray-3 px-4 py-2 text-sm font-medium text-continental-black hover:bg-continental-gray-4"

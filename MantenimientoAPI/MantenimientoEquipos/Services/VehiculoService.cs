@@ -1,3 +1,4 @@
+using MantenimientoEquipos.Utils;
 using Microsoft.EntityFrameworkCore;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.Models.Enums;
@@ -94,7 +95,9 @@ public class VehiculoService
             AreaNombre = v.Area != null ? v.Area.Nombre : null,
             UltimoMantenimiento = v.UltimoMantenimiento,
             TotalReportes = v.Reportes.Count,
-            FotoUrl = fotoPrincipal.GetValueOrDefault(v.Id)
+            FotoUrl = fotoPrincipal.GetValueOrDefault(v.Id),
+            NumeroEconomico = v.NumeroEconomico,
+            EsElectrico = tiposList.Any(t => t.Id == (int)v.Tipo && t.FlujoMantenimiento == EquiposElectricosService.Electrico)
         }).ToList();
 
         return new PaginatedResponse<VehiculoListDto>
@@ -128,6 +131,9 @@ public class VehiculoService
             Modelo = vehiculo.Modelo,
             NumeroSerie = vehiculo.NumeroSerie,
             Anio = vehiculo.Anio,
+            NumeroEconomico = vehiculo.NumeroEconomico,
+            Horometro = vehiculo.Horometro,
+            FlujoMantenimiento = await _db.TiposVehiculo.Where(t => t.Id == (int)vehiculo.Tipo).Select(t => t.FlujoMantenimiento).FirstOrDefaultAsync(),
             Estado = vehiculo.Estado,
             EstadoNombre = vehiculo.Estado.ToString(),
             Ubicacion = vehiculo.Ubicacion,
@@ -228,6 +234,7 @@ public class VehiculoService
             Modelo = Limpio(request.Modelo),
             NumeroSerie = Limpio(request.NumeroSerie),
             Anio = request.Anio > 0 ? request.Anio : null,
+            NumeroEconomico = Limpio(request.NumeroEconomico)?.ToUpperInvariant(),
             Estado = EstadoVehiculoEnum.Operativo,
             AreaId = request.AreaId,
             FechaAdquisicion = request.FechaAdquisicion,
@@ -241,12 +248,66 @@ public class VehiculoService
             CreatedAt = DateTime.UtcNow
         };
 
+        // Equipos eléctricos (EQE-09): primer preventivo = fecha de alta + periodicidad del tipo (el Administrador la ajusta)
+        vehiculo.ProximoMantenimiento ??= await PrimerPreventivoAsync((int)vehiculo.Tipo);
         _db.Vehiculos.Add(vehiculo);
         await _db.SaveChangesAsync();
         return vehiculo;
     }
 
     private static string? Limpio(string? texto) => string.IsNullOrWhiteSpace(texto) ? null : texto.Trim();
+
+    /// <summary>Fecha del primer preventivo de un equipo eléctrico nuevo (hoy + periodicidad del tipo); null si no es eléctrico</summary>
+    public async Task<DateTime?> PrimerPreventivoAsync(int tipoId)
+    {
+        var tipo = await _db.TiposVehiculo.AsNoTracking().Where(t => t.Id == tipoId && t.FlujoMantenimiento == EquiposElectricosService.Electrico)
+            .Select(t => new { t.FrecuenciaMantenimientoDias }).FirstOrDefaultAsync();
+        if (tipo == null) return null;
+        return DateTime.SpecifyKind(Utils.HoraLocal.Ahora.Date.AddDays(tipo.FrecuenciaMantenimientoDias is > 0 ? tipo.FrecuenciaMantenimientoDias.Value : 30), DateTimeKind.Unspecified);
+    }
+
+    /// <summary>
+    /// EQE-03: un equipo eléctrico lleva marca, modelo, número de serie, año, número económico y área (obligatorios);
+    /// número de serie y número económico no se repiten. Recibe los valores finales (lo que quedará guardado).
+    /// Null si todo está bien o si el tipo no es eléctrico.
+    /// </summary>
+    /// <param name="antes">
+    /// Al editar: el equipo como está. Uno que ya era eléctrico y se registró antes del flujo eléctrico (sin sus datos
+    /// completos) no se bloquea: solo no se puede borrar lo que ya tiene. Altas y cambios a un tipo eléctrico exigen todo.
+    /// </param>
+    public async Task<string?> ValidarEquipoElectricoAsync(int tipoId, string? marca, string? modelo, string? serie, int? anio,
+        string? numeroEconomico, int? areaId, int? excluirId, VehiculoDto? antes = null)
+    {
+        var electricos = await _db.TiposVehiculo.Where(t => t.FlujoMantenimiento == EquiposElectricosService.Electrico).Select(t => t.Id).ToListAsync();
+        if (!electricos.Contains(tipoId)) return null;
+        var legado = antes != null && electricos.Contains((int)antes.Tipo) && !DatosElectricosCompletos(antes.Marca, antes.Modelo,
+            antes.NumeroSerie, antes.Anio, antes.NumeroEconomico, antes.AreaId);
+        var faltan = new List<string>();
+        void Revisar(bool falta, bool teniaValor, string nombre) { if (falta && (!legado || teniaValor)) faltan.Add(nombre); }
+        Revisar(Limpio(marca) == null, Limpio(antes?.Marca) != null, "marca");
+        Revisar(Limpio(modelo) == null, Limpio(antes?.Modelo) != null, "modelo");
+        Revisar(Limpio(serie) == null, Limpio(antes?.NumeroSerie) != null, "número de serie");
+        Revisar(anio is null or <= 0, antes?.Anio is > 0, "año");
+        Revisar(Limpio(numeroEconomico) == null, Limpio(antes?.NumeroEconomico) != null, "número económico");
+        Revisar(areaId is null or <= 0, antes?.AreaId is > 0, "área");
+        if (faltan.Count > 0) return $"Para un equipo eléctrico captura: {string.Join(", ", faltan)}.";
+        if (Limpio(numeroEconomico) is { } ecoTexto)
+        {
+            if (ecoTexto.Length > 30) return "El número económico admite máximo 30 caracteres";
+            var eco = ecoTexto.ToUpperInvariant();
+            var dupEco = await _db.Vehiculos.Where(v => v.NumeroEconomico == eco && v.Id != (excluirId ?? 0)).Select(v => v.Codigo).FirstOrDefaultAsync();
+            if (dupEco != null) return $"El número económico {eco} ya lo tiene el equipo {dupEco}.";
+        }
+        if (Limpio(serie) is { } s)
+        {
+            var dupSerie = await _db.Vehiculos.Where(v => v.NumeroSerie == s && v.Id != (excluirId ?? 0)).Select(v => v.Codigo).FirstOrDefaultAsync();
+            if (dupSerie != null) return $"El número de serie {s} ya lo tiene el equipo {dupSerie}.";
+        }
+        return null;
+    }
+
+    public static bool DatosElectricosCompletos(string? marca, string? modelo, string? serie, int? anio, string? numeroEconomico, int? areaId) =>
+        Limpio(marca) != null && Limpio(modelo) != null && Limpio(serie) != null && anio is > 0 && Limpio(numeroEconomico) != null && areaId is > 0;
 
     /// <summary>Marca, Modelo, Número de serie y Año (datos del equipo de Tuggers y Montacargas). Null si todo está bien.</summary>
     public static string? ValidarDatosEquipo(string? marca, string? modelo, string? numeroSerie, int? anio)
@@ -269,6 +330,7 @@ public class VehiculoService
         if (request.Modelo != null) vehiculo.Modelo = Limpio(request.Modelo);
         if (request.NumeroSerie != null) vehiculo.NumeroSerie = Limpio(request.NumeroSerie);
         if (request.Anio.HasValue) vehiculo.Anio = request.Anio.Value > 0 ? request.Anio.Value : null;
+        if (request.NumeroEconomico != null) vehiculo.NumeroEconomico = Limpio(request.NumeroEconomico)?.ToUpperInvariant();
         if (request.Estado.HasValue) vehiculo.Estado = request.Estado.Value;
         // AreaId = 0 quita el área asignada
         if (request.AreaId.HasValue) vehiculo.AreaId = request.AreaId.Value > 0 ? request.AreaId.Value : null;

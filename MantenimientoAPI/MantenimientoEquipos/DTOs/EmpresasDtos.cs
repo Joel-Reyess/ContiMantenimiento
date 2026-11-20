@@ -10,6 +10,8 @@ public class EmpresaDto
     public string Nombre { get; set; } = string.Empty;
     public string Identificador { get; set; } = string.Empty;
     public bool Activo { get; set; }
+    /// <summary>Proveedor único de los equipos eléctricos (EQE-04)</summary>
+    public bool ProveedorElectrico { get; set; }
     public string? Contacto { get; set; }
     public string? Telefono { get; set; }
     public string? Email { get; set; }
@@ -33,6 +35,9 @@ public class EmpresaRequest
     public string Identificador { get; set; } = string.Empty;
 
     public bool Activo { get; set; } = true;
+
+    /// <summary>Proveedor de los equipos eléctricos; solo una empresa lo es (al marcar otra, la anterior deja de serlo). Null = no cambia.</summary>
+    public bool? ProveedorElectrico { get; set; }
 
     [MaxLength(100, ErrorMessage = "El contacto no puede pasar de 100 caracteres.")]
     public string? Contacto { get; set; }

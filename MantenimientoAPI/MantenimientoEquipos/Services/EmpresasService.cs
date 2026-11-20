@@ -38,6 +38,7 @@ public class EmpresasService
                 Nombre = e.Nombre,
                 Identificador = e.Identificador,
                 Activo = e.Activo,
+                ProveedorElectrico = e.ProveedorElectrico,
                 Contacto = e.Contacto,
                 Telefono = e.Telefono,
                 Email = e.Email,
@@ -57,13 +58,19 @@ public class EmpresasService
             Nombre = datos.Nombre,
             Identificador = datos.Identificador,
             Activo = request.Activo,
+            // EQE-04: se registra ya como proveedor eléctrico (y la anterior deja de serlo) en la misma transacción
+            ProveedorElectrico = request.ProveedorElectrico == true,
             Contacto = datos.Contacto,
             Telefono = datos.Telefono,
             Email = datos.Email,
             CreatedAt = DateTime.UtcNow
         };
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        if (empresa.ProveedorElectrico)
+            await _db.Empresas.Where(e => e.ProveedorElectrico).ExecuteUpdateAsync(s => s.SetProperty(e => e.ProveedorElectrico, false));
         _db.Empresas.Add(empresa);
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();
         return empresa;
     }
 
@@ -82,6 +89,9 @@ public class EmpresasService
         empresa.Email = datos.Email;
         empresa.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
+        if (request.ProveedorElectrico == true) await MarcarProveedorElectricoAsync(empresa.Id);
+        else if (request.ProveedorElectrico == false && empresa.ProveedorElectrico)
+            await _db.Empresas.Where(e => e.Id == id).ExecuteUpdateAsync(s => s.SetProperty(e => e.ProveedorElectrico, false));
 
         // EmpresaExterna (texto libre de antes) se mantiene como copia del nombre para lo que todavía lo lee
         if (renombrada)
@@ -121,6 +131,13 @@ public class EmpresasService
         await _db.SaveChangesAsync();
         await tx.CommitAsync();
         return empresa.Nombre;
+    }
+
+    /// <summary>EQE-04: un solo proveedor de equipos eléctricos</summary>
+    private async Task MarcarProveedorElectricoAsync(int id)
+    {
+        await _db.Empresas.Where(e => e.Id != id && e.ProveedorElectrico).ExecuteUpdateAsync(s => s.SetProperty(e => e.ProveedorElectrico, false));
+        await _db.Empresas.Where(e => e.Id == id).ExecuteUpdateAsync(s => s.SetProperty(e => e.ProveedorElectrico, true));
     }
 
     private record DatosEmpresa(string Nombre, string Identificador, string? Contacto, string? Telefono, string? Email);

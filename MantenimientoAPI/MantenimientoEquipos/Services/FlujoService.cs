@@ -102,10 +102,12 @@ public class FlujoService
     private readonly OrdenPagoService _pagos;
     private readonly SeleccionService _seleccion;
     private readonly PresupuestoService _presupuesto;
+    private readonly EquiposElectricosService _electricos;
 
     public FlujoService(MantenimientoDbContext db, OrdenTrabajoService ordenes, FlujoAvisos avisos, EliminacionService eliminacion,
-        OrdenPagoService pagos, SeleccionService seleccion, PresupuestoService presupuesto)
+        OrdenPagoService pagos, SeleccionService seleccion, PresupuestoService presupuesto, EquiposElectricosService electricos)
     {
+        _electricos = electricos;
         _db = db;
         _ordenes = ordenes;
         _avisos = avisos;
@@ -138,19 +140,29 @@ public class FlujoService
     // ===================== Zonas y filas de espera =====================
 
     /// <summary>Validadas, esperando que el Operador/Líder las lleve a la zona de dañados (fila de espera)</summary>
-    private IQueryable<OrdenTrabajo> FilaIngreso() => _db.OrdenesTrabajo
+    private IQueryable<OrdenTrabajo> FilaIngreso() => DeContenedores()
         .Where(o => o.FechaTrasladoIngreso == null && o.FechaAceptacion == null && AntesDeTaller.Contains(o.Estado));
 
+    /// <summary>Las órdenes de equipos eléctricos no pasan por la Zona de Transición (flujo propio)</summary>
+    private IQueryable<OrdenTrabajo> DeContenedores() => _db.OrdenesTrabajo
+        .Where(o => o.Flujo == null || o.Flujo != EquiposElectricosService.Electrico);
+
+    private static void ExigirContenedor(OrdenTrabajo o)
+    {
+        if (EquiposElectricosService.EsElectrico(o))
+            throw new FlujoException("Esta orden es de un equipo eléctrico: sigue su propio flujo (sin Zona de Transición).", 409, "FlujoElectrico");
+    }
+
     /// <summary>Físicamente en la zona de dañados: entregadas y aún no aceptadas por el taller</summary>
-    private IQueryable<OrdenTrabajo> EnZonaDanados() => _db.OrdenesTrabajo
+    private IQueryable<OrdenTrabajo> EnZonaDanados() => DeContenedores()
         .Where(o => o.FechaTrasladoIngreso != null && o.FechaAceptacion == null && AntesDeTaller.Contains(o.Estado));
 
     /// <summary>Reparadas, esperando que el técnico las entregue en la zona de reparados (fila de espera)</summary>
-    private IQueryable<OrdenTrabajo> FilaRetorno() => _db.OrdenesTrabajo
+    private IQueryable<OrdenTrabajo> FilaRetorno() => DeContenedores()
         .Where(o => o.Estado == EstadoOrdenTrabajoEnum.Completada && o.FechaTrasladoRetorno == null);
 
     /// <summary>Físicamente en la zona de reparados: entregadas y pendientes de validación</summary>
-    private IQueryable<OrdenTrabajo> EnZonaReparados() => _db.OrdenesTrabajo
+    private IQueryable<OrdenTrabajo> EnZonaReparados() => DeContenedores()
         .Where(o => o.Estado == EstadoOrdenTrabajoEnum.Completada && o.FechaTrasladoRetorno != null);
 
     private Task<List<int>> IdsFilaIngresoAsync() =>
@@ -243,6 +255,7 @@ public class FlujoService
         var o = await CargarOrden().FirstOrDefaultAsync(x => x.Id == ordenId)
                 ?? throw new FlujoException("Orden de trabajo no encontrada", 404);
         var r = o.ReporteFallaId.HasValue ? await CargarReporte().FirstOrDefaultAsync(x => x.Id == o.ReporteFallaId) : null;
+        if (EquiposElectricosService.EsElectrico(o)) return await _electricos.ConstruirFlujoAsync(o, r, u);
         return await ConstruirAsync(r, o, u);
     }
 
@@ -251,6 +264,7 @@ public class FlujoService
         var r = await CargarReporte().FirstOrDefaultAsync(x => x.Id == reporteId)
                 ?? throw new FlujoException("Reporte no encontrado", 404);
         var o = await CargarOrden().FirstOrDefaultAsync(x => x.ReporteFallaId == reporteId);
+        if (o != null && EquiposElectricosService.EsElectrico(o)) return await _electricos.ConstruirFlujoAsync(o, r, u);
         return await ConstruirAsync(r, o, u);
     }
 
@@ -924,6 +938,7 @@ public class FlujoService
         await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
         var o = await _db.OrdenesTrabajo.Include(x => x.Vehiculo).FirstOrDefaultAsync(x => x.Id == ordenId)
                 ?? throw new FlujoException("Orden de trabajo no encontrada", 404);
+        ExigirContenedor(o);
         if (o.Estado == EstadoOrdenTrabajoEnum.Cancelada) throw new FlujoException("La orden está cancelada.");
         if (o.FechaTrasladoIngreso != null) throw new FlujoException("La entrega de esta unidad en la Zona de Transición ya fue confirmada.");
         if (o.FechaAceptacion != null || !AntesDeTaller.Contains(o.Estado)) throw new FlujoException("Esta orden ya no está en espera de traslado.");
@@ -972,6 +987,7 @@ public class FlujoService
         var o = await _db.OrdenesTrabajo.Include(x => x.Vehiculo).Include(x => x.TecnicoAsignado)
                     .FirstOrDefaultAsync(x => x.Id == ordenId)
                 ?? throw new FlujoException("Orden de trabajo no encontrada", 404);
+        ExigirContenedor(o);
         if (o.Estado == EstadoOrdenTrabajoEnum.Cancelada) throw new FlujoException("La orden está cancelada.");
         if (o.FechaTrasladoIngreso == null) throw new FlujoException("La unidad aún no se entrega en la Zona de Transición.");
         if (o.FechaAceptacion != null || !AntesDeTaller.Contains(o.Estado)) throw new FlujoException("La orden ya fue aceptada.");
@@ -1070,6 +1086,7 @@ public class FlujoService
         await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
         var o = await _db.OrdenesTrabajo.Include(x => x.Vehiculo).FirstOrDefaultAsync(x => x.Id == ordenId)
                 ?? throw new FlujoException("Orden de trabajo no encontrada", 404);
+        ExigirContenedor(o);
         ExigirQueTrabaja(o, u);
         if (o.Estado != EstadoOrdenTrabajoEnum.Completada) throw new FlujoException("Primero termina la reparación.");
         if (o.FechaTrasladoRetorno != null) throw new FlujoException("La entrega de esta unidad en la Zona de Transición ya fue confirmada.");
@@ -1112,6 +1129,7 @@ public class FlujoService
                     .Include(x => x.ItemsChecklist).ThenInclude(i => i.ChecklistItem)
                     .FirstOrDefaultAsync(x => x.Id == ordenId)
                 ?? throw new FlujoException("Orden de trabajo no encontrada", 404);
+        ExigirContenedor(o);
         if (Liberada.Contains(o.Estado)) throw new FlujoException("La reparación ya fue validada.");
         if (o.Estado != EstadoOrdenTrabajoEnum.Completada) throw new FlujoException("La reparación aún no se termina.");
         if (o.FechaTrasladoRetorno == null)

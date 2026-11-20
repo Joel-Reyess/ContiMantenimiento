@@ -23,6 +23,7 @@ import type {
 } from '@/interfaces';
 import { getFullImageUrl } from '@/lib/utils';
 import { actividadDeComponente } from '@/lib/componentesActividades';
+import { useAuth } from '@/contexts/AuthContext';
 import { InteractiveVehicleImage } from '@/components/vehiculos/InteractiveVehicleImage';
 
 interface ChecklistItem {
@@ -49,12 +50,20 @@ type VehiculoOption = SearchableSelectOption<{
 interface ReportFailureModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  /** Recibe el id del reporte creado (OT-36: Órdenes lleva al usuario al reporte recién creado) */
+  onSuccess?: (reporteId?: number) => void;
   initialVehiculoId?: number | null;
   initialVehiculoCodigo?: string | null;
   initialTipoMantenimiento?: 'Preventivo' | 'Correctivo';
   forceFormStep?: boolean;
 }
+
+
+// RPF-11 (Reporte 7): index.css trae reglas globales sin capa (`label { display: block }` e `input { padding; min-height: 48px }`)
+// que ganan a las clases de Tailwind; por eso el renglón y el campo de cantidad llevan su estilo en línea:
+// casilla › número del punto › título (con la descripción debajo) › cantidad a la derecha
+const filaRenglon: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 0, fontWeight: 400 };
+const campoCantidad: React.CSSProperties = { width: 64, minHeight: 0, height: 32, padding: '2px 6px', borderRadius: 8 };
 
 export function ReportFailureModal({
   isOpen,
@@ -85,11 +94,15 @@ export function ReportFailureModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   // useRef además del estado: dos clics seguidos llegan antes de que React vuelva a pintar el botón deshabilitado
   const submittingRef = useRef(false);
+  const { hasRole } = useAuth();
   const [error, setError] = useState('');
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<'vehiculo' | 'prioridad' | 'tipoMantenimiento' | 'trabajos', string>>>({});
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<'vehiculo' | 'prioridad' | 'tipoMantenimiento' | 'trabajos' | 'horometro' | 'descripcion', string>>>({});
   const [showConfirmDuplicate, setShowConfirmDuplicate] = useState(false);
   const [duplicateInfo, setDuplicateInfo] = useState<{ tipo: 'orden' | 'reporte'; folio: string; fecha?: string } | null>(null);
-  const [tiposVehiculoCatalogo, setTiposVehiculoCatalogo] = useState<Array<{ id: number; nombre: string; imagenUrl?: string; imagenFallasUrl?: string }>>([]);
+  const [tiposVehiculoCatalogo, setTiposVehiculoCatalogo] = useState<Array<{ id: number; nombre: string; imagenUrl?: string; imagenFallasUrl?: string; flujoMantenimiento?: string }>>([]);
+  // Equipos eléctricos (EQE): horómetro y falla escrita; el Operador no reporta (avisa al Líder)
+  const [horometro, setHorometro] = useState('');
+  const [descripcionFalla, setDescripcionFalla] = useState('');
   const [tipoVehiculoIdSeleccionado, setTipoVehiculoIdSeleccionado] = useState<number | null>(null);
   const [tipoVehiculoNombreSeleccionado, setTipoVehiculoNombreSeleccionado] = useState('');
   const [vehicleImageUrl, setVehicleImageUrl] = useState<string | undefined>(undefined);
@@ -100,21 +113,24 @@ export function ReportFailureModal({
   const [loadingImagePoints, setLoadingImagePoints] = useState(false);
   const [showImageSelectorModal, setShowImageSelectorModal] = useState(false);
 
-  // FV-03: cada punto de la foto es una actividad del checklist (se ubica en Fallas visuales). Los puntos sin
-  // actividad (anteriores sin ligar) no se ofrecen: el administrador los liga en Fallas visuales.
+  // FV-03: cada punto de la foto es una actividad del checklist (se ubica en Fallas visuales). Los puntos anteriores
+  // que aún no se ligan a una actividad también se ofrecen (auditoría visual de nov-2026: al ocultarlos "se perdieron"
+  // componentes de la foto); se marcan como "sin actividad ligada" y no generan trabajo con costo.
   const actividadPorPunto: Record<number, ChecklistItem | undefined> = {};
   vehicleImagePoints.forEach((point) => {
     actividadPorPunto[point.id] = actividadDeComponente(point, checklistItems);
   });
   // Numeracion estable de los componentes: se ordena por id (orden de carga) y se enumera 1..N.
   // Ese numero es el que se pinta sobre la foto y en la lista lateral (estilo cajitas de la presentacion).
-  const orderedImagePoints = vehicleImagePoints.filter((point) => actividadPorPunto[point.id]).sort((a, b) => a.id - b.id);
+  const orderedImagePoints = [...vehicleImagePoints].sort((a, b) => a.id - b.id);
   const imagePointNumbers: Record<number, number> = {};
   orderedImagePoints.forEach((point, index) => {
     imagePointNumbers[point.id] = index + 1;
   });
   const actividadesConComponente = new Set(Object.values(actividadPorPunto).filter(Boolean).map((a) => a!.id));
   const otrasActividades = checklistItems.filter((i) => !actividadesConComponente.has(i.id));
+  const esElectrico = tiposVehiculoCatalogo.find((t) => t.id === tipoVehiculoIdSeleccionado)?.flujoMantenimiento === 'Electrico';
+  const soloOperador = hasRole(['Operador']) && !hasRole(['Administrador', 'Lider', 'Tecnico']);
 
   /** Orden activa o reporte pendiente para el vehículo: se pide confirmación antes de crear otro */
   const getDuplicate = (res: any): { tipo: 'orden' | 'reporte'; folio: string; fecha?: string } | null => {
@@ -180,6 +196,7 @@ const checklistReqSeqRef = useRef(0);
             nombre: t.nombre,
             imagenUrl: t.imagenUrl,
             imagenFallasUrl: t.imagenFallasUrl,
+            flujoMantenimiento: (t as { flujoMantenimiento?: string }).flujoMantenimiento,
           }))
         );
       } else {
@@ -412,6 +429,8 @@ const checklistReqSeqRef = useRef(0);
     setCodigoVehiculo('');
     setPrioridad('');
     setTipoMantenimiento('');
+    setHorometro('');
+    setDescripcionFalla('');
     setFotos([]);
     setChecklistItems([]);
     setSelectedChecklistItems([]);
@@ -497,7 +516,9 @@ const checklistReqSeqRef = useRef(0);
       if (autoSelect) setSelectedChecklistItems(items.map((i) => i.id));
       else setSelectedChecklistItems([]);
       setChecklistQuantities({});
-      setError(items.length === 0 ? 'No hay checklist configurado para este tipo de vehículo.' : '');
+      // Equipos eléctricos: el reporte no necesita actividades (basta la falla y el horómetro)
+      const tipoElectrico = tiposVehiculoCatalogo.find((t) => t.id === tipoNum)?.flujoMantenimiento === 'Electrico';
+      setError(items.length === 0 && !tipoElectrico ? 'No hay checklist configurado para este tipo de vehículo.' : '');
     } catch (err) {
       console.error('Error al cargar los items del checklist:', err);
       setChecklistItems([]);
@@ -637,9 +658,16 @@ const checklistReqSeqRef = useRef(0);
     if (!code) errores.vehiculo = 'Selecciona o escanea el vehículo.';
     else if (!vehiculoSeleccionado) errores.vehiculo = `El vehículo ${code} no está registrado en la plataforma. Regístralo en Flota de Contenedores antes de generar el reporte de falla.`;
     if (!prioridad) errores.prioridad = 'Selecciona el nivel de prioridad.';
-    if (!tipoMantenimiento) errores.tipoMantenimiento = 'Selecciona el tipo de mantenimiento.';
+    if (!tipoMantenimiento && !esElectrico) errores.tipoMantenimiento = 'Selecciona el tipo de mantenimiento.';
+    if (esElectrico) {
+      if (soloOperador) errores.vehiculo = 'En los equipos eléctricos el Operador no crea reportes: avisa al Líder de tu área para que lo reporte.';
+      if (!(Number(horometro) > 0)) errores.horometro = 'Captura el horómetro actual del equipo.';
+      if (!descripcionFalla.trim()) errores.descripcion = 'Describe la falla del equipo.';
+    }
     const otrasElegidas = selectedChecklistItems.filter((id) => otrasActividades.some((a) => a.id === id));
-    if (otrasElegidas.length === 0 && selectedImageFaults.length === 0) {
+    if (esElectrico) {
+      if (selectedImageFaults.some((f) => (cantidadesComponente[f.vehicleImagePointId ?? 0] ?? 1) < 1)) errores.trabajos = 'Cada componente seleccionado debe tener una cantidad de 1 o más.';
+    } else if (otrasElegidas.length === 0 && selectedImageFaults.length === 0) {
       errores.trabajos = 'Selecciona al menos un componente con falla.';
     } else if (
       selectedImageFaults.some((f) => (cantidadesComponente[f.vehicleImagePointId ?? 0] ?? 1) < 1) ||
@@ -689,11 +717,15 @@ const checklistReqSeqRef = useRef(0);
 
     const reporteData: ReporteFallaCreateRequest = {
       codigoVehiculo: code,
-      descripcion: descripcionCompuesta || 'Reporte de falla generado desde selector visual/checklist',
+      descripcion: esElectrico
+        ? [descripcionFalla.trim(), descripcionCompuesta].filter(Boolean).join(' | ')
+        : descripcionCompuesta || 'Reporte de falla generado desde selector visual/checklist',
       prioridad: Prioridad[prioridad as keyof typeof Prioridad] || Prioridad.Media,
-      // PDF 06-nov: lo decide el tipo de mantenimiento; la prioridad solo es informativa
-      puedeOperar: tipoMantenimiento !== 'Correctivo',
-      tipoMantenimiento,
+      // PDF 06-nov: lo decide el tipo de mantenimiento; la prioridad solo es informativa.
+      // Equipos eléctricos: el reporte siempre es correctivo (el preventivo lo inicia el técnico) y el equipo sale de operación
+      puedeOperar: esElectrico ? false : tipoMantenimiento !== 'Correctivo',
+      tipoMantenimiento: esElectrico ? 'Correctivo' : tipoMantenimiento,
+      horometro: esElectrico ? Number(horometro) : undefined,
       checklistItemIds: [], // Legacy
       checklistItems: trabajos.map((t) => ({ id: t.id, cantidad: t.cantidad })), // New structure
       imageFaults: selectedImageFaults
@@ -750,7 +782,7 @@ const checklistReqSeqRef = useRef(0);
           showGlobalToast(`Reporte ${folio ?? ''} creado con éxito`);
         }
         window.dispatchEvent(new CustomEvent('notifications:refresh'));
-        onSuccess?.();
+        onSuccess?.(reporteId);
         onClose();
         return;
       }
@@ -830,8 +862,9 @@ const checklistReqSeqRef = useRef(0);
               {area ? ` · ${area}` : ''}
             </>
           )}
-          {fila('Tipo de mantenimiento', `${tipoMantenimiento} · ${reporteData.puedeOperar ? 'El vehículo puede continuar operando' : 'El vehículo no puede operar'}`)}
+          {fila('Tipo de mantenimiento', `${reporteData.tipoMantenimiento} · ${reporteData.puedeOperar ? 'El vehículo puede continuar operando' : 'El vehículo no puede operar'}`)}
           {fila('Prioridad', `${prioridad} (informativa para mantenimiento)`)}
+          {esElectrico && fila('Horómetro', `${horometro} h`)}
           {fila('Descripción de la falla', reporteData.descripcion)}
         </div>
 
@@ -1187,7 +1220,49 @@ const checklistReqSeqRef = useRef(0);
                   {errorCampo('prioridad')}
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-1">
+                {esElectrico && (
+                  <div className="flex flex-col rounded-lg border border-blue-200 bg-blue-50" style={{ padding: 12, gap: 10 }} data-testid="datos-electrico">
+                    <p className="text-sm text-blue-900" style={{ marginBottom: 0 }}>
+                      Equipo eléctrico: el reporte genera la orden de trabajo para el proveedor de equipos eléctricos y el equipo
+                      queda fuera de servicio al ingresar al taller.
+                    </p>
+                    {soloOperador && (
+                      <p className="text-sm font-semibold text-red-700" style={{ marginBottom: 0 }} data-testid="operador-electrico">
+                        En los equipos eléctricos el Operador no crea reportes: avisa al Líder de tu área para que lo reporte.
+                      </p>
+                    )}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="horometro-reporte">Horómetro actual (h) *</label>
+                      <input
+                        id="horometro-reporte"
+                        type="number"
+                        min={0}
+                        step="0.1"
+                        value={horometro}
+                        data-testid="horometro"
+                        onChange={(e) => { setHorometro(e.target.value); setFieldErrors((f) => ({ ...f, horometro: undefined })); }}
+                        className="w-full rounded-lg border border-gray-300"
+                        style={bordeError('horometro')}
+                      />
+                      {errorCampo('horometro')}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="falla-electrico">Falla del equipo *</label>
+                      <textarea
+                        id="falla-electrico"
+                        value={descripcionFalla}
+                        data-testid="falla-electrico"
+                        placeholder="Qué le pasa al equipo"
+                        onChange={(e) => { setDescripcionFalla(e.target.value); setFieldErrors((f) => ({ ...f, descripcion: undefined })); }}
+                        className="w-full rounded-lg border border-gray-300"
+                        style={{ minHeight: 80, ...bordeError('descripcion') }}
+                      />
+                      {errorCampo('descripcion')}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid gap-4 sm:grid-cols-1" style={esElectrico ? { display: 'none' } : undefined}>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Tipo de mantenimiento *
@@ -1220,7 +1295,7 @@ const checklistReqSeqRef = useRef(0);
 
                 <div className="space-y-2" data-testid="componentes-falla">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <label className="block text-sm font-medium text-gray-700">Componentes con falla *</label>
+                    <label className="block text-sm font-medium text-gray-700">{esElectrico ? 'Componentes con falla (opcional)' : 'Componentes con falla *'}</label>
                     <Button
                       type="button"
                       variant="outline"
@@ -1258,7 +1333,7 @@ const checklistReqSeqRef = useRef(0);
                             data-testid={`componente-${point.id}`}
                             className={`flex flex-row items-center justify-between gap-2 p-2 rounded-lg border ${checked ? 'border-yellow-300 bg-yellow-50/60' : 'border-gray-200'}`}
                           >
-                            <label className="flex flex-1 min-w-0 cursor-pointer items-center gap-2">
+                            <label className="flex flex-1 min-w-0 cursor-pointer items-center gap-2" style={filaRenglon}>
                               <input
                                 type="checkbox"
                                 checked={checked}
@@ -1270,11 +1345,19 @@ const checklistReqSeqRef = useRef(0);
                               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-red-600 text-xs font-bold tabular-nums text-white">
                                 {imagePointNumbers[point.id]}
                               </span>
-                              <span className="min-w-0 text-sm text-gray-800">
+                              <span className="min-w-0 text-sm text-gray-800" style={{ fontWeight: 400 }}>
                                 <span className="block font-medium uppercase">{point.imageFaultName || `Componente #${point.imageFaultId}`}</span>
                                 {(() => {
                                   // Descripción de la actividad (FV-03); en puntos anteriores, la del componente
                                   const detalle = point.imageFaultDescription || (actividad && actividad.pregunta !== point.imageFaultName ? actividad.pregunta : '');
+                                  if (!actividad)
+                                    return (
+                                      // Punto aún sin ligar a una actividad: se ofrece igual (antes "se perdían" componentes),
+                                      // sin el aviso que el 06-nov pidieron quitar (FV-03)
+                                      <span className="block text-xs text-gray-500" data-testid="sin-actividad">
+                                        {point.imageFaultDescription || ''}
+                                      </span>
+                                    );
                                   return detalle ? <span className="block text-xs text-gray-500">{detalle}</span> : null;
                                 })()}
                               </span>
@@ -1286,6 +1369,7 @@ const checklistReqSeqRef = useRef(0);
                                 min="1"
                                 disabled={!checked}
                                 aria-label={`Cantidad de ${point.imageFaultName || 'componente'}`}
+                                style={campoCantidad}
                                 className={`w-14 p-1 text-sm border rounded focus:outline-none text-center ${checked ? 'border-gray-300 bg-white' : 'border-gray-200 bg-gray-100 text-gray-400'}`}
                                 value={checked ? cantidadesComponente[point.id] ?? 1 : ''}
                                 onChange={(e) => {
@@ -1319,7 +1403,7 @@ const checklistReqSeqRef = useRef(0);
                                 data-testid={`actividad-${item.id}`}
                                 className={`flex flex-row items-center justify-between gap-2 p-2 rounded-lg border ${isSelected ? 'border-yellow-300 bg-yellow-50/60' : 'border-gray-200'}`}
                               >
-                                <label className="flex flex-1 min-w-0 cursor-pointer items-center gap-2">
+                                <label className="flex flex-1 min-w-0 cursor-pointer items-center gap-2" style={filaRenglon}>
                                   <input
                                     type="checkbox"
                                     checked={isSelected}
@@ -1328,13 +1412,14 @@ const checklistReqSeqRef = useRef(0);
                                     style={{ width: '1rem', height: '1rem' }}
                                     aria-label={item.pregunta}
                                   />
-                                  <span className="text-sm text-gray-700">
+                                  <span className="min-w-0 text-sm text-gray-800" style={{ fontWeight: 400 }}>
                                     {item.titulo ? (
                                       <>
-                                        <strong>{item.titulo}</strong> · {item.pregunta}
+                                        <span className="block font-medium">{item.titulo}</span>
+                                        {item.pregunta !== item.titulo && <span className="block text-xs text-gray-500">{item.pregunta}</span>}
                                       </>
                                     ) : (
-                                      item.pregunta
+                                      <span className="block font-medium">{item.pregunta}</span>
                                     )}
                                   </span>
                                 </label>
@@ -1345,6 +1430,7 @@ const checklistReqSeqRef = useRef(0);
                                     min="1"
                                     disabled={!isSelected}
                                     aria-label={`Cantidad de ${item.pregunta}`}
+                                    style={campoCantidad}
                                     className={`w-14 p-1 text-sm border rounded focus:outline-none text-center ${isSelected ? 'border-gray-300 bg-white' : 'border-gray-200 bg-gray-100 text-gray-400'}`}
                                     value={isSelected ? checklistQuantities[item.id] || '' : ''}
                                     onChange={(e) => {
@@ -1361,7 +1447,9 @@ const checklistReqSeqRef = useRef(0);
                     </div>
                   ) : (
                     <p className="text-sm text-gray-500 italic">
-                      {vehiculoSeleccionado || codigoVehiculo.trim()
+                      {esElectrico
+                        ? 'Opcional: este equipo no tiene componentes en la foto; basta con describir la falla.'
+                        : vehiculoSeleccionado || codigoVehiculo.trim()
                         ? 'No hay componentes ni checklist configurados para este tipo de vehículo.'
                         : 'Selecciona el vehículo para ver sus componentes.'}
                     </p>

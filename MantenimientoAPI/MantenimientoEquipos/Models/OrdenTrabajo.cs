@@ -175,6 +175,39 @@ public class OrdenTrabajo
     /// <summary>Primer intento de aceptar con la empresa a su capacidad máxima (para avisar una sola vez)</summary>
     public DateTime? FechaAceptacionBloqueada { get; set; }
 
+    // ===== Flujo de equipos eléctricos (EQE-01 a EQE-09) =====
+    /// <summary>null o "Contenedor": flujo de 8 etapas; "Electrico": flujo de equipos eléctricos</summary>
+    [MaxLength(20)]
+    public string? Flujo { get; set; }
+    /// <summary>Horómetro capturado al reportar o al iniciar el preventivo</summary>
+    public decimal? Horometro { get; set; }
+    /// <summary>El técnico confirmó que el equipo ya está en el taller</summary>
+    public DateTime? FechaIngresoTaller { get; set; }
+    /// <summary>Correctivo: diagnóstico registrado (inspección previa); después ya no se cancela</summary>
+    public DateTime? FechaInspeccionPrevia { get; set; }
+    /// <summary>Correctivo: pruebas operativas aprobadas</summary>
+    public DateTime? FechaPruebas { get; set; }
+    [MaxLength(1000)]
+    public string? ResultadoPruebas { get; set; }
+    /// <summary>El técnico llevó el equipo a su área</summary>
+    public DateTime? FechaTrasladoArea { get; set; }
+    /// <summary>El Líder aprobó la entrega en el sistema (requisito para subir el documento firmado)</summary>
+    public DateTime? FechaAprobacionEntrega { get; set; }
+    public int? AprobacionEntregaPorId { get; set; }
+    /// <summary>Documento de entrega firmado cargado (cierra la orden; queda bloqueado)</summary>
+    public DateTime? FechaDocumentoEntrega { get; set; }
+    public int? DocumentoEntregaPorId { get; set; }
+    /// <summary>Preventivo: Mensual o 5000 horas</summary>
+    [MaxLength(20)]
+    public string? TipoRevision { get; set; }
+    /// <summary>Preventivo: ¿se encontró código de falla?, cuál y si quedó resuelto</summary>
+    public bool? CodigoFallaEncontrado { get; set; }
+    [MaxLength(60)]
+    public string? CodigoFalla { get; set; }
+    public bool? CodigoFallaResuelto { get; set; }
+    /// <summary>Último aviso de entrega pendiente (sin aprobar cada 2 h; sin documento cada N h)</summary>
+    public DateTime? UltimoAvisoEntrega { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
 

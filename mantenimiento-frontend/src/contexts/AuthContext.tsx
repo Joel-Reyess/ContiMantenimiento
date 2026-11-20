@@ -68,6 +68,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userRoles = [user.rolNombre, ...(user.roles || [])]
         .map(normalize)
         .filter((r) => r.length > 0);
+      // USR-03 (Reporte 7): el Supervisor (Gerente de Mantenimiento) se fusionó con el Administrador y el Superusuario
+      // se eliminó; el Administrador tiene todo lo que tenían los tres (y una sesión anterior con esos roles, también)
+      if (userRoles.some((r) => r === 'administrador' || r === 'superusuario' || r === 'supervisor'))
+        userRoles.push('administrador', 'superusuario', 'supervisor');
 
       return roles.some((r) => {
         const target = normalize(r);

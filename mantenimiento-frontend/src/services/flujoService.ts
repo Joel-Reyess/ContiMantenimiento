@@ -7,7 +7,11 @@ import type { ApiResponse } from '@/interfaces';
 export type EstadoEtapa = 'completada' | 'pendiente' | 'rechazada' | 'bloqueada' | 'sinproveedor' | 'inactiva';
 
 export interface EtapaFlujo {
-  clave: 'REPORTE' | 'INSPECCION' | 'TRASLADO' | 'SELECCION' | 'TALLER' | 'TRASLADO_RETORNO' | 'VALIDACION' | 'DISPONIBLE';
+  clave:
+    | 'REPORTE' | 'INSPECCION' | 'TRASLADO' | 'SELECCION' | 'TALLER' | 'TRASLADO_RETORNO' | 'VALIDACION' | 'DISPONIBLE'
+    // Flujo de equipos eléctricos (correctivo y preventivo)
+    | 'ACEPTACION' | 'INSPECCION_PREVIA' | 'REPARACION' | 'PRUEBAS' | 'TRASLADO_AREA' | 'ENTREGA'
+    | 'INICIO' | 'TRASLADO_TALLER' | 'CHECKLIST' | 'COMPLETADO';
   nombre: string;
   estado: EstadoEtapa;
   etiqueta?: string;
@@ -50,9 +54,50 @@ export type AccionFlujo =
   | 'validarReparacion'
   /** Reporte 6: vista previa de la etapa SELECCIÓN y reasignación (Administrador y Gerente) */
   | 'verSeleccion'
-  | 'reasignarProveedor';
+  | 'reasignarProveedor'
+  // Flujo de equipos eléctricos
+  | 'aceptarElectrico'
+  | 'cancelarElectrico'
+  | 'confirmarIngresoTaller'
+  | 'inspeccionPrevia'
+  | 'registrarPruebas'
+  | 'checklistPreventivo'
+  | 'confirmarTrasladoArea'
+  | 'aprobarEntrega'
+  | 'subirDocumentoEntrega'
+  | 'imprimirFormatoEntrega';
+
+/** Datos propios del flujo de equipos eléctricos en el seguimiento de la orden */
+export interface ElectricoInfo {
+  esPreventivo: boolean;
+  /** Operativo o Fuera de servicio */
+  estadoEquipo: string;
+  /** Pendiente de ingreso, En reparación o En mantenimiento */
+  subestadoEquipo?: string;
+  numeroEconomico?: string;
+  horometro?: number;
+  empresa?: string;
+  tecnico?: string;
+  diagnostico?: string;
+  resultadoPruebas?: string;
+  trabajoRealizado?: string;
+  tipoRevision?: string;
+  codigoFallaEncontrado?: boolean;
+  codigoFalla?: string;
+  codigoFallaResuelto?: boolean;
+  fechaAprobacionEntrega?: string;
+  aproboEntrega?: string;
+  fechaDocumentoEntrega?: string;
+  documentos: { id: number; url: string; nombreArchivo: string; tipoContenido?: string; tamano: number; subidoPor?: string; fecha: string }[];
+  checklist: { numero: number; nombre: string; actividades: { id: number; numero: string; descripcion: string; resultado?: 'Bueno' | 'Malo' | null; observacion?: string }[] }[];
+  activas: number;
+  capacidad: number;
+}
 
 export interface Flujo {
+  /** Contenedor (8 etapas) o Electrico (equipos eléctricos) */
+  flujo?: 'Contenedor' | 'Electrico';
+  electrico?: ElectricoInfo;
   reporteId?: number;
   reporteFolio?: string;
   ordenId?: number;

@@ -66,7 +66,7 @@ public class SeleccionService
     {
         config ??= await _presupuesto.LeerConfigAsync();
         var empresas = await _db.Empresas.AsNoTracking().OrderBy(e => e.Id)
-            .Select(e => new { e.Id, e.Nombre, e.Identificador, e.Activo }).ToListAsync();
+            .Select(e => new { e.Id, e.Nombre, e.Identificador, e.Activo, e.ProveedorElectrico }).ToListAsync();
         var saldos = await _presupuesto.SaldosAsync();
         var activas = await _db.OrdenesTrabajo.AsNoTracking()
             .Where(o => o.EmpresaId != null && o.FechaAceptacion != null && EstadosActivos.Contains(o.Estado))
@@ -92,6 +92,8 @@ public class SeleccionService
             string? motivo = null;
             string disponibilidad = "Disponible";
             if (!e.Activo) { motivo = "Empresa inactiva"; disponibilidad = "Inactiva"; }
+            // El proveedor de equipos eléctricos no entra a la rotación de contenedores (tiene su propio flujo)
+            else if (e.ProveedorElectrico) { motivo = "Proveedor de equipos eléctricos (no recibe contenedores)"; disponibilidad = "Equipos eléctricos"; }
             else if (!s.TienePresupuesto) { motivo = "Sin presupuesto asignado"; disponibilidad = "Sin presupuesto"; }
             else if (s.Saldo <= 0 || s.Saldo < config.SaldoMinimo)
             {
@@ -230,7 +232,7 @@ public class SeleccionService
             {
                 var bloqueadas = await _db.OrdenesTrabajo
                     .Where(o => o.EmpresaId == empresaId && o.FechaAceptacion == null && o.FechaAceptacionBloqueada != null
-                                && o.TecnicoAsignadoId != null && !Cerradas.Contains(o.Estado))
+                                && !Cerradas.Contains(o.Estado))
                     .ToListAsync();
                 foreach (var o in bloqueadas) o.FechaAceptacionBloqueada = null;
                 if (bloqueadas.Count > 0)

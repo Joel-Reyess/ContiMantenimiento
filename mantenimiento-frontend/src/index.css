@@ -185,7 +185,8 @@ select {
   padding: 14px 16px;
   min-height: 48px;
   border-radius: 12px;
-  border: 1px solid var(--input);
+  /* --input es una tripleta HSL ("0 0% 88%"): sin hsl() la declaración era inválida y los campos quedaban sin borde */
+  border: 1px solid hsl(var(--input));
   background-color: #fff;
 }
 
@@ -201,9 +202,12 @@ input.sin-ojo-nativo::-ms-clear {
   display: none;
 }
 
-/* Spacing helpers for formularios */
-label {
+/* Spacing helpers para formularios. Las etiquetas que ya traen su acomodo (flex/grid de Tailwind) lo conservan:
+   antes esta regla sin capa las volvía bloque (casilla arriba y texto abajo, o el campo al lado del título) */
+label:not([class*="flex"]):not([class*="grid"]) {
   display: block;
+}
+label {
   margin-bottom: 0.45rem;
   font-weight: 600;
   color: var(--continental-black);

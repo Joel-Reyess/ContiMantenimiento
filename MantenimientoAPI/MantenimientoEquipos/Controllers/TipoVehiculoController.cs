@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Mvc;
 using MantenimientoEquipos.Utils;
 using MantenimientoEquipos.Services;
@@ -16,9 +17,11 @@ namespace MantenimientoEquipos.Controllers
     {
         private readonly ITipoVehiculoRepository _tipoVehiculoRepository;
         private readonly EliminacionService _eliminacion;
+        private readonly MantenimientoDbContext _db;
 
-        public TipoVehiculoController(ITipoVehiculoRepository tipoVehiculoRepository, EliminacionService eliminacion)
+        public TipoVehiculoController(ITipoVehiculoRepository tipoVehiculoRepository, EliminacionService eliminacion, MantenimientoDbContext db)
         {
+            _db = db;
             _tipoVehiculoRepository = tipoVehiculoRepository;
             _eliminacion = eliminacion;
         }
@@ -41,6 +44,8 @@ namespace MantenimientoEquipos.Controllers
                 FechaProximoMantenimiento = t.FechaProximoMantenimiento,
                 Activo = t.Activo,
                 PideDatosEquipo = t.PideDatosEquipo,
+                FlujoMantenimiento = t.FlujoMantenimiento,
+                HorasPreventivo = t.HorasPreventivo,
                 ProveedorId = t.ProveedorId,
                 ProveedorNombre = t.Proveedor?.NombreCompleto,
                 TotalVehiculos = t.TotalVehiculos
@@ -73,6 +78,8 @@ namespace MantenimientoEquipos.Controllers
                 FechaProximoMantenimiento = tipo.FechaProximoMantenimiento,
                 Activo = tipo.Activo,
                 PideDatosEquipo = tipo.PideDatosEquipo,
+                FlujoMantenimiento = tipo.FlujoMantenimiento,
+                HorasPreventivo = tipo.HorasPreventivo,
                 ProveedorId = tipo.ProveedorId,
                 ProveedorNombre = tipo.Proveedor?.NombreCompleto
             };
@@ -118,6 +125,34 @@ namespace MantenimientoEquipos.Controllers
             tipo.FechaProximoMantenimiento = tipoDto.FechaProximoMantenimiento;
             tipo.Activo = tipoDto.Activo;
             if (tipoDto.PideDatosEquipo.HasValue) tipo.PideDatosEquipo = tipoDto.PideDatosEquipo.Value;
+            // EQE-02: flujo del tipo; no se cambia mientras haya órdenes abiertas de ese tipo
+            var flujo = NormalizarFlujo(tipoDto.FlujoMantenimiento);
+            if (flujo == "") return BadRequest(ApiResponse<object>.Error("El flujo de mantenimiento debe ser Contenedor o Equipo eléctrico."));
+            if (flujo != null && flujo != tipo.FlujoMantenimiento)
+            {
+                var abiertas = await _db.OrdenesTrabajo.CountAsync(o => (int)o.Vehiculo.Tipo == id
+                    && o.Estado != Models.Enums.EstadoOrdenTrabajoEnum.Validada && o.Estado != Models.Enums.EstadoOrdenTrabajoEnum.Entregado
+                    && o.Estado != Models.Enums.EstadoOrdenTrabajoEnum.Cancelada);
+                if (abiertas > 0)
+                    return Conflict(ApiResponse<object>.Error($"No se puede cambiar el flujo: hay {abiertas} orden(es) de trabajo abiertas de este tipo."));
+                tipo.FlujoMantenimiento = flujo;
+                if (flujo == EquiposElectricosService.Electrico)
+                {
+                    tipo.PideDatosEquipo = true;
+                    // Los equipos que ya tiene el tipo reciben su primer preventivo (alta + periodicidad; el Administrador la ajusta)
+                    var dias = tipoDto.FrecuenciaMantenimientoDias is > 0 ? tipoDto.FrecuenciaMantenimientoDias.Value : tipo.FrecuenciaMantenimientoDias is > 0 ? tipo.FrecuenciaMantenimientoDias.Value : 30;
+                    var hoy = Utils.HoraLocal.Ahora.Date;
+                    foreach (var v in await _db.Vehiculos.Where(v => (int)v.Tipo == id && v.ProximoMantenimiento == null).ToListAsync())
+                        v.ProximoMantenimiento = DateTime.SpecifyKind((v.UltimoMantenimiento ?? hoy).Date.AddDays(dias) < hoy ? hoy : (v.UltimoMantenimiento ?? hoy).Date.AddDays(dias), DateTimeKind.Unspecified);
+                    await _db.SaveChangesAsync();
+                }
+            }
+            if (tipoDto.HorasPreventivo.HasValue)
+            {
+                if (tipoDto.HorasPreventivo < 0 || tipoDto.HorasPreventivo > 100000)
+                    return BadRequest(ApiResponse<object>.Error("Las horas del preventivo deben estar entre 0 y 100,000."));
+                tipo.HorasPreventivo = tipoDto.HorasPreventivo == 0 ? null : tipoDto.HorasPreventivo;
+            }
             tipo.ProveedorId = tipoDto.ProveedorId;
             tipo.UpdatedAt = DateTime.UtcNow;
 
@@ -148,7 +183,9 @@ namespace MantenimientoEquipos.Controllers
                 ProgramadosPorSemana = null,
                 FechaProximoMantenimiento = tipoDto.FechaProximoMantenimiento,
                 Activo = true,
-                PideDatosEquipo = tipoDto.PideDatosEquipo ?? false,
+                PideDatosEquipo = tipoDto.PideDatosEquipo ?? NormalizarFlujo(tipoDto.FlujoMantenimiento) == EquiposElectricosService.Electrico,
+                FlujoMantenimiento = NormalizarFlujo(tipoDto.FlujoMantenimiento) is { Length: > 0 } f ? f : EquiposElectricosService.Contenedor,
+                HorasPreventivo = tipoDto.HorasPreventivo is > 0 ? tipoDto.HorasPreventivo : null,
                 ProveedorId = tipoDto.ProveedorId,
                 CreatedAt = DateTime.UtcNow
             };
@@ -274,6 +311,16 @@ namespace MantenimientoEquipos.Controllers
             {
                 return StatusCode(500, ApiResponse<object>.Error($"Error interno: {ex.Message}"));
             }
+        }
+
+        /// <summary>null = no cambia; "" = valor inválido</summary>
+        private static string? NormalizarFlujo(string? flujo)
+        {
+            if (string.IsNullOrWhiteSpace(flujo)) return null;
+            var f = flujo.Trim().ToLowerInvariant();
+            if (f.StartsWith("contenedor")) return EquiposElectricosService.Contenedor;
+            if (f.StartsWith("electr") || f.StartsWith("eléctr") || f.Contains("equipo")) return EquiposElectricosService.Electrico;
+            return "";
         }
 
         private static string? ValidarProgramacionPreventiva(TipoVehiculoDto tipoDto)

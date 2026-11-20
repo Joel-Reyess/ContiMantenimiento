@@ -11,6 +11,7 @@ import {
   ModalFooter,
   Select,
   Spinner,
+  Textarea,
   useConfirm,
   useToast,
   SearchInput
@@ -1708,7 +1709,7 @@ export function OrdenesPage() {
           <p className="text-continental-gray-1">Gestiona y da seguimiento a las ordenes activas.</p>
         </div>
         {!ordenId && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" className="flex items-center gap-2" onClick={applyFilters}>
               <Filter className="h-4 w-4" />
               Filtrar
@@ -1717,9 +1718,10 @@ export function OrdenesPage() {
               <BotonExportar onExportar={(formato) => excelService.exportar('ordenes', formato)} />
             )}
             {canCreate && (
-              <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => setCreateOpen(true)}>
+              /* OT-36 (Reporte 7): el botón genera un reporte de falla (la orden nace al validarlo) */
+              <Button className="bg-continental-gradient text-white flex items-center gap-2" onClick={() => setCreateOpen(true)} data-testid="nuevo-reporte">
                 <Plus className="h-4 w-4" />
-                Nueva orden
+                Nuevo reporte
               </Button>
             )}
           </div>
@@ -1774,7 +1776,7 @@ export function OrdenesPage() {
             <div className="flex justify-center gap-2">
               <Button onClick={() => setCreateOpen(true)} className="bg-continental-gradient text-white flex items-center gap-2">
                 <Plus className="h-4 w-4" />
-                Crear orden
+                Nuevo reporte
               </Button>
               <Button variant="outline" onClick={loadOrdenes}>
                 <RefreshCcw className="h-4 w-4" />
@@ -1802,16 +1804,14 @@ export function OrdenesPage() {
             Se eliminará la orden con su orden de pago. El importe regresará al presupuesto de la empresa proveedora y el movimiento
             (folio, empresa, importe, usuario, fecha y motivo) quedará registrado en Presupuesto de Empresas. El reporte se conserva como atendido.
           </p>
-          <label className="flex flex-col text-sm font-medium text-continental-black" style={{ gap: 4 }}>
-            Motivo de la eliminación
-            <textarea
-              className="rounded-lg border border-continental-gray-3 text-sm font-normal"
-              style={{ padding: '8px 10px', minHeight: 80 }}
-              data-testid="motivo-eliminar"
-              value={motivoEliminar ?? ''}
-              onChange={(e) => { setMotivoEliminar(e.target.value); setErrorEliminar(''); }}
-            />
-          </label>
+          {/* OT-35 (Reporte 7): título arriba y campo debajo, como el resto de los formularios */}
+          <Textarea
+            label="Motivo de la eliminación"
+            data-testid="motivo-eliminar"
+            placeholder="Por qué se elimina la orden"
+            value={motivoEliminar ?? ''}
+            onChange={(e) => { setMotivoEliminar(e.target.value); setErrorEliminar(''); }}
+          />
           {errorEliminar && <p className="text-sm font-medium text-red-600">{errorEliminar}</p>}
         </div>
         <ModalFooter>
@@ -1970,11 +1970,10 @@ export function OrdenesPage() {
       <ReportFailureModal 
         isOpen={createOpen} 
         onClose={() => setCreateOpen(false)} 
-        onSuccess={() => {
-          // Si el reporte se creó con éxito, podría haber creado una orden automáticamente.
-          // Recargamos la lista para ver si aparece.
+        onSuccess={(reporteId) => {
+          // OT-36 (Reporte 7): se lleva al usuario a Reportes de Falla con el reporte recién creado
           setCreateOpen(false);
-          loadOrdenes();
+          navigate(reporteId ? `/reportes/${reporteId}` : '/reportes');
         }} 
       />
 

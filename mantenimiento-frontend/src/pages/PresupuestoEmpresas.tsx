@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Building2, History, Loader2, Plus, RefreshCcw, Save, SlidersHorizontal, Wallet } from 'lucide-react';
-import { Alert, AlertDescription, Badge, Button, Card, Input, LoadingCard, Modal, ModalFooter, useToast } from '@/components/ui';
+import { Alert, AlertDescription, Badge, Button, Card, Input, LoadingCard, Modal, ModalFooter, Textarea, useToast } from '@/components/ui';
 import { useActualizacion } from '@/hooks/useActualizacion';
 import { formatDateTime } from '@/lib/utils';
 import type { EmpresaSeleccion } from '@/services/flujoService';
@@ -296,12 +296,9 @@ export function PresupuestoEmpresasPage() {
             </p>
           )}
           <Input label="Monto ($)" type="number" step="0.01" value={monto} onChange={(e) => { setMonto(e.target.value); setErrorVentana(''); }} data-testid="mov-monto" />
-          <label className="flex flex-col text-sm font-medium text-continental-black" style={{ gap: 4 }}>
-            {ventana?.tipo === 'Ajuste' ? 'Motivo' : 'Motivo (opcional)'}
-            <textarea className="rounded-lg border border-continental-gray-3 text-sm font-normal" style={{ padding: '8px 10px', minHeight: 70 }}
-              value={motivo} onChange={(e) => { setMotivo(e.target.value); setErrorVentana(''); }} data-testid="mov-motivo"
-              placeholder={ventana?.tipo === 'Asignacion' ? 'Ej. Presupuesto de noviembre' : 'Por qué se ajusta'} />
-          </label>
+          <Textarea label={ventana?.tipo === 'Ajuste' ? 'Motivo' : 'Motivo (opcional)'}
+            value={motivo} onChange={(e) => { setMotivo(e.target.value); setErrorVentana(''); }} data-testid="mov-motivo"
+            placeholder={ventana?.tipo === 'Asignacion' ? 'Ej. Presupuesto de noviembre' : 'Por qué se ajusta'} />
           {errorVentana && <p className="text-sm font-medium text-red-600">{errorVentana}</p>}
         </div>
         <ModalFooter>

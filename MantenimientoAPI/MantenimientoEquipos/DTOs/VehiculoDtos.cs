@@ -13,6 +13,11 @@ public class VehiculoDto
     public string? Modelo { get; set; }
     public string? NumeroSerie { get; set; }
     public int? Anio { get; set; }
+    /// <summary>Número económico (equipos eléctricos)</summary>
+    public string? NumeroEconomico { get; set; }
+    /// <summary>Contenedor o Electrico (lo define el tipo)</summary>
+    public string? FlujoMantenimiento { get; set; }
+    public decimal? Horometro { get; set; }
     public EstadoVehiculoEnum Estado { get; set; }
     public string? EstadoNombre { get; set; }
     public UbicacionVehiculoEnum Ubicacion { get; set; }
@@ -57,6 +62,8 @@ public class VehiculoCreateRequest
     public string? NumeroSerie { get; set; }
 
     public int? Anio { get; set; }
+    /// <summary>Número económico: obligatorio y único en equipos eléctricos. En un PUT null = no cambia, "" = lo borra</summary>
+    public string? NumeroEconomico { get; set; }
     public int? AreaId { get; set; }
     public DateTime? FechaAdquisicion { get; set; }
     public decimal? CapacidadCarga { get; set; }
@@ -89,6 +96,8 @@ public class VehiculoUpdateRequest
     public string? NumeroSerie { get; set; }
 
     public int? Anio { get; set; }
+    /// <summary>Número económico: obligatorio y único en equipos eléctricos. En un PUT null = no cambia, "" = lo borra</summary>
+    public string? NumeroEconomico { get; set; }
     public TipoVehiculoEnum? Tipo { get; set; }
     public EstadoVehiculoEnum? Estado { get; set; }
     public UbicacionVehiculoEnum? Ubicacion { get; set; }
@@ -134,6 +143,9 @@ public class VehiculoListDto
     public DateTime? UltimoMantenimiento { get; set; }
     public int TotalReportes { get; set; }
     public string? FotoUrl { get; set; }
+    /// <summary>Equipos eléctricos (EQE): número económico y flujo del tipo</summary>
+    public string? NumeroEconomico { get; set; }
+    public bool EsElectrico { get; set; }
 }
 
 public class CambiarUbicacionRequest

@@ -8,6 +8,8 @@ export interface Empresa {
   /** RFC u otro identificador único */
   identificador: string;
   activo: boolean;
+  /** Proveedor único de los equipos eléctricos (montacargas, tuggers, traspaletas) */
+  proveedorElectrico?: boolean;
   contacto?: string;
   telefono?: string;
   email?: string;
@@ -24,6 +26,8 @@ export interface EmpresaRequest {
   nombre: string;
   identificador: string;
   activo: boolean;
+  /** Solo una empresa lo es: al marcar otra, la anterior deja de serlo. Sin el campo no cambia. */
+  proveedorElectrico?: boolean;
   contacto?: string;
   telefono?: string;
   email?: string;

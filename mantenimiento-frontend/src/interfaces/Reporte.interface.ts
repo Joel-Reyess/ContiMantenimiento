@@ -67,6 +67,8 @@ export interface ReporteFallaCreateRequest {
   checklistItemIds?: number[];
   checklistItems?: { id: number; cantidad?: number }[];
   imageFaults?: ReportImageFaultCreateRequest[];
+  /** Horómetro actual: obligatorio en equipos eléctricos */
+  horometro?: number;
 }
 
 export interface Evidencia {

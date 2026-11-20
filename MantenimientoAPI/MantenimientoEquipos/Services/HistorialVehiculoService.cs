@@ -67,6 +67,9 @@ public class HistorialVehiculoService
                 o.Id, o.Folio, o.ReporteFallaId, o.TipoMantenimiento, o.Descripcion, o.Estado,
                 o.FechaCreacion, o.FechaFinalizacion, o.FechaValidacion,
                 o.TecnicoAsignadoId, o.EmpresaId,
+                // Línea de tiempo (contenedores y equipos eléctricos)
+                o.FechaTrasladoIngreso, o.FechaSeleccion, o.FechaAceptacion, o.FechaInicio, o.FechaTrasladoRetorno,
+                o.FechaIngresoTaller, o.FechaInspeccionPrevia, o.FechaPruebas, o.FechaTrasladoArea, o.FechaAprobacionEntrega, o.FechaDocumentoEntrega,
                 Pago = o.RegistroPago == null ? null : new
                 {
                     o.RegistroPago.Id, o.RegistroPago.Estado, o.RegistroPago.MontoTotal, o.RegistroPago.EmpresaId, o.RegistroPago.TecnicoId
@@ -76,7 +79,7 @@ public class HistorialVehiculoService
 
         var reportes = await _db.ReportesFalla.AsNoTracking()
             .Where(r => r.VehiculoId == vehiculoId)
-            .Select(r => new { r.Id, r.Folio, r.Descripcion, r.TipoMantenimiento, r.FechaReporte, r.EstadoInspeccion })
+            .Select(r => new { r.Id, r.Folio, r.Descripcion, r.TipoMantenimiento, r.FechaReporte, r.EstadoInspeccion, r.FechaInspeccion })
             .ToListAsync();
 
         var reporteIds = reportes.Select(r => r.Id).ToList();
@@ -89,7 +92,13 @@ public class HistorialVehiculoService
         var componentesPorReporte = (await _db.ReportImageFaults.AsNoTracking()
                 .Where(x => reporteIds.Contains(x.ReporteFallaId))
                 .OrderBy(x => x.Id)
-                .Select(x => new { x.ReporteFallaId, x.ImageFault.Name })
+                // FLT-17 (Reporte 7): el punto de la foto se nombra con el título de su actividad (FV-03), no con dos textos distintos
+                .Select(x => new
+                {
+                    x.ReporteFallaId,
+                    Name = _db.ChecklistItems.Where(c => c.Id == x.ImageFault.ChecklistItemId && c.Titulo != null && c.Titulo != "")
+                        .Select(c => c.Titulo).FirstOrDefault() ?? x.ImageFault.Name
+                })
                 .ToListAsync())
             .GroupBy(x => x.ReporteFallaId)
             .ToDictionary(g => g.Key, g => Distintos(g.Select(x => x.Name)));
@@ -97,7 +106,7 @@ public class HistorialVehiculoService
         var trabajosPorReporte = (await _db.ReportesFallaChecklistItems.AsNoTracking()
                 .Where(x => reporteIds.Contains(x.ReporteFallaId))
                 .OrderBy(x => x.Id)
-                .Select(x => new { x.ReporteFallaId, x.ChecklistItem.Pregunta })
+                .Select(x => new { x.ReporteFallaId, Pregunta = x.ChecklistItem.Titulo != null && x.ChecklistItem.Titulo != "" ? x.ChecklistItem.Titulo : x.ChecklistItem.Pregunta })
                 .ToListAsync())
             .GroupBy(x => x.ReporteFallaId)
             .ToDictionary(g => g.Key, g => Distintos(g.Select(x => x.Pregunta)));
@@ -105,7 +114,7 @@ public class HistorialVehiculoService
         var actividadesPorOrden = (await _db.OrdenesTrabajoChecklistItems.AsNoTracking()
                 .Where(x => ordenIds.Contains(x.OrdenTrabajoId))
                 .OrderBy(x => x.Id)
-                .Select(x => new { x.OrdenTrabajoId, x.ChecklistItem.Pregunta, x.Estado, x.Cantidad, x.ReportadoPorTaller })
+                .Select(x => new { x.OrdenTrabajoId, Pregunta = x.ChecklistItem.Titulo != null && x.ChecklistItem.Titulo != "" ? x.ChecklistItem.Titulo : x.ChecklistItem.Pregunta, x.Estado, x.Cantidad, x.ReportadoPorTaller })
                 .ToListAsync())
             .GroupBy(x => x.OrdenTrabajoId)
             .ToDictionary(g => g.Key, g => g.Select(x => new ActividadIntervencionDto
@@ -119,7 +128,14 @@ public class HistorialVehiculoService
         var renglonesPago = (await _db.RegistroPagoActividades.AsNoTracking()
                 .Where(a => pagoIds.Contains(a.RegistroPagoId))
                 .OrderBy(a => a.Orden).ThenBy(a => a.Id)
-                .Select(a => new { a.RegistroPagoId, a.Descripcion, a.Cantidad, a.Subtotal })
+                .Select(a => new
+                {
+                    a.RegistroPagoId,
+                    // Título de la actividad si sigue existiendo; si no, el texto con el que se cobró
+                    Descripcion = _db.ChecklistItems.Where(c => c.Id == a.ChecklistItemId && c.Titulo != null && c.Titulo != "")
+                        .Select(c => c.Titulo).FirstOrDefault() ?? a.Descripcion,
+                    a.Cantidad, a.Subtotal
+                })
                 .ToListAsync())
             .GroupBy(a => a.RegistroPagoId)
             .ToDictionary(g => g.Key, g => g.ToList());
@@ -200,7 +216,21 @@ public class HistorialVehiculoService
                 Importe = pago?.MontoTotal,
                 PagoFolio = pago != null ? OrdenPagoService.Folio(pago.Id) : null,
                 Estado = estado,
-                EstadoNombre = NombresEstado.TryGetValue(estado, out var nombre) ? nombre : estado
+                EstadoNombre = NombresEstado.TryGetValue(estado, out var nombre) ? nombre : estado,
+                LineaTiempo = new (string Etapa, DateTime? Fecha)[]
+                    {
+                        ("Falla reportada", r?.FechaReporte), ("Reporte validado", r?.FechaInspeccion), ("Orden generada", o.FechaCreacion),
+                        ("En Zona de Transición", o.FechaTrasladoIngreso), ("Empresa asignada", o.FechaSeleccion),
+                        ("Aceptada por el taller", o.FechaAceptacion), ("En el taller", o.FechaIngresoTaller),
+                        ("Inspección previa", o.FechaInspeccionPrevia), ("Inicio de reparación", o.FechaInicio),
+                        ("Reparación terminada", o.FechaFinalizacion), ("Pruebas aprobadas", o.FechaPruebas),
+                        ("Entregada en zona de reparados", o.FechaTrasladoRetorno), ("Equipo en su área", o.FechaTrasladoArea),
+                        ("Entrega aprobada por el Líder", o.FechaAprobacionEntrega), ("Documento firmado", o.FechaDocumentoEntrega),
+                        ("Validada / disponible", o.FechaValidacion)
+                    }
+                    .Where(x => x.Fecha.HasValue)
+                    .Select(x => new EtapaTiempoDto { Etapa = x.Etapa, Fecha = x.Fecha!.Value })
+                    .OrderBy(x => x.Fecha).ToList()
             });
         }
 
