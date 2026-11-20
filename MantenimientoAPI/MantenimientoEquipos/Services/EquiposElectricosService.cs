@@ -218,7 +218,8 @@ public class EquiposElectricosService
         await _db.SaveChangesAsync();
         await tx.CommitAsync();
         await _seleccion.AvisarCapacidadAsync(o.EmpresaId.Value, u.Id);
-        await _avisos.OrdenAceptadaAsync(o.Id, u.Nombre, u.Id);
+        var nombreTecnico = await _db.Users.Where(x => x.Id == u.Id).Select(x => x.NombreCompleto).FirstOrDefaultAsync() ?? u.Nombre;
+        await _avisos.OrdenAceptadaAsync(o.Id, nombreTecnico, u.Id);
         return Resultado(o, $"Orden {o.Folio} aceptada. Recoge el equipo y confirma cuando ya esté en el taller.");
     }
 

@@ -5,8 +5,7 @@ import type {
   ReporteFallaCreateRequest,
   CategoriaFalla,
   Evidencia,
-  ApiResponse,
-  ReporteFallaChecklistItem
+  ApiResponse
 } from '@/interfaces';
 import type { PaginatedResponse } from './vehiculosService';
 
@@ -55,17 +54,8 @@ export const reportesService = {
       return reporteRes;
     }
 
-    // Luego obtenemos los ítems del checklist asociados
-    try {
-      const checklistRes = await httpClient.get<ReporteFallaChecklistItem[]>(`/reporte-falla-checklist-items/reporte/${id}`);
-      if (checklistRes.success && checklistRes.data) {
-        reporteRes.data.itemsChecklist = checklistRes.data;
-      }
-    } catch (error) {
-      console.error('Error al cargar ítems del checklist:', error);
-      // Continuar sin los ítems del checklist en lugar de fallar completamente
-    }
-
+    // El reporte ya trae sus trabajos del checklist. Aquí se pedía además una ruta que no existe
+    // (/reporte-falla-checklist-items/...): daba 404 en cada detalle sin cambiar nada (auditoría visual, nov-2026)
     return reporteRes;
   },
 

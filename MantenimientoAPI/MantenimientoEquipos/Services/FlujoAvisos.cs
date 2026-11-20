@@ -317,10 +317,21 @@ public class FlujoAvisos
 
     public Task CapacidadLiberadaAsync(int ordenId, int? actor) => SeguroAsync("capacidad liberada", async () =>
     {
-        var u = await DeOrdenAsync(ordenId); if (u?.TecnicoId == null) return;
+        var u = await DeOrdenAsync(ordenId); if (u == null) return;
         var folio = await FolioAsync(ordenId);
-        await EnviarAsync(new[] { u.TecnicoId.Value }, actor, TipoNotificacionEnum.SistemaGeneral, "Capacidad liberada",
-            $"Se liberó capacidad en tu empresa: ya puedes aceptar la orden {folio} de {Frase(u)}.", u);
+        if (u.TecnicoId.HasValue)
+        {
+            await EnviarAsync(new[] { u.TecnicoId.Value }, actor, TipoNotificacionEnum.SistemaGeneral, "Capacidad liberada",
+                $"Se liberó capacidad en tu empresa: ya puedes aceptar la orden {folio} de {Frase(u)}.", u);
+            return;
+        }
+        // Orden sin técnico (flujo de equipos eléctricos): a todos los técnicos de la empresa
+        var empresaId = await _db.OrdenesTrabajo.Where(o => o.Id == ordenId).Select(o => o.EmpresaId).FirstOrDefaultAsync();
+        if (empresaId == null) return;
+        var tecnicos = await _db.Users.Where(x => x.EmpresaId == empresaId && x.Status == UserStatusEnum.Activo && x.Roles.Any(r => r.Nombre == "Tecnico"))
+            .Select(x => x.Id).ToListAsync();
+        await EnviarAsync(tecnicos, actor, TipoNotificacionEnum.SistemaGeneral, "Capacidad liberada",
+            $"Hay capacidad disponible para aceptar órdenes pendientes: la orden {folio} de {Frase(u)} puede aceptarse.", u);
     });
 
     /// <summary>80 % de la capacidad (p. ej. 8 de 10): aviso al Gerente</summary>

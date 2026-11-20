@@ -232,7 +232,7 @@ public class SeleccionService
             {
                 var bloqueadas = await _db.OrdenesTrabajo
                     .Where(o => o.EmpresaId == empresaId && o.FechaAceptacion == null && o.FechaAceptacionBloqueada != null
-                                && o.TecnicoAsignadoId != null && !Cerradas.Contains(o.Estado))
+                                && !Cerradas.Contains(o.Estado))
                     .ToListAsync();
                 foreach (var o in bloqueadas) o.FechaAceptacionBloqueada = null;
                 if (bloqueadas.Count > 0)

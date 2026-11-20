@@ -1709,7 +1709,7 @@ export function OrdenesPage() {
           <p className="text-continental-gray-1">Gestiona y da seguimiento a las ordenes activas.</p>
         </div>
         {!ordenId && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" className="flex items-center gap-2" onClick={applyFilters}>
               <Filter className="h-4 w-4" />
               Filtrar

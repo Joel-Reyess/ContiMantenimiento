@@ -1,3 +1,4 @@
+using MantenimientoEquipos.Utils;
 using Microsoft.EntityFrameworkCore;
 using MantenimientoEquipos.Models;
 using MantenimientoEquipos.Models.Enums;
@@ -246,6 +247,12 @@ public class VehiculoService
             CreatedBy = userId,
             CreatedAt = DateTime.UtcNow
         };
+
+        // EQE (preventivo programado): primera fecha = alta + periodicidad del tipo; el Administrador puede ajustarla
+        var tipoElectrico = await _db.TiposVehiculo.Where(t => t.Id == (int)vehiculo.Tipo && t.FlujoMantenimiento == EquiposElectricosService.Electrico)
+            .Select(t => new { t.FrecuenciaMantenimientoDias }).FirstOrDefaultAsync();
+        if (tipoElectrico != null)
+            vehiculo.ProximoMantenimiento = DateTime.SpecifyKind(HoraLocal.Ahora.Date.AddDays(tipoElectrico.FrecuenciaMantenimientoDias ?? 30), DateTimeKind.Unspecified);
 
         _db.Vehiculos.Add(vehiculo);
         await _db.SaveChangesAsync();

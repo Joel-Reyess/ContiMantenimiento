@@ -28,6 +28,7 @@ import { FallasImagenPage } from '@/pages/FallasImagen';
 import { ReportarReparacionPage } from '@/pages/ReportarReparacion';
 import { EmpresasProveedorasPage } from '@/pages/EmpresasProveedoras';
 import { PresupuestoEmpresasPage } from '@/pages/PresupuestoEmpresas';
+import { FormatoEntregaPage } from '@/pages/FormatoEntrega';
 
 function App() {
   return (
@@ -38,6 +39,16 @@ function App() {
         <Routes>
           {/* Rutas publicas */}
           <Route path="/login" element={<Login />} />
+
+          {/* Formato de entrega imprimible del flujo de equipos eléctricos (sin menú) */}
+          <Route
+            path="/formato-entrega/:id"
+            element={
+              <ProtectedRoute allowedRoles={['SuperUsuario', 'Administrador', 'Supervisor', 'Lider', 'Tecnico']}>
+                <FormatoEntregaPage />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Rutas protegidas */}
           <Route
