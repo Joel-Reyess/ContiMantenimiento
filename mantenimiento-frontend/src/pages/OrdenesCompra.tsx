@@ -133,8 +133,8 @@ export function OrdenesCompraPage() {
           </Button>
           {esAdmin && (
             <Link to="/pagos">
-              <Button className="flex items-center gap-2 bg-continental-gradient text-white">
-                <FileText className="h-4 w-4" /> Generar desde Control de pagos
+              <Button className="flex items-center gap-2 whitespace-normal text-left bg-continental-gradient text-white" style={{ maxWidth: '100%' }}>
+                <FileText className="h-4 w-4 flex-shrink-0" /> Generar desde Control de pagos
               </Button>
             </Link>
           )}

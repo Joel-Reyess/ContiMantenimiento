@@ -458,13 +458,13 @@ export function ChecklistsPorTipo() {
           <p className="text-continental-gray-1">Crea uno por cada tipo de vehículo con "Nuevo checklist".</p>
         </Card>
       ) : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {plantillas.map((tpl) => {
             const aviso = avisoTarjeta(tpl);
             return (
               <Card key={tpl.id} className={`p-5 border-l-4 flex flex-col gap-3 ${aviso ? 'border-amber-400' : 'border-continental-blue'}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0" style={{ flex: '1 1 6rem' }}>
                     <p className="font-semibold text-continental-black break-words">{tpl.nombre}</p>
                     <Badge variant="secondary">{tpl.items.length} ítem(s)</Badge>
                   </div>

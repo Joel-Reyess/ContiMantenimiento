@@ -4,7 +4,7 @@ import continentalLogo from '@/assets/continental_real.png';
 import { flujoService, type Flujo } from '@/services/flujoService';
 import { formatDateTime } from '@/lib/utils';
 
-const celda: React.CSSProperties = { padding: '6px 10px', border: '1px solid #999', verticalAlign: 'top' };
+const celda: React.CSSProperties = { padding: '6px 10px', border: '1px solid #999', verticalAlign: 'top', overflowWrap: 'anywhere' };
 
 /**
  * Formato de entrega imprimible del flujo de equipos eléctricos (EQE-08): datos del equipo y de la orden, trabajo
@@ -34,7 +34,7 @@ export function FormatoEntregaPage() {
   const total = e?.checklist.reduce((n, c) => n + c.actividades.length, 0) ?? 0;
 
   return (
-    <div style={{ background: '#fff', minHeight: '100vh', padding: 24, color: '#000', fontSize: 13 }} data-testid="formato-entrega-pagina">
+    <div style={{ background: '#fff', minHeight: '100vh', padding: 'min(24px, 4vw)', color: '#000', fontSize: 13 }} data-testid="formato-entrega-pagina">
       <style>{'@media print { .no-imprimir { display: none !important; } @page { size: letter; margin: 14mm; } }'}</style>
       <div className="no-imprimir" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
         <button type="button" onClick={() => window.print()} style={{ padding: '8px 16px', border: '1px solid #333', borderRadius: 8 }}>Imprimir</button>

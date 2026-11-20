@@ -274,7 +274,7 @@ export function GestionAsignacionLideresPage() {
             <h1 className="text-3xl font-semibold text-continental-black">Asignacion de responsables</h1>
             <p className="text-continental-gray-1">Asigna multiples tipos de vehiculo a lideres y supervisores.</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={loadData} className="flex items-center gap-2">
               <RefreshCcw className="h-4 w-4" />
               Actualizar
@@ -287,7 +287,7 @@ export function GestionAsignacionLideresPage() {
         </div>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button
           variant={roleFilter === 'Lider' ? 'default' : 'outline'}
           onClick={() => setRoleFilter('Lider')}

@@ -95,7 +95,7 @@ export function NotificacionesPage() {
             <h1 className="text-3xl font-semibold text-continental-black">Centro de avisos</h1>
             <p className="text-continental-gray-1">Resumen de alertas del sistema.</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => setSoloNoLeidas((prev) => !prev)}>
               {soloNoLeidas ? 'Ver todas' : 'Solo no leidas'}
             </Button>
@@ -132,8 +132,8 @@ export function NotificacionesPage() {
         <div className="space-y-3">
           {notificaciones.map((n) => (
             <Card key={n.id} className="px-8 py-7 border-l-4 border-continental-blue">
-              <div className="flex items-start gap-3 justify-between">
-                <div className="flex gap-3">
+              <div className="flex flex-wrap items-start gap-3 justify-between">
+                <div className="flex min-w-0 gap-3" style={{ flex: '1 1 16rem' }}>
                   <Bell className="h-5 w-5 text-continental-blue mt-0.5" />
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
@@ -144,7 +144,7 @@ export function NotificacionesPage() {
                     <p className="text-xs text-continental-gray-2">{new Date(n.fechaCreacion).toLocaleString()}</p>
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2" style={{ marginLeft: 'auto' }}>
                   {!n.leida && (
                     <Button size="sm" variant="secondary" onClick={() => marcarLeida(n.id)} className="flex items-center gap-1">
                       <CheckCircle className="h-4 w-4" />

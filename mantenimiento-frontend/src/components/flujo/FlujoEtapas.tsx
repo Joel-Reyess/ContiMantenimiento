@@ -120,8 +120,9 @@ export function FlujoEtapas({ etapas, conDetalle = true, abribles = [], onAbrir 
       </div>
       {conDetalle && actual && (
         <div
-          className="rounded-lg border-l-4 bg-continental-bg px-4 py-3 text-sm"
-          style={{ borderLeftColor: COLOR_ETAPA[actual.estado] }}
+          className="rounded-lg border-l-4 bg-continental-bg text-sm"
+          // padding en línea: index.css (`* { padding: 0 }`, sin capa) anula px-4/py-3 y el texto quedaba pegado al borde
+          style={{ borderLeftColor: COLOR_ETAPA[actual.estado], padding: '12px 16px' }}
           data-testid="flujo-etapa-actual"
         >
           <p className="font-semibold text-continental-black">

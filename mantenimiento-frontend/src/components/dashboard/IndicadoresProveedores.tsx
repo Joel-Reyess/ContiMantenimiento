@@ -12,8 +12,12 @@ import {
   type IndicadoresProveedores as Indicadores,
 } from '@/services/presupuestoService';
 
-// Celdas con estilo en línea: index.css anula los padding de Tailwind (`* { padding: 0 }`)
-const celda: React.CSSProperties = { padding: '8px 10px', whiteSpace: 'nowrap' };
+// Celdas con estilo en línea: index.css anula los padding de Tailwind (`* { padding: 0 }`).
+// Los importes no se parten; los encabezados, la empresa y la disponibilidad sí (solo si hace falta), para que la tabla
+// quepa en la tarjeta del tablero sin desplazarla de lado (antes se cortaba "Costo promedio")
+const celda: React.CSSProperties = { padding: '8px 6px', whiteSpace: 'nowrap' };
+const encabezado: React.CSSProperties = { ...celda, whiteSpace: 'normal', verticalAlign: 'bottom' };
+const celdaTexto: React.CSSProperties = { ...celda, whiteSpace: 'normal' };
 
 function Punto({ color }: { color: string }) {
   return <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color, flexShrink: 0 }} />;
@@ -89,17 +93,17 @@ export function IndicadoresProveedores() {
                 <thead>
                   <tr className="text-left text-xs uppercase text-continental-gray-1">
                     {['Empresa', 'Disponibilidad', 'Activas', 'Atendidas', 'Concluidas', 'Pendientes', 'Asignado', 'Utilizado', 'Saldo', 'Costo promedio'].map((h, i) => (
-                      <th key={h} style={{ ...celda, textAlign: i >= 2 ? 'right' : 'left' }}>{h}</th>
+                      <th key={h} style={{ ...encabezado, textAlign: i >= 2 ? 'right' : 'left' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {datos.empresas.map((e) => (
                     <tr key={e.empresaId} className="border-t border-continental-gray-3/60" data-testid={`indicador-${e.empresaId}`}>
-                      <td style={celda} className="font-semibold text-continental-black">
-                        <span className="flex items-center" style={{ gap: 6 }}><Building2 className="h-4 w-4" />{e.empresa}</span>
+                      <td style={{ ...celdaTexto, minWidth: 140 }} className="font-semibold text-continental-black">
+                        <span className="flex items-center" style={{ gap: 6 }}><Building2 className="h-4 w-4 flex-shrink-0" />{e.empresa}</span>
                       </td>
-                      <td style={celda} title={e.motivo}>
+                      <td style={{ ...celdaTexto, minWidth: 110 }} title={e.motivo}>
                         <span className="flex items-center" style={{ gap: 6 }}><Punto color={colorDisponibilidad(e.disponibilidad)} />{e.disponibilidad}</span>
                       </td>
                       <td style={{ ...celda, textAlign: 'right' }} data-testid="activas">

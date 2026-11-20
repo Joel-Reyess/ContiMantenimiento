@@ -185,8 +185,8 @@ export function AprobacionesPage() {
 
   return (
     <div className="dashboard-wrapper space-y-5">
-      <div className="dashboard-card p-6 flex items-center justify-between">
-        <div>
+      <div className="dashboard-card p-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0" style={{ flex: '1 1 16rem' }}>
           <p className="text-xs uppercase tracking-[0.35em] text-continental-gray-1">Aprobaciones</p>
           <h1 className="text-2xl font-bold text-continental-black">Validación y Aprobaciones</h1>
           <p className="text-sm text-continental-gray-1">
@@ -291,11 +291,11 @@ export function AprobacionesPage() {
             <Package className="h-4 w-4 text-continental-yellow" />
             <h2 className="text-lg font-semibold text-continental-black">Refacciones</h2>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
               variant={activeTab === 'pendientes' ? 'default' : 'ghost'}
-              className={`flex items-center justify-center gap-3 pl-4 pr-4 min-w-[220px] ${activeTab === 'pendientes' ? 'border border-continental-yellow/70' : ''}`}
+              className={`flex items-center justify-center gap-3 pl-4 pr-4 whitespace-normal sm:min-w-[220px] ${activeTab === 'pendientes' ? 'border border-continental-yellow/70' : ''}`}
               onClick={() => setActiveTab('pendientes')}
             >
               <div className="flex items-center gap-2">
@@ -312,7 +312,7 @@ export function AprobacionesPage() {
             <Button
               size="sm"
               variant={activeTab === 'entregadas' ? 'default' : 'ghost'}
-              className={`flex items-center justify-center gap-3 pl-4 pr-4 min-w-[220px] ${activeTab === 'entregadas' ? 'border border-continental-yellow/70' : ''}`}
+              className={`flex items-center justify-center gap-3 pl-4 pr-4 whitespace-normal sm:min-w-[220px] ${activeTab === 'entregadas' ? 'border border-continental-yellow/70' : ''}`}
               onClick={() => setActiveTab('entregadas')}
             >
               <div className="flex items-center gap-2">

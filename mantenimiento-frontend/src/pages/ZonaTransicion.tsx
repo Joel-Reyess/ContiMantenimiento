@@ -105,8 +105,14 @@ export function ZonaTransicionPage() {
 
   const boton = (u: UnidadZona, tipo: 'confirmarTraslado' | 'aceptarOrden' | 'confirmarRetorno', texto: string) =>
     u.acciones.includes(tipo) && (
-      <Button size="sm" onClick={() => void accion(u, tipo)} disabled={procesando !== null} className="flex items-center gap-2">
-        {tipo === 'aceptarOrden' ? <ClipboardCheck className="h-4 w-4" /> : <Truck className="h-4 w-4" />}
+      <Button
+        size="sm"
+        onClick={() => void accion(u, tipo)}
+        disabled={procesando !== null}
+        className="flex items-center gap-2 whitespace-normal text-left"
+        style={{ maxWidth: '100%' }}
+      >
+        {tipo === 'aceptarOrden' ? <ClipboardCheck className="h-4 w-4 flex-shrink-0" /> : <Truck className="h-4 w-4 flex-shrink-0" />}
         {procesando === u.ordenId ? 'Procesando...' : texto}
       </Button>
     );
