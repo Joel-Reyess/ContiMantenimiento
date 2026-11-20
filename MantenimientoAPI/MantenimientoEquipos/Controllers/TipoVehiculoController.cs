@@ -136,7 +136,16 @@ namespace MantenimientoEquipos.Controllers
                 if (abiertas > 0)
                     return Conflict(ApiResponse<object>.Error($"No se puede cambiar el flujo: hay {abiertas} orden(es) de trabajo abiertas de este tipo."));
                 tipo.FlujoMantenimiento = flujo;
-                if (flujo == EquiposElectricosService.Electrico) tipo.PideDatosEquipo = true;
+                if (flujo == EquiposElectricosService.Electrico)
+                {
+                    tipo.PideDatosEquipo = true;
+                    // Los equipos que ya tiene el tipo reciben su primer preventivo (alta + periodicidad; el Administrador la ajusta)
+                    var dias = tipoDto.FrecuenciaMantenimientoDias is > 0 ? tipoDto.FrecuenciaMantenimientoDias.Value : tipo.FrecuenciaMantenimientoDias is > 0 ? tipo.FrecuenciaMantenimientoDias.Value : 30;
+                    var hoy = Utils.HoraLocal.Ahora.Date;
+                    foreach (var v in await _db.Vehiculos.Where(v => (int)v.Tipo == id && v.ProximoMantenimiento == null).ToListAsync())
+                        v.ProximoMantenimiento = DateTime.SpecifyKind((v.UltimoMantenimiento ?? hoy).Date.AddDays(dias) < hoy ? hoy : (v.UltimoMantenimiento ?? hoy).Date.AddDays(dias), DateTimeKind.Unspecified);
+                    await _db.SaveChangesAsync();
+                }
             }
             if (tipoDto.HorasPreventivo.HasValue)
             {

@@ -8,6 +8,8 @@ export interface Vehiculo {
   marca?: string;
   modelo?: string;
   numeroSerie?: string;
+  /** Número económico: obligatorio y único en equipos eléctricos */
+  numeroEconomico?: string;
   anio?: number;
   estado: EstadoVehiculo;
   estadoNombre?: string;
@@ -66,6 +68,9 @@ export interface VehiculoList {
   totalReportes: number;
   notas?: string;
   fotoUrl?: string;
+  /** Equipos eléctricos (montacargas, tuggers, traspaletas) */
+  numeroEconomico?: string;
+  esElectrico?: boolean;
 }
 
 export interface VehiculoCreateRequest {
@@ -75,6 +80,8 @@ export interface VehiculoCreateRequest {
   marca?: string;
   modelo?: string;
   numeroSerie?: string;
+  /** Número económico: obligatorio y único en equipos eléctricos */
+  numeroEconomico?: string;
   anio?: number;
   areaId?: number;
   fechaAdquisicion?: string;
@@ -90,6 +97,8 @@ export interface VehiculoUpdateRequest {
   marca?: string;
   modelo?: string;
   numeroSerie?: string;
+  /** Número económico: obligatorio y único en equipos eléctricos */
+  numeroEconomico?: string;
   anio?: number;
   estado?: EstadoVehiculo;
   areaId?: number;

@@ -34,7 +34,7 @@ public class ExcelImportService
 
     // Encabezados de la plantilla. Al leer se ignoran mayúsculas, acentos y el "*" de obligatorio,
     // así que también se puede importar un archivo generado con "Exportar".
-    private static readonly string[] ColumnasVehiculos = { "Código *", "Tipo", "Área", "Marca", "Modelo", "Número de serie", "Año", "Notas" };
+    private static readonly string[] ColumnasVehiculos = { "Código *", "Tipo", "Área", "Marca", "Modelo", "Número de serie", "Año", "Número económico", "Notas" };
     private static readonly string[] ColumnasInventario =
         { "Código *", "Nombre *", "Categoría", "Unidad", "Stock actual", "Stock mínimo", "Stock máximo", "Costo unitario" };
     // Sin columna Activa/Activo: "Desactivar" solo existe para usuarios (requerimiento 14.2 y estandarización de
@@ -90,7 +90,7 @@ public class ExcelImportService
         if (entidad == "vehiculos")
         {
             // Número de serie como texto (ceros a la izquierda, números largos)
-            var ws = HojaPlantilla(wb, ExcelExportService.Hojas["vehiculos"], ColumnasVehiculos, 6);
+            var ws = HojaPlantilla(wb, ExcelExportService.Hojas["vehiculos"], ColumnasVehiculos, 6, 8);
             ListaDesplegable(wb, ws, 2, "Tipos", await NombresTiposActivosAsync());
             ListaDesplegable(wb, ws, 3, "Áreas", await NombresAreasActivasAsync());
 
@@ -106,6 +106,9 @@ public class ExcelImportService
                 "• Las columnas que no reconozca el sistema (por ejemplo \"Prefijo\") se ignoran.",
                 "• Marca, Modelo, Número de serie, Año y Notas son opcionales. Marca, Modelo, Número de serie y Año aplican a Tuggers y Montacargas.",
                 "• Año: número de 4 dígitos (por ejemplo 2021).",
+                "• EQUIPOS ELÉCTRICOS (tipos con flujo \"Equipo eléctrico\": montacargas, tuggers, traspaletas): Marca, Modelo, Número de serie,",
+                "  Año, Número económico y Área son OBLIGATORIOS; el Número de serie y el Número económico no se pueden repetir.",
+                "  El horómetro no se captura aquí: se registra al reportar una falla o al iniciar un preventivo.",
                 "",
                 "Si el Código YA EXISTE, el vehículo se ACTUALIZA con los datos que escribas; las celdas vacías no cambian nada.",
                 "Si el Código NO existe, se da de alta.",
@@ -114,7 +117,7 @@ public class ExcelImportService
                 "Si hay al menos un error no se guarda nada; corrige y vuelve a intentar.",
                 $"Máximo {MaxFilas:N0} filas por archivo.",
                 "",
-                "También puedes usar un archivo generado con \"Exportar Excel\": se leen las columnas Código, Tipo, Área, Marca, Modelo, Número de serie, Año y Notas y se ignoran las demás."
+                "También puedes usar un archivo generado con \"Exportar Excel\": se leen las columnas Código, Tipo, Área, Marca, Modelo, Número de serie, Año, Número económico y Notas y se ignoran las demás."
             });
         }
         else if (entidad == "inventario")
@@ -375,9 +378,14 @@ public class ExcelImportService
         var errores = new Errores(resultado);
 
         // Todos los tipos registrados, también los nuevos (PRE-03)
-        var tipos = (await _db.TiposVehiculo.AsNoTracking().Select(t => new { t.Id, t.Nombre }).ToListAsync())
-            .Select(t => (t.Nombre, (TipoVehiculoEnum)t.Id))
-            .ToList();
+        var tiposBd = await _db.TiposVehiculo.AsNoTracking().Select(t => new { t.Id, t.Nombre, t.FlujoMantenimiento }).ToListAsync();
+        var tipos = tiposBd.Select(t => (t.Nombre, (TipoVehiculoEnum)t.Id)).ToList();
+        // Equipos eléctricos (EQE-03): datos obligatorios y número de serie / número económico sin repetir
+        var tiposElectricos = tiposBd.Where(t => t.FlujoMantenimiento == EquiposElectricosService.Electrico).Select(t => (TipoVehiculoEnum)t.Id).ToHashSet();
+        var periodicidad = await _db.TiposVehiculo.AsNoTracking().Where(t => t.FlujoMantenimiento == EquiposElectricosService.Electrico)
+            .ToDictionaryAsync(t => (TipoVehiculoEnum)t.Id, t => t.FrecuenciaMantenimientoDias is > 0 ? t.FrecuenciaMantenimientoDias.Value : 30);
+        var ecoVistos = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var serieVistas = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var areas = (await _db.Areas.AsNoTracking().Where(a => a.Activa).Select(a => new { a.Id, a.Nombre }).ToListAsync())
             .Select(a => (a.Nombre, a.Id))
             .ToList();
@@ -398,6 +406,7 @@ public class ExcelImportService
             var modelo = fila.Texto("Modelo");
             var numeroSerie = fila.Texto("Número de serie");
             var (anioValor, anioError) = fila.Decimal("Año");
+            var numeroEconomico = fila.Texto("Número económico")?.ToUpperInvariant();
             var notas = fila.Texto("Notas");
             var erroresAntes = resultado.TotalErrores;
 
@@ -447,6 +456,38 @@ public class ExcelImportService
                 else anio = (int)anioValor.Value;
             }
             if (notas?.Length > 1000) errores.Add(fila.Numero, "Notas", "Máximo 1000 caracteres");
+            if (numeroEconomico?.Length > 30) errores.Add(fila.Numero, "Número económico", "Máximo 30 caracteres");
+
+            // Equipos eléctricos: con los valores como quedarían (lo vacío conserva lo que ya tenía)
+            var tipoFinal = tipo ?? existente?.Tipo;
+            if (tipoFinal.HasValue && tiposElectricos.Contains(tipoFinal.Value))
+            {
+                var faltan = new List<string>();
+                if (string.IsNullOrEmpty(marca ?? existente?.Marca)) faltan.Add("Marca");
+                if (string.IsNullOrEmpty(modelo ?? existente?.Modelo)) faltan.Add("Modelo");
+                if (string.IsNullOrEmpty(numeroSerie ?? existente?.NumeroSerie)) faltan.Add("Número de serie");
+                if ((anio ?? existente?.Anio) == null && anioError == null) faltan.Add("Año");
+                if (string.IsNullOrEmpty(numeroEconomico ?? existente?.NumeroEconomico)) faltan.Add("Número económico");
+                if ((areaId ?? existente?.AreaId) == null && string.IsNullOrEmpty(areaTexto)) faltan.Add("Área");
+                foreach (var f in faltan)
+                    errores.Add(fila.Numero, f, $"Obligatorio en equipos eléctricos");
+            }
+            if (!string.IsNullOrEmpty(numeroEconomico))
+            {
+                if (ecoVistos.TryGetValue(numeroEconomico, out var filaEco))
+                    errores.Add(fila.Numero, "Número económico", $"Número económico repetido en el archivo (también en la fila {filaEco})");
+                else ecoVistos[numeroEconomico] = fila.Numero;
+                var otro = existentes.Values.FirstOrDefault(v => v != existente && string.Equals(v.NumeroEconomico, numeroEconomico, StringComparison.OrdinalIgnoreCase));
+                if (otro != null) errores.Add(fila.Numero, "Número económico", $"El número económico {numeroEconomico} ya lo tiene el equipo {otro.Codigo}");
+            }
+            if (!string.IsNullOrEmpty(numeroSerie) && tipoFinal.HasValue && tiposElectricos.Contains(tipoFinal.Value))
+            {
+                if (serieVistas.TryGetValue(numeroSerie, out var filaSerie))
+                    errores.Add(fila.Numero, "Número de serie", $"Número de serie repetido en el archivo (también en la fila {filaSerie})");
+                else serieVistas[numeroSerie] = fila.Numero;
+                var otro = existentes.Values.FirstOrDefault(v => v != existente && string.Equals(v.NumeroSerie, numeroSerie, StringComparison.OrdinalIgnoreCase));
+                if (otro != null) errores.Add(fila.Numero, "Número de serie", $"El número de serie {numeroSerie} ya lo tiene el equipo {otro.Codigo}");
+            }
 
             if (resultado.TotalErrores > erroresAntes) continue;
 
@@ -461,7 +502,11 @@ public class ExcelImportService
                     Modelo = modelo,
                     NumeroSerie = numeroSerie,
                     Anio = anio,
+                    NumeroEconomico = numeroEconomico,
                     Notas = notas,
+                    // Primer preventivo de un equipo eléctrico: hoy + periodicidad del tipo
+                    ProximoMantenimiento = periodicidad.TryGetValue(tipo!.Value, out var dias)
+                        ? DateTime.SpecifyKind(Utils.HoraLocal.Ahora.Date.AddDays(dias), DateTimeKind.Unspecified) : null,
                     Estado = EstadoVehiculoEnum.Operativo,
                     CreatedBy = userId,
                     CreatedAt = DateTime.UtcNow
@@ -477,6 +522,7 @@ public class ExcelImportService
                     if (modelo != null) existente.Modelo = modelo;
                     if (numeroSerie != null) existente.NumeroSerie = numeroSerie;
                     if (anio.HasValue) existente.Anio = anio;
+                    if (numeroEconomico != null) existente.NumeroEconomico = numeroEconomico;
                     if (notas != null) existente.Notas = notas;
                     existente.UpdatedAt = DateTime.UtcNow;
                     existente.UpdatedBy = userId;

@@ -7,4 +7,5 @@ export { WeeklyStatsTable } from './WeeklyStatsTable';
 export { LocationMatrix } from './LocationMatrix';
 export { GastoProveedores } from './GastoProveedores';
 export { IndicadoresProveedores } from './IndicadoresProveedores';
+export { IndicadoresElectricos } from './IndicadoresElectricos';
 export * from './charts';

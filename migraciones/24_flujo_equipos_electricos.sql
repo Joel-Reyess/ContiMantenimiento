@@ -146,7 +146,8 @@ BEGIN
         PideDatosEquipo = 1
     WHERE Nombre LIKE '%tugger%' OR Nombre LIKE '%arrastre%' OR Nombre LIKE '%montacarga%'
        OR Nombre LIKE '%transpaleta%' OR Nombre LIKE '%traspaleta%';
-    PRINT CONCAT('Tipos con flujo de equipos eléctricos: ', (SELECT COUNT(*) FROM dbo.TiposVehiculo WHERE FlujoMantenimiento = 'Electrico'), '.');
+    DECLARE @electricos int = (SELECT COUNT(*) FROM dbo.TiposVehiculo WHERE FlujoMantenimiento = 'Electrico');
+    PRINT CONCAT('Tipos con flujo de equipos eléctricos: ', @electricos, '.');
 END
 GO
 
