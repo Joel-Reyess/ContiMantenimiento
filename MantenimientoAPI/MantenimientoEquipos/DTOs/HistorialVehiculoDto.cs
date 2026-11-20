@@ -71,6 +71,18 @@ public class IntervencionDto
     public string? PagoFolio { get; set; }
     public string Estado { get; set; } = string.Empty;
     public string EstadoNombre { get; set; } = string.Empty;
+    /// <summary>
+    /// Línea de tiempo del proceso (auditoría visual nov-2026: la ficha anterior la mostraba por orden y se había
+    /// perdido): fecha de cada etapa que ya ocurrió
+    /// </summary>
+    public List<EtapaTiempoDto> LineaTiempo { get; set; } = new();
+}
+
+public class EtapaTiempoDto
+{
+    public string Etapa { get; set; } = string.Empty;
+    public DateTime Fecha { get; set; }
+    public string? Detalle { get; set; }
 }
 
 public class ActividadIntervencionDto

@@ -67,6 +67,9 @@ public class HistorialVehiculoService
                 o.Id, o.Folio, o.ReporteFallaId, o.TipoMantenimiento, o.Descripcion, o.Estado,
                 o.FechaCreacion, o.FechaFinalizacion, o.FechaValidacion,
                 o.TecnicoAsignadoId, o.EmpresaId,
+                // Línea de tiempo (contenedores y equipos eléctricos)
+                o.FechaTrasladoIngreso, o.FechaSeleccion, o.FechaAceptacion, o.FechaInicio, o.FechaTrasladoRetorno,
+                o.FechaIngresoTaller, o.FechaInspeccionPrevia, o.FechaPruebas, o.FechaTrasladoArea, o.FechaAprobacionEntrega, o.FechaDocumentoEntrega,
                 Pago = o.RegistroPago == null ? null : new
                 {
                     o.RegistroPago.Id, o.RegistroPago.Estado, o.RegistroPago.MontoTotal, o.RegistroPago.EmpresaId, o.RegistroPago.TecnicoId
@@ -76,7 +79,7 @@ public class HistorialVehiculoService
 
         var reportes = await _db.ReportesFalla.AsNoTracking()
             .Where(r => r.VehiculoId == vehiculoId)
-            .Select(r => new { r.Id, r.Folio, r.Descripcion, r.TipoMantenimiento, r.FechaReporte, r.EstadoInspeccion })
+            .Select(r => new { r.Id, r.Folio, r.Descripcion, r.TipoMantenimiento, r.FechaReporte, r.EstadoInspeccion, r.FechaInspeccion })
             .ToListAsync();
 
         var reporteIds = reportes.Select(r => r.Id).ToList();
@@ -213,7 +216,21 @@ public class HistorialVehiculoService
                 Importe = pago?.MontoTotal,
                 PagoFolio = pago != null ? OrdenPagoService.Folio(pago.Id) : null,
                 Estado = estado,
-                EstadoNombre = NombresEstado.TryGetValue(estado, out var nombre) ? nombre : estado
+                EstadoNombre = NombresEstado.TryGetValue(estado, out var nombre) ? nombre : estado,
+                LineaTiempo = new (string Etapa, DateTime? Fecha)[]
+                    {
+                        ("Falla reportada", r?.FechaReporte), ("Reporte validado", r?.FechaInspeccion), ("Orden generada", o.FechaCreacion),
+                        ("En Zona de Transición", o.FechaTrasladoIngreso), ("Empresa asignada", o.FechaSeleccion),
+                        ("Aceptada por el taller", o.FechaAceptacion), ("En el taller", o.FechaIngresoTaller),
+                        ("Inspección previa", o.FechaInspeccionPrevia), ("Inicio de reparación", o.FechaInicio),
+                        ("Reparación terminada", o.FechaFinalizacion), ("Pruebas aprobadas", o.FechaPruebas),
+                        ("Entregada en zona de reparados", o.FechaTrasladoRetorno), ("Equipo en su área", o.FechaTrasladoArea),
+                        ("Entrega aprobada por el Líder", o.FechaAprobacionEntrega), ("Documento firmado", o.FechaDocumentoEntrega),
+                        ("Validada / disponible", o.FechaValidacion)
+                    }
+                    .Where(x => x.Fecha.HasValue)
+                    .Select(x => new EtapaTiempoDto { Etapa = x.Etapa, Fecha = x.Fecha!.Value })
+                    .OrderBy(x => x.Fecha).ToList()
             });
         }
 

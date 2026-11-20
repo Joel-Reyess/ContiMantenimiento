@@ -25,6 +25,8 @@ const BORDE = '#e5e7eb';
 
 const fecha = (s?: string | null) =>
   s ? new Intl.DateTimeFormat('es-MX', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(s)) : '—';
+const fechaHora = (s: string) =>
+  new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(s));
 const dinero = (n?: number | null) =>
   n === null || n === undefined ? '—' : new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n);
 const mes = (p: string) => {
@@ -216,6 +218,18 @@ function Intervencion({ i, verCostos }: { i: IntervencionHistorial; verCostos: b
         <p style={{ fontSize: 12, color: TEXTO_SUAVE, marginTop: 8 }}>
           Materiales: {i.materiales.map((m) => `${m.nombre} (${m.cantidad})`).join(', ')}
         </p>
+      )}
+      {(i.lineaTiempo?.length ?? 0) > 1 && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ color: TEXTO_SUAVE, fontWeight: 600, fontSize: 12 }}>Línea de tiempo del proceso</div>
+          <ol data-testid="linea-tiempo" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4, listStyle: 'none' }}>
+            {i.lineaTiempo!.map((e, n) => (
+              <li key={n} style={{ fontSize: 12, color: '#374151', background: '#f8fafc', border: `1px solid ${BORDE}`, borderRadius: 999, padding: '2px 10px' }}>
+                <span style={{ fontWeight: 600 }}>{e.etapa}</span> · {fechaHora(e.fecha)}
+              </li>
+            ))}
+          </ol>
+        </div>
       )}
     </>
   );
