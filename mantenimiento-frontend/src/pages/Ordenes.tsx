@@ -966,15 +966,15 @@ export function OrdenesPage() {
         )}
 
         <Card className="p-6 space-y-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0" style={{ flex: '1 1 16rem' }}>
               <p className="text-sm uppercase tracking-[0.25em] text-continental-gray-1">Orden de trabajo</p>
               <h2 className="text-2xl font-semibold text-continental-black">
                 {detalle.folio} - {detalle.vehiculoCodigo}
               </h2>
               <p className="text-continental-gray-1">Prioridad {detalle.prioridadNombre || PrioridadNombres[detalle.prioridad]}</p>
             </div>
-            <div className="flex flex-col items-end gap-2">
+            <div className="flex flex-col items-end gap-2" style={{ marginLeft: 'auto' }}>
               <Badge variant="secondary">{detalle.estadoNombre || EstadoOrdenNombres[detalle.estado]}</Badge>
               {(canEliminar || (esGerente && (detalle.estado === EstadoOrdenTrabajo.Validada || detalle.estado === EstadoOrdenTrabajo.Entregado))) && (
                 <Button

@@ -409,8 +409,8 @@ export function FallasImagenPage() {
   return (
     <div className="dashboard-wrapper space-y-5">
       <VolverConfiguracion />
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0" style={{ flex: '1 1 20rem' }}>
           <p className="text-sm uppercase tracking-[0.3em] text-continental-gray-1">Configuración visual</p>
           <h1 className="text-3xl font-semibold text-continental-black">Fallas visuales</h1>
           <p className="text-sm text-continental-gray-1" style={{ marginBottom: 0 }}>
@@ -440,7 +440,7 @@ export function FallasImagenPage() {
         <Card className="p-5 flex flex-col gap-4" data-testid="editor-hotspots">
           <h2 className="text-lg font-semibold text-continental-black">Editor de hotspots</h2>
 
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <Select
               label="Tipo de vehículo"
               value={selectedTipoVehiculoId}
@@ -498,7 +498,7 @@ export function FallasImagenPage() {
               </span>
             </p>
             <div className="flex flex-wrap items-center gap-2 md:justify-end">
-              <input type="file" accept="image/*" onChange={(e) => setFallbackImageUpload(e.target.files?.[0] || null)} className="block text-sm" />
+              <input type="file" accept="image/*" onChange={(e) => setFallbackImageUpload(e.target.files?.[0] || null)} className="block text-sm" style={{ maxWidth: '100%' }} />
               <Button
                 onClick={handleUploadImageFallas}
                 disabled={!selectedTipoVehiculoId || !fallbackImageUpload || uploadingImage}
@@ -529,8 +529,8 @@ export function FallasImagenPage() {
           )}
 
           {/* Imagen a la izquierda, puntos a la derecha */}
-          <div className="grid gap-6 lg:grid-cols-2">
-            <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div className="flex min-w-0 flex-col gap-3">
               <InteractiveVehicleImage
                 imageUrl={selectedImageUrl}
                 points={vehicleImagePoints.filter((p) => p.active)}
@@ -552,7 +552,7 @@ export function FallasImagenPage() {
               </div>
             </div>
 
-            <div className="flex flex-col gap-4">
+            <div className="flex min-w-0 flex-col gap-4">
               <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
                 <Input label="X (%)" value={draftXPct} onChange={(e) => setDraftXPct(e.target.value)} />
                 <Input label="Y (%)" value={draftYPct} onChange={(e) => setDraftYPct(e.target.value)} />

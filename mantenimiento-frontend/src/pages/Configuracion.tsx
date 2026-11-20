@@ -84,7 +84,6 @@ export function ConfiguracionPage() {
   const [savingPreventivoId, setSavingPreventivoId] = useState<number | null>(null);
   const [programacionPreventiva, setProgramacionPreventiva] = useState<ProgramacionPreventiva[]>([]);
   const [loadingProgramacion, setLoadingProgramacion] = useState(false);
-  const [tecnicos, setTecnicos] = useState<{ id: number; nombre: string }[]>([]);
   const [loadingTipos, setLoadingTipos] = useState(false);
   const [editingTipo, setEditingTipo] = useState<Partial<TipoVehiculoItem> | null>(null); // Changed to Partial for creation
   const [isCreatingTipo, setIsCreatingTipo] = useState(false);
@@ -448,7 +447,6 @@ export function ConfiguracionPage() {
     loadAreas();
     loadSupervisores();
     loadTiposVehiculo();
-    loadTecnicos();
   }, []);
 
   useEffect(() => {
@@ -456,17 +454,6 @@ export function ConfiguracionPage() {
       loadProgramacionPreventiva();
     }
   }, [activeTab]);
-
-  const loadTecnicos = async () => {
-    try {
-      const res = await catalogosService.getTecnicos(false);
-      if (res.success && res.data) {
-        setTecnicos(res.data.map(t => ({ id: t.id, nombre: t.nombre || (t as any).nombreCompleto })));
-      }
-    } catch (err) {
-      console.error('Error cargando tecnicos', err);
-    }
-  };
 
   const loadSupervisores = async () => {
     try {
@@ -778,11 +765,6 @@ export function ConfiguracionPage() {
                       <div className="min-w-0">
                         <p className="font-semibold text-continental-black break-words">{tipo.nombre}</p>
                         <p className="text-sm text-continental-gray-1">ID: {tipo.id}</p>
-                        {tipo.proveedorId && (
-                          <p className="text-xs text-continental-blue font-medium">
-                            Técnico: {tipo.proveedorNombre || 'Asignado'}
-                          </p>
-                        )}
                         {tipo.flujoMantenimiento === 'Electrico' ? (
                           <p className="flex items-center text-xs font-semibold" style={{ gap: 4, color: '#c26a00' }} data-testid="tipo-flujo-electrico">
                             <Zap className="h-3 w-3" /> Equipo eléctrico
@@ -1338,16 +1320,7 @@ export function ConfiguracionPage() {
             )}
           </div>
 
-          <Select
-            label="Técnico por Defecto (Asignación Automática)"
-            value={editingTipo?.proveedorId ? String(editingTipo.proveedorId) : ''}
-            onChange={(val) => setEditingTipo(prev => prev ? { ...prev, proveedorId: val ? Number(val) : undefined } : null)}
-            options={[
-              { value: '', label: 'Sin técnico automático' },
-              ...tecnicos.map(t => ({ value: String(t.id), label: t.nombre }))
-            ]}
-          />
-          
+          {/* Sin "Técnico por defecto": la empresa y el técnico los asigna la SELECCIÓN por turnos (Reporte 6) */}
           <div className="space-y-2 pt-2 border-t border-continental-gray-3">
             <p className="text-sm font-medium text-continental-black">Imagen de Referencia</p>
             <Input

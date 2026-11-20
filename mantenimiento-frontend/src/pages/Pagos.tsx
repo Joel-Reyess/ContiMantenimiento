@@ -541,7 +541,8 @@ export function PagosPage() {
           <h1 className="text-3xl font-semibold text-continental-black">Gestion de pagos</h1>
           <p className="text-continental-gray-1">Resumen de registros de pago y aprobaciones.</p>
         </div>
-        <div className="flex gap-2">
+        {/* En celular los filtros y botones bajan de renglón; en computadora quedan en una fila, como antes */}
+        <div className="flex flex-wrap md:flex-nowrap gap-2">
           <Select
             options={estadoOpciones}
             value={filters.estado || ''}
@@ -575,7 +576,7 @@ export function PagosPage() {
       </p>
 
       {selectedIds.size > 0 && (
-        <div className="sticky top-4 z-10 bg-white border border-continental-gray-3 shadow-md rounded-lg p-3 flex items-center justify-between animate-in fade-in slide-in-from-top-2">
+        <div className="sticky top-4 z-10 bg-white border border-continental-gray-3 shadow-md rounded-lg p-3 flex flex-wrap gap-2 items-center justify-between animate-in fade-in slide-in-from-top-2">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-continental-black">{selectedIds.size} seleccionados</span>
             <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
@@ -633,8 +634,8 @@ export function PagosPage() {
                     className="h-5 w-5 rounded border-gray-300 text-continental-orange focus:ring-continental-orange cursor-pointer"
                   />
                 </div>
-                <div className="flex-1 flex items-start justify-between gap-4">
-                <div className="space-y-1">
+                <div className="flex-1 min-w-0 flex flex-wrap items-start justify-between gap-4">
+                <div className="space-y-1 min-w-0" style={{ flex: '1 1 14rem' }}>
                   {(() => {
                     const info = ordenInfoMap[pago.ordenTrabajoId] || {};
                     const vehiculo =
@@ -677,13 +678,13 @@ export function PagosPage() {
                   )}
                   <p className="text-xs text-continental-gray-2">Registro: {new Date(pago.fechaRegistro).toLocaleString()}</p>
                 </div>
-                <div className="flex flex-col items-end gap-2">
+                <div className="flex flex-col items-end gap-2" style={{ marginLeft: 'auto' }}>
                   <Badge variant={badgeVariant(pago.estado)}>{estadoNombre(pago.estado)}</Badge>
                   <Button size="sm" variant="outline" onClick={() => abrirDetallePago(pago)} className="flex items-center gap-1">
                     <Printer className="h-4 w-4" />
                     Ver/Imprimir
                   </Button>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap justify-end gap-2">
                     {/* Las órdenes de pago nacen Pendientes: desde ahí se aprueban o se cancelan (rechazan) */}
                     {(pago.estado === EstadoPago.Pendiente || pago.estado === EstadoPago.EnRevision) && (
                       <>

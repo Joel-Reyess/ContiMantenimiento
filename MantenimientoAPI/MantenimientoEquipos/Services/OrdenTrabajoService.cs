@@ -364,18 +364,10 @@ public class OrdenTrabajoService
         var vehiculo = await _db.Vehiculos
             .FirstOrDefaultAsync(v => v.Id == request.VehiculoId);
 
+        // Ya no se toma el "técnico por defecto" del tipo de vehículo (TiposVehiculo.ProveedorId): desde el Reporte 6 la
+        // empresa y el técnico los elige la SELECCIÓN por turnos al llegar la unidad a la Zona de Transición. Con el
+        // técnico por defecto la orden nacía "Asignada" a alguien que podía no ser de la empresa que después tocaba.
         var tecnicoId = request.TecnicoAsignadoId;
-        
-        // Asignación automática de proveedor (técnico) basado en el tipo de vehículo configurado en la tabla TipoVehiculo
-        if (!tecnicoId.HasValue && vehiculo != null)
-        {
-            var tipoId = (int)vehiculo.Tipo;
-            var tipoVehiculo = await _db.TiposVehiculo.FindAsync(tipoId);
-            if (tipoVehiculo?.ProveedorId.HasValue == true)
-            {
-                tecnicoId = tipoVehiculo.ProveedorId;
-            }
-        }
 
         // Generar folio
         var folio = await FolioGenerator.SiguienteAsync(_db.OrdenesTrabajo.Select(o => o.Folio), "OT");

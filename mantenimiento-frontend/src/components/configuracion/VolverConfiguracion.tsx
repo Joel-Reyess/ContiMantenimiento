@@ -15,8 +15,14 @@ export function VolverConfiguracion() {
 
   return (
     <div>
-      <Button variant="ghost" onClick={() => navigate('/configuracion')} className="flex items-center gap-2">
-        <ArrowLeft className="h-4 w-4" />
+      {/* whitespace-normal: en celular el texto completo no cabe en un renglón y empujaba la página de lado */}
+      <Button
+        variant="ghost"
+        onClick={() => navigate('/configuracion')}
+        className="flex items-center gap-2 whitespace-normal text-left"
+        style={{ maxWidth: '100%' }}
+      >
+        <ArrowLeft className="h-4 w-4 flex-shrink-0" />
         Volver a Configuración del sistema
       </Button>
     </div>

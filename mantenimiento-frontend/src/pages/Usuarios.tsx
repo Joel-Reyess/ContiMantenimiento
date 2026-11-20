@@ -361,8 +361,8 @@ export function UsuariosPage() {
         <div className="space-y-3">
           {usuarios.map((u) => (
             <Card key={u.id} className="px-8 py-7 border-l-4 border-continental-blue">
-              <div className="flex items-start justify-between gap-4">
-                <div className="space-y-1">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="space-y-1 min-w-0" style={{ flex: '1 1 16rem' }}>
                   <div className="flex items-center gap-2">
                     <Users className="h-4 w-4 text-continental-blue" />
                     <p className="font-semibold text-continental-black">{u.nombreCompleto || u.username}</p>
@@ -372,7 +372,7 @@ export function UsuariosPage() {
                     {u.rolNombre === 'Tecnico' && <> • Empresa: {u.empresaNombre || 'Sin empresa (tarifa base)'}</>}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button size="sm" variant="outline" onClick={() => handleResetPassword(u.id)} title="Restablecer contraseña" disabled={accionando}>
                     <Key className="h-4 w-4" />
                   </Button>

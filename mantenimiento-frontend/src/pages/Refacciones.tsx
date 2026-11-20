@@ -260,7 +260,7 @@ export function RefaccionesPage() {
           <h1 className="text-3xl font-semibold text-continental-black">Solicitudes de refaccion</h1>
           <p className="text-continental-gray-1">Listado en vivo de solicitudes pendientes y aprobadas.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap md:flex-nowrap gap-2">
           <Select options={estadoOpciones} value={estadoFiltro} onChange={(value) => setEstadoFiltro(value)} />
           <Button variant="outline" onClick={applyFilter} className="flex items-center gap-2">
             <RefreshCcw className="h-4 w-4" />
@@ -301,8 +301,8 @@ export function RefaccionesPage() {
         <div className="space-y-3">
           {refacciones.map((item) => (
             <Card key={item.id} className="px-8 py-7 border-l-4 border-continental-yellow">
-              <div className="flex items-start justify-between gap-4">
-                <div className="space-y-2 leading-relaxed">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="space-y-2 leading-relaxed min-w-0" style={{ flex: '1 1 16rem' }}>
                   <div className="flex items-center gap-2 mb-1">
                     <Package className="h-4 w-4 text-continental-yellow" />
                     <p className="font-semibold text-continental-black">{item.nombreRefaccion}</p>
@@ -314,9 +314,9 @@ export function RefaccionesPage() {
                     Solicitado: {new Date(item.fechaSolicitud).toLocaleString()} · Por: {item.solicitadoPorNombre || 'N/D'}
                   </p>
                 </div>
-                <div className="flex flex-col items-end gap-3">
+                <div className="flex flex-col items-end gap-3" style={{ marginLeft: 'auto' }}>
                   <Badge variant={badgeVariant(item.estado)}>{item.estado}</Badge>
-                  <div className="flex gap-3">
+                  <div className="flex flex-wrap justify-end gap-3">
                     {item.estado.toLowerCase().includes('pend') && (
                       <>
                         <Button size="sm" onClick={() => handleAprobar(item.id)} disabled={accionando} className="flex items-center gap-1">

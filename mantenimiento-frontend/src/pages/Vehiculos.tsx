@@ -815,7 +815,7 @@ export function VehiculosPage() {
             />
             Seleccionar todos ({vehiculos.length})
           </label>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {selectedIds.size > 0 && (
               <>
                 <span className="text-sm text-continental-gray-1">{selectedIds.size} seleccionado(s)</span>
@@ -991,7 +991,7 @@ export function VehiculosPage() {
 
       {/* Pagination Controls */}
       {vehiculos.length > 0 && (
-        <div className="flex items-center justify-between border-t border-gray-200 pt-4 px-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 pt-4 px-4">
             <div className="text-sm text-gray-500">
                 Pagina {pagination.page} de {pagination.totalPages} ({pagination.totalItems} registros)
             </div>
